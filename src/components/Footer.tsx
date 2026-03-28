@@ -1,4 +1,4 @@
-import { Droplet, Facebook, Instagram, Twitter, Mail, Phone, MapPin } from "lucide-react";
+import { Droplet, Facebook, Instagram, Twitter } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Footer() {
@@ -7,7 +7,7 @@ export function Footer() {
   return (
     <footer className="bg-gray-900 text-gray-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid md:grid-cols-4 gap-8">
+        <div className="grid md:grid-cols-3 gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
@@ -50,24 +50,6 @@ export function Footer() {
               <li><a href="#" className="hover:text-red-500 transition-colors">Histórias de Sucesso</a></li>
               <li><a href="#" className="hover:text-red-500 transition-colors">Para Hospitais</a></li>
               <li><a href="#" className="hover:text-red-500 transition-colors">Seja Voluntário</a></li>
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="text-white mb-4">Contato</h3>
-            <ul className="space-y-3 text-sm">
-              <li className="flex items-start gap-2">
-                <Phone className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>(11) 3456-7890</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <Mail className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>contato@doavida.com.br</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>Av. Paulista, 1500<br />São Paulo - SP</span>
-              </li>
             </ul>
           </div>
         </div>

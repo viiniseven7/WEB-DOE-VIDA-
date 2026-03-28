@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { 
   Droplet, 
   Calendar,
@@ -20,7 +21,12 @@ import {
   Clock,
   Search,
   TrendingUp,
-  Activity
+  Activity,
+  Plus,
+  Minus,
+  Phone,
+  Mail,
+  MapPin
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
@@ -91,6 +97,20 @@ export function StaffDashboard() {
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState(todayAppointments);
   const [searchTerm, setSearchTerm] = useState('');
+  const [stock, setStock] = useState(bloodStock);
+  
+  // Update Stock Dialog states
+  const [updateStockDialogOpen, setUpdateStockDialogOpen] = useState(false);
+  const [selectedBloodType, setSelectedBloodType] = useState('');
+  const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
+  const [stockAmount, setStockAmount] = useState('');
+  
+  // Search Donor Dialog states
+  const [searchDonorDialogOpen, setSearchDonorDialogOpen] = useState(false);
+  const [donorSearchTerm, setDonorSearchTerm] = useState('');
+  const [donorBloodType, setDonorBloodType] = useState('');
+  const [donorSearchResult, setDonorSearchResult] = useState<any>(null);
+  const [searchPerformed, setSearchPerformed] = useState(false);
 
   if (!user || user.role !== 'staff') {
     navigate('/login');
@@ -140,6 +160,97 @@ export function StaffDashboard() {
 
   const completedToday = appointments.filter(apt => apt.status === 'completed').length;
   const pendingToday = appointments.filter(apt => apt.status === 'pending').length;
+
+  // Handle Update Stock
+  const handleOpenUpdateStock = (bloodType: string) => {
+    setSelectedBloodType(bloodType);
+    setStockAction('add');
+    setStockAmount('');
+    setUpdateStockDialogOpen(true);
+  };
+
+  const handleUpdateStock = () => {
+    if (!stockAmount || parseInt(stockAmount) <= 0) {
+      toast.error('Digite uma quantidade válida');
+      return;
+    }
+
+    const amount = parseInt(stockAmount);
+    setStock(prev =>
+      prev.map(item =>
+        item.type === selectedBloodType
+          ? {
+              ...item,
+              current: stockAction === 'add' 
+                ? Math.min(item.current + amount, item.max)
+                : Math.max(item.current - amount, 0)
+            }
+          : item
+      )
+    );
+
+    toast.success(
+      stockAction === 'add'
+        ? `${amount} bolsas adicionadas ao estoque de ${selectedBloodType}`
+        : `${amount} bolsas removidas do estoque de ${selectedBloodType}`
+    );
+    setUpdateStockDialogOpen(false);
+  };
+
+  // Handle Search Donor
+  const handleSearchDonor = () => {
+    if (!donorSearchTerm.trim()) {
+      toast.error('Digite um CPF ou nome para buscar');
+      return;
+    }
+
+    setSearchPerformed(true);
+
+    // Mock data - simula busca no banco
+    const mockDonors = [
+      {
+        name: 'Ana Silva Santos',
+        cpf: '123.456.789-00',
+        bloodType: 'O+',
+        phone: '(41) 98765-4321',
+        email: 'ana.silva@email.com',
+        lastDonation: '2025-12-15',
+        totalDonations: 5,
+        address: 'Rua das Flores, 123 - Centro, Curitiba - PR'
+      },
+      {
+        name: 'Carlos Eduardo Mendes',
+        cpf: '987.654.321-00',
+        bloodType: 'A+',
+        phone: '(41) 97654-3210',
+        email: 'carlos.mendes@email.com',
+        lastDonation: '2026-01-10',
+        totalDonations: 8,
+        address: 'Av. Brasil, 456 - Batel, Curitiba - PR'
+      }
+    ];
+
+    // Simula busca por nome ou CPF
+    const found = mockDonors.find(donor =>
+      donor.name.toLowerCase().includes(donorSearchTerm.toLowerCase()) ||
+      donor.cpf.includes(donorSearchTerm.replace(/\D/g, ''))
+    );
+
+    if (found && (!donorBloodType || found.bloodType === donorBloodType)) {
+      setDonorSearchResult(found);
+      toast.success('Doador encontrado!');
+    } else {
+      setDonorSearchResult(null);
+      toast.error('Doador não encontrado');
+    }
+  };
+
+  const handleClearDonorSearch = () => {
+    setDonorSearchTerm('');
+    setDonorBloodType('');
+    setDonorSearchResult(null);
+    setSearchPerformed(false);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
@@ -373,7 +484,7 @@ export function StaffDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
-                  {bloodStock.map((stock) => {
+                  {stock.map((stock) => {
                     const status = getStockStatus(stock.current, stock.min, stock.max);
                     const percentage = (stock.current / stock.max) * 100;
                     
@@ -416,7 +527,7 @@ export function StaffDashboard() {
                         </div>
 
                         <div className="mt-3 pt-3 border-t">
-                          <Button size="sm" variant="outline" className="w-full">
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenUpdateStock(stock.type)}>
                             <Activity className="h-4 w-4 mr-2" />
                             Atualizar Estoque
                           </Button>
@@ -442,11 +553,11 @@ export function StaffDashboard() {
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>CPF ou Nome</Label>
-                    <Input placeholder="Digite o CPF ou nome do doador" />
+                    <Input placeholder="Digite o CPF ou nome do doador" value={donorSearchTerm} onChange={(e) => setDonorSearchTerm(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo Sanguíneo</Label>
-                    <Select>
+                    <Select value={donorBloodType} onValueChange={(value) => setDonorBloodType(value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione" />
                       </SelectTrigger>
@@ -463,7 +574,7 @@ export function StaffDashboard() {
                     </Select>
                   </div>
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700">
+                <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSearchDonor}>
                   <Search className="h-4 w-4 mr-2" />
                   Buscar Doador
                 </Button>
@@ -474,11 +585,151 @@ export function StaffDashboard() {
                     Apenas dados necessários para o atendimento são exibidos.
                   </p>
                 </div>
+
+                {searchPerformed && (
+                  <div className="mt-4">
+                    {donorSearchResult ? (
+                      <Card className="border-l-4 border-l-green-600">
+                        <CardHeader className="pb-3">
+                          <CardDescription>Doador Encontrado</CardDescription>
+                          <CardTitle className="text-3xl">{donorSearchResult.name}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Phone className="h-4 w-4 text-blue-600" />
+                              <span>{donorSearchResult.phone}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Mail className="h-4 w-4 text-blue-600" />
+                              <span>{donorSearchResult.email}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <MapPin className="h-4 w-4 text-blue-600" />
+                              <span>{donorSearchResult.address}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
+                                {donorSearchResult.bloodType}
+                              </Badge>
+                              <span>Última doação: {new Date(donorSearchResult.lastDonation).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Badge variant="outline" className="bg-green-50 border-green-600 text-green-600">
+                                {donorSearchResult.totalDonations} doações
+                              </Badge>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="border-l-4 border-l-red-600">
+                        <CardHeader className="pb-3">
+                          <CardDescription>Doador Não Encontrado</CardDescription>
+                          <CardTitle className="text-3xl">Nenhum resultado encontrado</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <XCircle className="h-4 w-4 text-red-600" />
+                              <span>Não foi possível encontrar um doador com os critérios fornecidos.</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                    <Button className="bg-gray-600 hover:bg-gray-700" onClick={handleClearDonorSearch}>
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Limpar Busca
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Update Stock Dialog */}
+      <Dialog open={updateStockDialogOpen} onOpenChange={setUpdateStockDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Atualizar Estoque - {selectedBloodType}</DialogTitle>
+            <DialogDescription>
+              Adicione ou remova bolsas de sangue do estoque
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Ação</Label>
+              <Select value={stockAction} onValueChange={(value) => setStockAction(value as 'add' | 'remove')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">
+                    <div className="flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-green-600" />
+                      <span>Adicionar ao estoque</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="remove">
+                    <div className="flex items-center gap-2">
+                      <Minus className="h-4 w-4 text-red-600" />
+                      <span>Remover do estoque</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="amount">Quantidade (bolsas)</Label>
+              <Input
+                id="amount"
+                type="number"
+                min="1"
+                placeholder="Digite a quantidade"
+                value={stockAmount}
+                onChange={(e) => setStockAmount(e.target.value)}
+              />
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
+              <p>
+                Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
+                <strong>
+                  {stock.find(s => s.type === selectedBloodType)?.current} bolsas
+                </strong>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUpdateStockDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleUpdateStock}
+              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+            >
+              {stockAction === 'add' ? (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar
+                </>
+              ) : (
+                <>
+                  <Minus className="h-4 w-4 mr-2" />
+                  Remover
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

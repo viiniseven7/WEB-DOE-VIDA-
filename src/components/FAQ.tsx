@@ -75,14 +75,6 @@ export function FAQ() {
             </AccordionItem>
           ))}
         </Accordion>
-
-        <div className="mt-12 text-center bg-red-50 rounded-2xl p-8">
-          <h3 className="text-2xl text-gray-900 mb-4">Ainda tem dúvidas?</h3>
-          <p className="text-gray-600 mb-6">
-            Entre em contato com nossa equipe pelo telefone <strong>(11) 3456-7890</strong> ou 
-            envie um e-mail para <strong>contato@doacaodesangue.com.br</strong>
-          </p>
-        </div>
       </div>
     </div>
   );

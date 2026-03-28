@@ -6,6 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { 
   Droplet, 
   Calendar,
@@ -17,7 +21,13 @@ import {
   UserCheck,
   BarChart3,
   Clock,
-  Download
+  Download,
+  UserPlus,
+  Plus,
+  Minus,
+  FileText,
+  FileSpreadsheet,
+  FilePieChart
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -65,6 +75,31 @@ const bloodStock = [
 export function DirectorDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  
+  // State management
+  const [staff, setStaff] = useState(loggedStaff);
+  const [stock, setStock] = useState(bloodStock);
+  
+  // Add Staff Dialog states
+  const [addStaffDialogOpen, setAddStaffDialogOpen] = useState(false);
+  const [newStaff, setNewStaff] = useState({
+    name: '',
+    email: '',
+    cpf: '',
+    role: '',
+    phone: ''
+  });
+  
+  // Update Stock Dialog states
+  const [updateStockDialogOpen, setUpdateStockDialogOpen] = useState(false);
+  const [selectedBloodType, setSelectedBloodType] = useState('');
+  const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
+  const [stockAmount, setStockAmount] = useState('');
+  
+  // Export Report Dialog states
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [reportType, setReportType] = useState('');
+  const [reportFormat, setReportFormat] = useState('pdf');
 
   if (!user || user.role !== 'director') {
     navigate('/login');
@@ -78,7 +113,93 @@ export function DirectorDashboard() {
   };
 
   const handleExportReport = () => {
-    toast.success('Relatório exportado com sucesso!');
+    setExportDialogOpen(true);
+  };
+
+  // Handle Add Staff
+  const handleAddStaff = () => {
+    if (!newStaff.name || !newStaff.email || !newStaff.cpf || !newStaff.role || !newStaff.phone) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    const staffMember = {
+      id: String(staff.length + 1),
+      name: newStaff.name,
+      role: newStaff.role,
+      loginTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      status: 'offline' as const
+    };
+
+    setStaff([...staff, staffMember]);
+    toast.success(`Funcionário ${newStaff.name} adicionado com sucesso!`);
+    setAddStaffDialogOpen(false);
+    setNewStaff({ name: '', email: '', cpf: '', role: '', phone: '' });
+  };
+
+  // Handle Update Stock
+  const handleOpenUpdateStock = (bloodType: string) => {
+    setSelectedBloodType(bloodType);
+    setStockAction('add');
+    setStockAmount('');
+    setUpdateStockDialogOpen(true);
+  };
+
+  const handleUpdateStock = () => {
+    if (!stockAmount || parseInt(stockAmount) <= 0) {
+      toast.error('Digite uma quantidade válida');
+      return;
+    }
+
+    const amount = parseInt(stockAmount);
+    const maxStock = 150; // máximo genérico
+
+    setStock(prev =>
+      prev.map(item => {
+        if (item.type === selectedBloodType) {
+          const newCurrent = stockAction === 'add' 
+            ? Math.min(item.current + amount, maxStock)
+            : Math.max(item.current - amount, 0);
+          const newPercentage = (newCurrent / maxStock) * 100;
+          
+          return {
+            ...item,
+            current: newCurrent,
+            percentage: newPercentage
+          };
+        }
+        return item;
+      })
+    );
+
+    toast.success(
+      stockAction === 'add'
+        ? `${amount} bolsas adicionadas ao estoque de ${selectedBloodType}`
+        : `${amount} bolsas removidas do estoque de ${selectedBloodType}`
+    );
+    setUpdateStockDialogOpen(false);
+  };
+
+  // Handle Export Report
+  const handleConfirmExport = () => {
+    if (!reportType) {
+      toast.error('Selecione um tipo de relatório');
+      return;
+    }
+
+    const reportNames: { [key: string]: string } = {
+      monthly: 'Relatório Mensal',
+      donors: 'Relatório de Doadores',
+      stock: 'Relatório de Estoque',
+      performance: 'Relatório de Desempenho'
+    };
+
+    const formatExt = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
+    
+    toast.success(`${reportNames[reportType]} exportado em ${formatExt} com sucesso!`);
+    setExportDialogOpen(false);
+    setReportType('');
+    setReportFormat('pdf');
   };
 
   return (
@@ -311,37 +432,45 @@ export function DirectorDashboard() {
           <TabsContent value="staff" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Funcionários Logados no Sistema</CardTitle>
-                <CardDescription>
-                  Funcionários atualmente ativos no sistema
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Funcionários Logados no Sistema</CardTitle>
+                    <CardDescription>
+                      Funcionários atualmente ativos no sistema
+                    </CardDescription>
+                  </div>
+                  <Button onClick={() => setAddStaffDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
+                    <UserPlus className="h-4 w-4" />
+                    Adicionar Funcionário
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {loggedStaff.map((staff) => (
+                  {staff.map((staffMember) => (
                     <div
-                      key={staff.id}
+                      key={staffMember.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center gap-4">
                         <Avatar>
                           <AvatarFallback className="bg-blue-100 text-blue-600">
-                            {staff.name.split(' ').map(n => n[0]).join('')}
+                            {staffMember.name.split(' ').map(n => n[0]).join('')}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-semibold">{staff.name}</p>
-                          <p className="text-sm text-gray-600">{staff.role}</p>
+                          <p className="font-semibold">{staffMember.name}</p>
+                          <p className="text-sm text-gray-600">{staffMember.role}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
                           <p className="text-sm text-gray-600">Login às</p>
-                          <p className="font-semibold">{staff.loginTime}</p>
+                          <p className="font-semibold">{staffMember.loginTime}</p>
                         </div>
-                        <Badge className="bg-green-100 text-green-600">
-                          <div className="h-2 w-2 bg-green-600 rounded-full mr-2"></div>
-                          Online
+                        <Badge className={staffMember.status === 'online' ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-600"}>
+                          <div className={`h-2 w-2 ${staffMember.status === 'online' ? 'bg-green-600' : 'bg-gray-600'} rounded-full mr-2`}></div>
+                          {staffMember.status === 'online' ? 'Online' : 'Offline'}
                         </Badge>
                       </div>
                     </div>
@@ -397,38 +526,44 @@ export function DirectorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {bloodStock.map((stock) => (
-                    <div key={stock.type} className="p-4 border rounded-lg">
+                  {stock.map((stockItem) => (
+                    <div key={stockItem.type} className="p-4 border rounded-lg">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <div className="bg-red-100 p-3 rounded-lg">
-                            <p className="text-xl font-bold text-red-600">{stock.type}</p>
+                            <p className="text-xl font-bold text-red-600">{stockItem.type}</p>
                           </div>
                           <div>
-                            <p className="font-semibold">{stock.current} bolsas</p>
-                            <p className="text-sm text-gray-600">Mínimo: {stock.min} bolsas</p>
+                            <p className="font-semibold">{stockItem.current} bolsas</p>
+                            <p className="text-sm text-gray-600">Mínimo: {stockItem.min} bolsas</p>
                           </div>
                         </div>
-                        <Badge className={
-                          stock.current < stock.min 
-                            ? 'bg-red-100 text-red-600' 
-                            : stock.percentage < 50 
-                            ? 'bg-orange-100 text-orange-600'
-                            : 'bg-green-100 text-green-600'
-                        }>
-                          {stock.current < stock.min ? 'Crítico' : stock.percentage < 50 ? 'Baixo' : 'Normal'}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className={
+                            stockItem.current < stockItem.min 
+                              ? 'bg-red-100 text-red-600' 
+                              : stockItem.percentage < 50 
+                              ? 'bg-orange-100 text-orange-600'
+                              : 'bg-green-100 text-green-600'
+                          }>
+                            {stockItem.current < stockItem.min ? 'Crítico' : stockItem.percentage < 50 ? 'Baixo' : 'Normal'}
+                          </Badge>
+                          <Button size="sm" variant="outline" onClick={() => handleOpenUpdateStock(stockItem.type)}>
+                            <Activity className="h-4 w-4 mr-1" />
+                            Atualizar
+                          </Button>
+                        </div>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-3">
                         <div
                           className={`h-3 rounded-full ${
-                            stock.current < stock.min 
+                            stockItem.current < stockItem.min 
                               ? 'bg-red-600' 
-                              : stock.percentage < 50 
+                              : stockItem.percentage < 50 
                               ? 'bg-orange-600'
                               : 'bg-green-600'
                           }`}
-                          style={{ width: `${Math.min(stock.percentage, 100)}%` }}
+                          style={{ width: `${Math.min(stockItem.percentage, 100)}%` }}
                         />
                       </div>
                     </div>
@@ -504,6 +639,259 @@ export function DirectorDashboard() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Add Staff Dialog */}
+      <Dialog open={addStaffDialogOpen} onOpenChange={setAddStaffDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Adicionar Novo Funcionário</DialogTitle>
+            <DialogDescription>
+              Preencha os dados do novo funcionário do hemocentro
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Nome Completo *</Label>
+              <Input
+                id="name"
+                placeholder="Digite o nome completo"
+                value={newStaff.name}
+                onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="email@exemplo.com"
+                value={newStaff.email}
+                onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cpf">CPF *</Label>
+              <Input
+                id="cpf"
+                placeholder="000.000.000-00"
+                value={newStaff.cpf}
+                onChange={(e) => setNewStaff({...newStaff, cpf: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="phone">Telefone *</Label>
+              <Input
+                id="phone"
+                placeholder="(00) 00000-0000"
+                value={newStaff.phone}
+                onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label>Cargo *</Label>
+              <Select value={newStaff.role} onValueChange={(value) => setNewStaff({...newStaff, role: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o cargo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Funcionário">Funcionário</SelectItem>
+                  <SelectItem value="Enfermeira">Enfermeira</SelectItem>
+                  <SelectItem value="Técnico">Técnico em Enfermagem</SelectItem>
+                  <SelectItem value="Recepcionista">Recepcionista</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddStaffDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAddStaff} className="bg-purple-600 hover:bg-purple-700">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Adicionar Funcionário
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Stock Dialog */}
+      <Dialog open={updateStockDialogOpen} onOpenChange={setUpdateStockDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Atualizar Estoque - {selectedBloodType}</DialogTitle>
+            <DialogDescription>
+              Adicione ou remova bolsas de sangue do estoque
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Ação</Label>
+              <Select value={stockAction} onValueChange={(value) => setStockAction(value as 'add' | 'remove')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">
+                    <div className="flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-green-600" />
+                      <span>Adicionar ao estoque</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="remove">
+                    <div className="flex items-center gap-2">
+                      <Minus className="h-4 w-4 text-red-600" />
+                      <span>Remover do estoque</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="amount">Quantidade (bolsas)</Label>
+              <Input
+                id="amount"
+                type="number"
+                min="1"
+                placeholder="Digite a quantidade"
+                value={stockAmount}
+                onChange={(e) => setStockAmount(e.target.value)}
+              />
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
+              <p>
+                Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
+                <strong>
+                  {stock.find(s => s.type === selectedBloodType)?.current} bolsas
+                </strong>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUpdateStockDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleUpdateStock}
+              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+            >
+              {stockAction === 'add' ? (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar
+                </>
+              ) : (
+                <>
+                  <Minus className="h-4 w-4 mr-2" />
+                  Remover
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Report Dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Exportar Relatório</DialogTitle>
+            <DialogDescription>
+              Selecione o tipo e formato do relatório para exportação
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tipo de Relatório</Label>
+              <Select value={reportType} onValueChange={setReportType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4" />
+                      <span>Relatório Mensal</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="donors">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      <span>Relatório de Doadores</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="stock">
+                    <div className="flex items-center gap-2">
+                      <Droplet className="h-4 w-4" />
+                      <span>Relatório de Estoque</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="performance">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      <span>Relatório de Desempenho</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Formato de Exportação</Label>
+              <Select value={reportFormat} onValueChange={setReportFormat}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-red-600" />
+                      <span>PDF</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="excel">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                      <span>Excel (.xlsx)</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="csv">
+                    <div className="flex items-center gap-2">
+                      <FilePieChart className="h-4 w-4 text-blue-600" />
+                      <span>CSV</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-lg text-sm text-gray-600">
+              <p>
+                O relatório será gerado com os dados atualizados até o momento e baixado automaticamente.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setExportDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmExport}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Exportar Relatório
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -7,6 +7,10 @@ import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Calendar } from '../ui/calendar';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { 
   Droplet, 
   Calendar as CalendarIcon, 
@@ -18,9 +22,12 @@ import {
   User,
   Bell,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Edit
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // Mock data
 const upcomingAppointment = {
@@ -45,6 +52,33 @@ export function DonorDashboard() {
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [appointmentConfirmed, setAppointmentConfirmed] = useState(upcomingAppointment.confirmed);
+  
+  // Reagendamento states
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>();
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleLocation, setRescheduleLocation] = useState('');
+  
+  // Edit Profile states
+  const [editProfileDialogOpen, setEditProfileDialogOpen] = useState(false);
+  const [profileData, setProfileData] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || ''
+  });
+
+  const bloodCenters = [
+    { value: "hemepar", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
+    { value: "erasto-gaertner", label: "Hospital Erasto Gaertner - Banco de Sangue" },
+    { value: "hc-ufpr", label: "Hospital de Clínicas - UFPR" },
+    { value: "hc-trabalhador", label: "Hospital do Trabalhador - Banco de Sangue" }
+  ];
+
+  const timeSlots = [
+    "08:00", "08:30", "09:00", "09:30", "10:00", "10:30", 
+    "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", 
+    "15:00", "15:30", "16:00", "16:30", "17:00"
+  ];
 
   if (!user || user.role !== 'donor') {
     navigate('/login');
@@ -63,7 +97,25 @@ export function DonorDashboard() {
   };
 
   const handleReschedule = () => {
+    setRescheduleDialogOpen(true);
+  };
+
+  const handleRescheduleConfirm = () => {
+    if (!rescheduleDate || !rescheduleTime || !rescheduleLocation) {
+      toast.error('Preencha todos os campos para reagendar');
+      return;
+    }
     toast.info('Funcionalidade de reagendamento em desenvolvimento');
+    setRescheduleDialogOpen(false);
+  };
+
+  const handleEditProfile = () => {
+    setEditProfileDialogOpen(true);
+  };
+
+  const handleEditProfileConfirm = () => {
+    toast.info('Funcionalidade de edição de perfil em desenvolvimento');
+    setEditProfileDialogOpen(false);
   };
 
   const nextDonationDate = new Date('2026-06-15');
@@ -295,7 +347,7 @@ export function DonorDashboard() {
                     <div>
                       <h4 className="font-semibold mb-2">Horários Disponíveis</h4>
                       <div className="grid grid-cols-2 gap-2">
-                        {['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'].map((time) => (
+                        {timeSlots.map((time) => (
                           <Button key={time} variant="outline" size="sm">
                             {time}
                           </Button>
@@ -412,7 +464,7 @@ export function DonorDashboard() {
                 </div>
 
                 <div className="pt-6 border-t">
-                  <Button variant="outline" className="gap-2">
+                  <Button variant="outline" className="gap-2" onClick={handleEditProfile}>
                     <User className="h-4 w-4" />
                     Editar Perfil
                   </Button>
@@ -422,6 +474,133 @@ export function DonorDashboard() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Reschedule Dialog */}
+      <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Reagendar Doação</DialogTitle>
+            <DialogDescription>
+              Selecione uma nova data e horário para sua doação
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <Calendar
+                mode="single"
+                selected={rescheduleDate}
+                onSelect={setRescheduleDate}
+                className="rounded-md border"
+                disabled={(date) => date < new Date() || date.getDay() === 0}
+              />
+            </div>
+            <div>
+              <Label htmlFor="time">Horário</Label>
+              <Select
+                value={rescheduleTime}
+                onValueChange={setRescheduleTime}
+              >
+                <SelectTrigger id="time">
+                  <SelectValue placeholder="Selecione um horário" />
+                </SelectTrigger>
+                <SelectContent>
+                  {timeSlots.map((time) => (
+                    <SelectItem key={time} value={time}>
+                      {time}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="location">Local</Label>
+              <Select
+                value={rescheduleLocation}
+                onValueChange={setRescheduleLocation}
+              >
+                <SelectTrigger id="location">
+                  <SelectValue placeholder="Selecione um local" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bloodCenters.map((center) => (
+                    <SelectItem key={center.value} value={center.value}>
+                      {center.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRescheduleDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRescheduleConfirm}
+            >
+              Reagendar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Profile Dialog */}
+      <Dialog open={editProfileDialogOpen} onOpenChange={setEditProfileDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Editar Perfil</DialogTitle>
+            <DialogDescription>
+              Atualize suas informações pessoais
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Nome</Label>
+              <Input
+                id="name"
+                value={profileData.name}
+                onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                value={profileData.email}
+                onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="phone">Telefone</Label>
+              <Input
+                id="phone"
+                value={profileData.phone}
+                onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditProfileDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleEditProfileConfirm}
+            >
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

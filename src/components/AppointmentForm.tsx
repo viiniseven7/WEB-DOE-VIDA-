@@ -138,10 +138,10 @@ export function AppointmentForm() {
                       <SelectValue placeholder="Selecione o posto" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="central">Hemocentro Central</SelectItem>
-                      <SelectItem value="norte">Banco de Sangue Norte</SelectItem>
-                      <SelectItem value="sul">Centro de Doação Sul</SelectItem>
-                      <SelectItem value="leste">Hemocentro Leste</SelectItem>
+                      <SelectItem value="hemepar">Hemepar</SelectItem>
+                      <SelectItem value="erasto">Hospital Erasto Gaertner</SelectItem>
+                      <SelectItem value="ufpr">Hospital de Clínicas - UFPR</SelectItem>
+                      <SelectItem value="trabalhador">Hospital do Trabalhador</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

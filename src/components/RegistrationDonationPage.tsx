@@ -51,11 +51,10 @@ export function RegistrationDonationPage() {
   });
 
   const bloodCenters = [
-    { value: "hc-sp", label: "Hemocentro Central - São Paulo" },
-    { value: "hc-rj", label: "Hemocentro Central - Rio de Janeiro" },
-    { value: "hc-mg", label: "Hemocentro Central - Belo Horizonte" },
-    { value: "hc-rs", label: "Hemocentro Central - Porto Alegre" },
-    { value: "hc-ba", label: "Hemocentro Central - Salvador" }
+    { value: "hemepar", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
+    { value: "erasto-gaertner", label: "Hospital Erasto Gaertner - Banco de Sangue" },
+    { value: "hc-ufpr", label: "Hospital de Clínicas - UFPR" },
+    { value: "hc-trabalhador", label: "Hospital do Trabalhador - Banco de Sangue" }
   ];
 
   const timeSlots = [
