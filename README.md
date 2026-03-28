@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# web-doe-vida
-=======
 
   # TCC doação de sangue - original
 
@@ -12,4 +9,3 @@
 
   Run `npm run dev` to start the development server.
   
->>>>>>> a9bf1037 (aruqivos do front end)

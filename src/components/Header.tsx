@@ -52,8 +52,8 @@ export function Header() {
             <button onClick={() => scrollToSection('locais')} className="text-gray-700 hover:text-red-600 transition-colors">
               Locais
             </button>
-            <button onClick={() => scrollToSection('agendamento')} className="text-gray-700 hover:text-red-600 transition-colors">
-              Agendar
+            <button onClick={() => { navigate('/teste-elegibilidade'); setIsMenuOpen(false); }} className="text-gray-700 hover:text-red-600 transition-colors">
+              Doar Sangue
             </button>
             <a href="#" className="text-gray-700 hover:text-red-600 transition-colors">
               FAQ
@@ -103,8 +103,8 @@ export function Header() {
               <button onClick={() => scrollToSection('locais')} className="text-left text-gray-700 hover:text-red-600 transition-colors">
                 Locais
               </button>
-              <button onClick={() => scrollToSection('agendamento')} className="text-left text-gray-700 hover:text-red-600 transition-colors">
-                Agendar
+              <button onClick={() => { navigate('/teste-elegibilidade'); setIsMenuOpen(false); }} className="text-left text-gray-700 hover:text-red-600 transition-colors">
+                Doar Sangue
               </button>
               <a href="#" className="text-gray-700 hover:text-red-600 transition-colors">
                 FAQ

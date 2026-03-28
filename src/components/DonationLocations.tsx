@@ -2,8 +2,11 @@ import { MapPin, Clock, Phone } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useNavigate } from "react-router";
 
 export function DonationLocations() {
+  const navigate = useNavigate();
+
   const locations = [
     {
       id: 1,
@@ -75,7 +78,10 @@ export function DonationLocations() {
                     <span>{location.phone}</span>
                   </div>
                   <div className="pt-4 flex gap-3">
-                    <Button className="flex-1 bg-red-600 hover:bg-red-700">
+                    <Button 
+                      onClick={() => navigate('/teste-elegibilidade')}
+                      className="flex-1 bg-red-600 hover:bg-red-700"
+                    >
                       Agendar Aqui
                     </Button>
                     <Button variant="outline" className="flex-1">

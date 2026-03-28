@@ -1,6 +1,9 @@
 import { Droplet, Facebook, Instagram, Twitter, Mail, Phone, MapPin } from "lucide-react";
+import { useNavigate } from "react-router";
 
 export function Footer() {
+  const navigate = useNavigate();
+
   return (
     <footer className="bg-gray-900 text-gray-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -33,8 +36,8 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li><a href="#" className="hover:text-red-500 transition-colors">Como Doar</a></li>
               <li><a href="#locais" className="hover:text-red-500 transition-colors">Locais de Doação</a></li>
-              <li><a href="#agendamento" className="hover:text-red-500 transition-colors">Agendar Doação</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Verificar Elegibilidade</a></li>
+              <li><button onClick={() => navigate('/teste-elegibilidade')} className="hover:text-red-500 transition-colors">Teste de Elegibilidade</button></li>
+              <li><button onClick={() => navigate('/cadastro-doacao')} className="hover:text-red-500 transition-colors">Cadastro e Agendamento</button></li>
               <li><a href="#" className="hover:text-red-500 transition-colors">FAQ</a></li>
             </ul>
           </div>

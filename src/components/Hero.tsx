@@ -1,8 +1,11 @@
 import { Button } from "./ui/button";
 import { Droplet } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useNavigate } from "react-router";
 
 export function Hero() {
+  const navigate = useNavigate();
+
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
     element?.scrollIntoView({ behavior: 'smooth' });
@@ -26,11 +29,11 @@ export function Hero() {
             </p>
             <div className="flex flex-wrap gap-4">
               <Button 
-                onClick={() => scrollToSection('agendamento')}
+                onClick={() => navigate('/teste-elegibilidade')}
                 size="lg" 
                 className="bg-red-600 hover:bg-red-700"
               >
-                Agendar Doação
+                Quero Doar Sangue
               </Button>
               <Button 
                 onClick={() => scrollToSection('locais')}

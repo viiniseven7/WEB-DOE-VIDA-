@@ -1,6 +1,10 @@
 import { Calendar, FileCheck, Droplet, Heart } from "lucide-react";
+import { Button } from "./ui/button";
+import { useNavigate } from "react-router";
 
 export function HowToDonate() {
+  const navigate = useNavigate();
+
   const steps = [
     {
       icon: Calendar,
@@ -82,6 +86,16 @@ export function HowToDonate() {
                 <p className="text-gray-700">Apresentar documento de identidade com foto</p>
               </div>
             </div>
+          </div>
+          
+          <div className="mt-8 text-center">
+            <Button 
+              onClick={() => navigate('/teste-elegibilidade')}
+              className="bg-red-600 hover:bg-red-700"
+              size="lg"
+            >
+              Verificar se Posso Doar
+            </Button>
           </div>
         </div>
       </div>
