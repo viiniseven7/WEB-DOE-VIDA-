@@ -1,0 +1,31 @@
+import { createBrowserRouter } from "react-router";
+import { Root } from "./components/Root";
+import { HomePage } from "./components/HomePage";
+import { LoginPage } from "./components/LoginPage";
+import { SignupPage } from "./components/SignupPage";
+import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
+import { ResetPasswordPage } from "./components/ResetPasswordPage";
+import { DonorDashboard } from "./components/dashboards/DonorDashboard";
+import { StaffDashboard } from "./components/dashboards/StaffDashboard";
+import { DirectorDashboard } from "./components/dashboards/DirectorDashboard";
+import { AdminDashboard } from "./components/dashboards/AdminDashboard";
+import { NotFound } from "./components/NotFound";
+
+export const router = createBrowserRouter([
+  {
+    path: "/",
+    Component: Root,
+    children: [
+      { index: true, Component: HomePage },
+      { path: "login", Component: LoginPage },
+      { path: "signup", Component: SignupPage },
+      { path: "forgot-password", Component: ForgotPasswordPage },
+      { path: "reset-password", Component: ResetPasswordPage },
+      { path: "dashboard/donor", Component: DonorDashboard },
+      { path: "dashboard/staff", Component: StaffDashboard },
+      { path: "dashboard/director", Component: DirectorDashboard },
+      { path: "dashboard/admin", Component: AdminDashboard },
+      { path: "*", Component: NotFound },
+    ],
+  },
+]);
