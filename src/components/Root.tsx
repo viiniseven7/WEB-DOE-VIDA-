@@ -10,61 +10,29 @@ export function Root() {
   const location = useLocation();
 
   useEffect(() => {
-    // Wait for auth to load before redirecting
-    if (isLoading) return;
-
-    // Redirect logic based on authentication and role
     const isDashboardRoute = location.pathname.startsWith('/dashboard');
     const isLoginRoute = location.pathname === '/login';
-    const isSignupRoute = location.pathname === '/signup';
     const isForgotPasswordRoute = location.pathname === '/forgot-password';
     const isResetPasswordRoute = location.pathname === '/reset-password';
-    const isHomePage = location.pathname === '/';
+    const isEligibilityTestRoute = location.pathname === '/teste-elegibilidade';
+    const isCadastroRoute = location.pathname === '/cadastro-doacao';
 
-    // Allow access to forgot password and reset password pages without authentication
-    if (isForgotPasswordRoute || isResetPasswordRoute) {
-      return;
+    // If not authenticated and trying to access dashboard, redirect to login
+    if (isDashboardRoute && !isAuthenticated) {
+      navigate('/login');
     }
 
-    // If user is authenticated and on login/signup page, redirect to appropriate dashboard
-    if (isAuthenticated && user && (isLoginRoute || isSignupRoute)) {
+    // If user is authenticated and on login page, redirect to appropriate dashboard
+    if (isAuthenticated && user && isLoginRoute) {
       const dashboardRoutes = {
         donor: '/dashboard/donor',
         staff: '/dashboard/staff',
         director: '/dashboard/director',
         admin: '/dashboard/admin',
       };
-      navigate(dashboardRoutes[user.role], { replace: true });
-      return;
+      navigate(dashboardRoutes[user.role]);
     }
-
-    // If user just logged in from home page, redirect to dashboard
-    if (isAuthenticated && user && isHomePage && sessionStorage.getItem('justLoggedIn')) {
-      sessionStorage.removeItem('justLoggedIn');
-      const dashboardRoutes = {
-        donor: '/dashboard/donor',
-        staff: '/dashboard/staff',
-        director: '/dashboard/director',
-        admin: '/dashboard/admin',
-      };
-      navigate(dashboardRoutes[user.role], { replace: true });
-      return;
-    }
-
-    // If user is trying to access a dashboard without being authenticated
-    if (!isAuthenticated && isDashboardRoute) {
-      navigate('/login', { replace: true });
-      return;
-    }
-
-    // If user is authenticated but trying to access wrong dashboard
-    if (isAuthenticated && user && isDashboardRoute) {
-      const correctDashboard = `/dashboard/${user.role}`;
-      if (location.pathname !== correctDashboard) {
-        navigate(correctDashboard, { replace: true });
-      }
-    }
-  }, [isAuthenticated, user, location.pathname, navigate, isLoading]);
+  }, [location, isAuthenticated, user, navigate]);
 
   // Show loading screen while checking authentication
   if (isLoading) {

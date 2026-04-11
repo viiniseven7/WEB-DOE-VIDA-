@@ -2,7 +2,6 @@ import { createBrowserRouter } from "react-router";
 import { Root } from "./components/Root";
 import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
-import { SignupPage } from "./components/SignupPage";
 import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { EligibilityTestPage } from "./components/EligibilityTestPage";
@@ -20,7 +19,6 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: HomePage },
       { path: "login", Component: LoginPage },
-      { path: "signup", Component: SignupPage },
       { path: "forgot-password", Component: ForgotPasswordPage },
       { path: "reset-password", Component: ResetPasswordPage },
       { path: "teste-elegibilidade", Component: EligibilityTestPage },

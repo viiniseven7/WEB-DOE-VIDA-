@@ -69,14 +69,14 @@ export function Header() {
               <>
                 <Button 
                   onClick={handleLoginClick}
-                  variant="outline"
+                  variant="ghost"
                   className="gap-2"
                 >
                   <LogIn className="w-4 h-4" />
                   Entrar
                 </Button>
                 <Button 
-                  onClick={() => { navigate('/signup'); setIsMenuOpen(false); }}
+                  onClick={() => { navigate('/cadastro-doacao'); setIsMenuOpen(false); }}
                   className="bg-red-600 hover:bg-red-700 gap-2"
                 >
                   <UserPlus className="w-4 h-4" />
@@ -127,7 +127,7 @@ export function Header() {
                     Entrar
                   </Button>
                   <Button 
-                    onClick={() => { navigate('/signup'); setIsMenuOpen(false); }}
+                    onClick={() => { navigate('/cadastro-doacao'); setIsMenuOpen(false); }}
                     className="bg-red-600 hover:bg-red-700 gap-2 w-full"
                   >
                     <UserPlus className="w-4 h-4" />

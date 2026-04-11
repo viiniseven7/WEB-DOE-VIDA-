@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "./ui/textarea";
 import { Calendar } from "./ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { 
@@ -29,6 +30,8 @@ export function RegistrationDonationPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<'personal' | 'appointment' | 'success'>('personal');
   const [date, setDate] = useState<Date>();
+  const [showGuardianModal, setShowGuardianModal] = useState(false);
+  const [showUnderageModal, setShowUnderageModal] = useState(false);
   
   // Dados pessoais
   const [formData, setFormData] = useState({
@@ -43,11 +46,21 @@ export function RegistrationDonationPage() {
     address: '',
     city: '',
     state: '',
+    password: '',
+    confirmPassword: '',
     // Agendamento
     location: '',
     appointmentDate: '',
     appointmentTime: '',
     notes: ''
+  });
+
+  // Dados do responsável legal (para menores de 16-17 anos)
+  const [guardianData, setGuardianData] = useState({
+    guardianName: '',
+    guardianCpf: '',
+    guardianBirthDate: '',
+    guardianPhone: '',
   });
 
   const bloodCenters = [
@@ -63,8 +76,47 @@ export function RegistrationDonationPage() {
     "15:00", "15:30", "16:00", "16:30", "17:00"
   ];
 
+  // Função para calcular idade
+  const calculateAge = (birthDateString: string): number => {
+    if (!birthDateString) return 0;
+    const today = new Date();
+    const birthDate = new Date(birthDateString);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Verificar idade quando a data de nascimento mudar
+    if (field === 'birthDate') {
+      const age = calculateAge(value);
+      if (age < 16) {
+        setShowUnderageModal(true);
+        // Limpar a data de nascimento para impedir o cadastro
+        setFormData(prev => ({ ...prev, birthDate: '' }));
+      } else if (age === 16 || age === 17) {
+        setShowGuardianModal(true);
+      }
+    }
+  };
+
+  const handleGuardianInputChange = (field: string, value: string) => {
+    setGuardianData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleGuardianModalConfirm = () => {
+    // Validar campos do responsável
+    if (!guardianData.guardianName || !guardianData.guardianCpf || 
+        !guardianData.guardianBirthDate || !guardianData.guardianPhone) {
+      alert('Por favor, preencha todos os campos do responsável.');
+      return;
+    }
+    setShowGuardianModal(false);
   };
 
   const handlePersonalDataSubmit = (e: React.FormEvent) => {
@@ -77,6 +129,7 @@ export function RegistrationDonationPage() {
     e.preventDefault();
     // Aqui seria enviado ao backend
     console.log('Dados do formulário:', formData);
+    console.log('Dados do responsável:', guardianData);
     setStep('success');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -567,6 +620,37 @@ export function RegistrationDonationPage() {
                     </div>
                   </div>
 
+                  {/* Senha */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Senha</h3>
+                    
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="password">Senha *</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          placeholder="Digite sua senha"
+                          value={formData.password}
+                          onChange={(e) => handleInputChange('password', e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="confirmPassword">Confirmar Senha *</Label>
+                        <Input
+                          id="confirmPassword"
+                          type="password"
+                          placeholder="Confirme sua senha"
+                          value={formData.confirmPassword}
+                          onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-lg py-6">
                     Continuar para Agendamento →
                   </Button>
@@ -720,6 +804,150 @@ export function RegistrationDonationPage() {
         </div>
       </div>
       <Footer />
+
+      {/* Modal para informações do responsável legal (16-17 anos) */}
+      <Dialog open={showGuardianModal} onOpenChange={setShowGuardianModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <User className="w-5 h-5 text-red-600" />
+              Informações do Responsável Legal
+            </DialogTitle>
+            <DialogDescription>
+              Como você tem 16 ou 17 anos, precisamos das informações do seu responsável legal para prosseguir com o cadastro.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="guardianName">Nome do Responsável *</Label>
+              <Input
+                id="guardianName"
+                placeholder="Digite o nome completo do responsável"
+                value={guardianData.guardianName}
+                onChange={(e) => handleGuardianInputChange('guardianName', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="guardianCpf">CPF do Responsável *</Label>
+              <Input
+                id="guardianCpf"
+                placeholder="000.000.000-00"
+                value={guardianData.guardianCpf}
+                onChange={(e) => handleGuardianInputChange('guardianCpf', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="guardianBirthDate">Data de Nascimento do Responsável *</Label>
+              <Input
+                id="guardianBirthDate"
+                type="date"
+                value={guardianData.guardianBirthDate}
+                onChange={(e) => handleGuardianInputChange('guardianBirthDate', e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Meios de Contato do Responsável *</Label>
+              
+              <div>
+                <Label htmlFor="guardianPhone" className="text-sm flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5 text-gray-600" />
+                  Telefone
+                </Label>
+                <Input
+                  id="guardianPhone"
+                  placeholder="(00) 00000-0000"
+                  value={guardianData.guardianPhone}
+                  onChange={(e) => handleGuardianInputChange('guardianPhone', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs text-amber-800">
+                <strong>Importante:</strong> O responsável legal deverá estar presente no dia da doação com um documento de identificação.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setShowGuardianModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              className="bg-red-600 hover:bg-red-700"
+              onClick={handleGuardianModalConfirm}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para menores de 16 anos */}
+      <Dialog open={showUnderageModal} onOpenChange={setShowUnderageModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              Idade Mínima Não Atingida
+            </DialogTitle>
+            <DialogDescription>
+              Você não possui a idade mínima para doação de sangue.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-900 font-semibold mb-2">
+                ❌ Infelizmente, você não pode doar sangue neste momento.
+              </p>
+              <p className="text-sm text-red-800">
+                Para ser apto à doação de sangue no Brasil, você precisa ter <strong>no mínimo 16 anos de idade</strong>.
+              </p>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-900 font-semibold mb-2">
+                📅 Requisitos de Idade para Doação:
+              </p>
+              <ul className="text-sm text-blue-800 space-y-1 ml-4">
+                <li>• <strong>16 a 17 anos:</strong> Pode doar com autorização dos pais ou responsável legal</li>
+                <li>• <strong>18 a 69 anos:</strong> Pode doar sem restrições</li>
+                <li>• <strong>Acima de 60 anos:</strong> Somente se já tiver doado antes dos 60 anos</li>
+              </ul>
+            </div>
+
+            <div className="text-center pt-2">
+              <p className="text-sm text-gray-600">
+                Agradecemos seu interesse em ajudar a salvar vidas! 💙<br/>
+                Quando atingir a idade mínima, esperamos você de volta.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              type="button" 
+              className="w-full bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                setShowUnderageModal(false);
+                navigate('/');
+              }}
+            >
+              Entendi, Voltar para Início
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

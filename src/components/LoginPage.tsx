@@ -170,17 +170,17 @@ export function LoginPage() {
                     {isLoading ? 'Entrando...' : 'Entrar'}
                   </Button>
 
-                  <div className="text-center text-sm text-gray-600">
+                  <p className="text-center text-sm text-gray-600">
                     Não tem uma conta?{' '}
                     <button
                       type="button"
-                      onClick={() => navigate('/signup')}
+                      onClick={() => navigate('/cadastro-doacao')}
                       className="text-red-600 hover:text-red-700 font-semibold"
                       disabled={isLoading}
                     >
-                      Cadastre-se
+                      Cadastre-se aqui
                     </button>
-                  </div>
+                  </p>
                 </form>
 
                 <div className="mt-6">
