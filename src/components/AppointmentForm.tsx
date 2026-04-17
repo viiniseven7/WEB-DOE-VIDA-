@@ -9,27 +9,50 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { CalendarIcon, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { api } from "../services/api";
+
+
 
 export function AppointmentForm() {
   const [date, setDate] = useState<Date>();
   const [isSubmitted, setIsSubmitted] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    phone: "",
-    bloodType: "",
-    location: "",
-    time: ""
+    telefone: "",
+    tipo_sang: "",
+    hemocentro_id: "",
+    time: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitted(true);
-    setTimeout(() => {
-      setIsSubmitted(false);
-      setFormData({ name: "", email: "", phone: "", bloodType: "", location: "", time: "" });
-      setDate(undefined);
-    }, 3000);
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  console.log("CLIQUEI NO BOTÃO 🔥"); // 👈 adiciona isso
+
+  try {
+      if (!date) {
+        console.error("Selecione uma data");
+        return;
+      }
+
+      const response = await api.post("/users", {
+        name: formData.name,
+        email: formData.email,
+        telefone: formData.telefone,
+        tipo_sang: formData.tipo_sang,
+        data: format(date, "yyyy-MM-dd"),
+        horario: formData.time,
+        hemocentro_id: Number(formData.hemocentro_id),
+      });
+
+      console.log(response.data);
+      setIsSubmitted(true);
+
+    } catch (error: any) {
+      console.error(error.response?.data || error);
+    }
   };
 
   if (isSubmitted) {
@@ -74,9 +97,11 @@ export function AppointmentForm() {
               Todos os campos são obrigatórios
             </CardDescription>
           </CardHeader>
+
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
+
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome Completo</Label>
                   <Input
@@ -84,7 +109,6 @@ export function AppointmentForm() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Seu nome completo"
                   />
                 </div>
 
@@ -96,7 +120,6 @@ export function AppointmentForm() {
                     required
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="seu@email.com"
                   />
                 </div>
 
@@ -106,42 +129,43 @@ export function AppointmentForm() {
                     id="phone"
                     type="tel"
                     required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="(11) 99999-9999"
+                    value={formData.telefone}
+                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="bloodType">Tipo Sanguíneo</Label>
-                  <Select value={formData.bloodType} onValueChange={(value) => setFormData({ ...formData, bloodType: value })}>
+                  <Label>Tipo Sanguíneo</Label>
+                  <Select
+                    value={formData.tipo_sang}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, tipo_sang: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione seu tipo" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="A+">A+</SelectItem>
-                      <SelectItem value="A-">A-</SelectItem>
-                      <SelectItem value="B+">B+</SelectItem>
-                      <SelectItem value="B-">B-</SelectItem>
-                      <SelectItem value="AB+">AB+</SelectItem>
-                      <SelectItem value="AB-">AB-</SelectItem>
                       <SelectItem value="O+">O+</SelectItem>
-                      <SelectItem value="O-">O-</SelectItem>
+                      {/* mantém os outros */}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location">Local de Doação</Label>
-                  <Select value={formData.location} onValueChange={(value) => setFormData({ ...formData, location: value })}>
+                  <Label>Local de Doação</Label>
+                  <Select
+                    value={formData.hemocentro_id}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, hemocentro_id: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o posto" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hemepar">Hemepar</SelectItem>
-                      <SelectItem value="erasto">Hospital Erasto Gaertner</SelectItem>
-                      <SelectItem value="ufpr">Hospital de Clínicas - UFPR</SelectItem>
-                      <SelectItem value="trabalhador">Hospital do Trabalhador</SelectItem>
+                      <SelectItem value="1">Hemepar</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -150,10 +174,7 @@ export function AppointmentForm() {
                   <Label>Data da Doação</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left"
-                      >
+                      <Button variant="outline" className="w-full justify-start text-left">
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {date ? format(date, "PPP", { locale: ptBR }) : "Selecione uma data"}
                       </Button>
@@ -170,36 +191,27 @@ export function AppointmentForm() {
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="time">Horário Preferencial</Label>
-                  <Select value={formData.time} onValueChange={(value) => setFormData({ ...formData, time: value })}>
+                  <Label>Horário Preferencial</Label>
+                  <Select
+                    value={formData.time}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, time: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o horário" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="07:00">07:00</SelectItem>
                       <SelectItem value="08:00">08:00</SelectItem>
                       <SelectItem value="09:00">09:00</SelectItem>
-                      <SelectItem value="10:00">10:00</SelectItem>
-                      <SelectItem value="11:00">11:00</SelectItem>
-                      <SelectItem value="12:00">12:00</SelectItem>
-                      <SelectItem value="13:00">13:00</SelectItem>
-                      <SelectItem value="14:00">14:00</SelectItem>
-                      <SelectItem value="15:00">15:00</SelectItem>
-                      <SelectItem value="16:00">16:00</SelectItem>
-                      <SelectItem value="17:00">17:00</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-sm text-amber-800">
-                  <strong>Importante:</strong> Certifique-se de estar alimentado e ter dormido bem antes da doação. 
-                  Evite alimentos gordurosos 3 horas antes.
-                </p>
-              </div>
-
-              <Button type="submit" className="w-full bg-red-600 hover:bg-red-700" size="lg">
+              <Button type="submit" className="w-full bg-red-600 hover:bg-red-700">
                 Confirmar Agendamento
               </Button>
             </form>
