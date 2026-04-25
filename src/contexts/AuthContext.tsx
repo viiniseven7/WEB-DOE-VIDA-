@@ -8,6 +8,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  role_id: number;
   bloodType?: string;
   phone?: string;
   cpf?: string;
@@ -30,93 +31,96 @@ export interface SignupData {
   email: string;
   password: string;
   name: string;
-  role?: UserRole;
+  role_id?: number;
   bloodType?: string;
   phone?: string;
   cpf?: string;
-  hemocenterId?: string;
-  hemocentroName?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-f9f63502`;
+const API_URL = 'http://localhost:8000/api';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing session on mount
+  // Normalizador Universal de Usuário (conforme DOC-API.md)
+  const normalizeUser = (data: any): User => {
+    const userData = data.user || data;
+    // Captura o role_id de onde quer que ele venha (raiz ou dentro do user)
+    const rid = Number(data.role_id || userData.role_id || userData.role || 1);
+
+    const roleMap: Record<number, UserRole> = {
+      1: 'donor',
+      2: 'staff',
+      3: 'director',
+      4: 'admin'
+    };
+
+    return {
+      ...userData,
+      id: userData.id?.toString(),
+      role: roleMap[rid] || 'donor',
+      role_id: rid,
+      phone: userData.phone || userData.telefone, // Mapeia telefone da API para o padrão do front
+    };
+  };
+
   useEffect(() => {
     const checkSession = async () => {
-      const accessToken = localStorage.getItem('access_token');
-      
-      if (accessToken) {
+      const token = localStorage.getItem('access_token');
+      if (token) {
         try {
           const response = await fetch(`${API_URL}/auth/me`, {
             headers: {
-              'Authorization': `Bearer ${accessToken}`,
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
             },
           });
 
           if (response.ok) {
             const data = await response.json();
-            setUser(data.user);
+            setUser(normalizeUser(data));
           } else {
-            // Token invalid, clear it
             localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
           }
         } catch (error) {
-          console.error('Error checking session:', error);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+          console.error('Erro na sessão:', error);
         }
       }
-      
       setIsLoading(false);
     };
-
     checkSession();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_URL}/auth/signin`, {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setUser(data.user);
-        localStorage.setItem('access_token', data.session.access_token);
-        localStorage.setItem('refresh_token', data.session.refresh_token);
-        sessionStorage.setItem('justLoggedIn', 'true');
+        setUser(normalizeUser(data));
+        localStorage.setItem('access_token', data.token || data.access_token);
         return true;
-      } else {
-        console.error('Login error:', data.error);
-        return false;
       }
+      return false;
     } catch (error) {
-      console.error('Login request error:', error);
+      console.error('Erro no login:', error);
       return false;
     }
   };
 
-  const signup = async (signupData: SignupData): Promise<{ success: boolean; error?: string }> => {
+  const signup = async (signupData: any): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch(`${API_URL}/auth/signup`, {
+      const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(signupData),
       });
 
@@ -124,11 +128,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Erro ao criar conta' };
       }
+      return { success: false, error: data.message || JSON.stringify(data.errors) };
     } catch (error) {
-      console.error('Signup request error:', error);
       return { success: false, error: 'Erro ao conectar com o servidor' };
     }
   };
@@ -136,15 +138,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
   };
 
   return (
     <AuthContext.Provider value={{ 
-      user, 
-      login, 
-      signup,
-      logout, 
+      user, login, signup, logout, 
       isAuthenticated: !!user,
       isLoading,
     }}>
@@ -155,8 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }

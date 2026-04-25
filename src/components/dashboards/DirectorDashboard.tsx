@@ -123,6 +123,18 @@ export function DirectorDashboard() {
       return;
     }
 
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST /auth/users
+    // const payload = {
+    //   name: newStaff.name, // Corrigido de nome
+    //   email: newStaff.email,
+    //   cpf: newStaff.cpf,
+    //   role: newStaff.role, // Corrigido de cargo
+    //   phone: newStaff.phone, // Corrigido de telefone
+    //   password: "senha_padrao_ou_gerada" // Senha necessária para criação
+    // };
+    // await fetch('/auth/users', { method: 'POST', body: JSON.stringify(payload) });
+
     const staffMember = {
       id: String(staff.length + 1),
       name: newStaff.name,
@@ -154,19 +166,23 @@ export function DirectorDashboard() {
     const amount = parseInt(stockAmount);
     const maxStock = 150; // máximo genérico
 
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
+    // const payload = {
+    //   blood_type: selectedBloodType, // Corrigido de tipo_sanguineo
+    //   amount: amount, // Corrigido de quantidade
+    //   action: stockAction, // 'add' ou 'remove' (Corrigido de acao)
+    // };
+    // await fetch('/estoque/atualizar', { method: 'POST', body: JSON.stringify(payload) });
+
     setStock(prev =>
       prev.map(item => {
         if (item.type === selectedBloodType) {
-          const newCurrent = stockAction === 'add' 
+          const newCurrent = stockAction === 'add'
             ? Math.min(item.current + amount, maxStock)
             : Math.max(item.current - amount, 0);
           const newPercentage = (newCurrent / maxStock) * 100;
-          
-          return {
-            ...item,
-            current: newCurrent,
-            percentage: newPercentage
-          };
+          return { ...item, current: newCurrent, percentage: newPercentage };
         }
         return item;
       })

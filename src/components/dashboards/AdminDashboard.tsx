@@ -433,6 +433,21 @@ export function AdminDashboard() {
   // Hemocentro handlers
   const handleCreateHemocentro = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST /auth/hemocentros
+    // const payload = {
+    //   name: "...", // Corrigido de nome
+    //   city: "...", // Corrigido de cidade
+    //   state: "...", // Corrigido de estado
+    //   address: "...", // Corrigido de endereco
+    //   phone: "...", // Corrigido de telefone
+    //   email: "...",
+    //   capacity: 0, // Corrigido de capacidade
+    //   status: "active"
+    // };
+    // await fetch('/auth/hemocentros', { method: 'POST', body: JSON.stringify(payload) });
+
     setShowHemocentroDialog(false);
     toast.success('Hemocentro criado com sucesso!');
   };
@@ -458,14 +473,25 @@ export function AdminDashboard() {
     }
 
     const amount = parseInt(stockAmount);
+
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
+    // const payload = {
+    //   blood_type: selectedBloodType, // Corrigido de tipo_sanguineo
+    //   amount: amount, // Corrigido de quantidade
+    //   action: stockAction, // 'add' ou 'remove' (Corrigido de acao)
+    //   hemocenter_id: selectedHemocentroForStock === 'all' ? null : selectedHemocentroForStock
+    // };
+    // await fetch('/estoque/atualizar', { method: 'POST', body: JSON.stringify(payload) });
+
     setGlobalStock(prev =>
       prev.map(item => {
         if (item.type === selectedBloodType) {
-          const newCurrent = stockAction === 'add' 
+          const newCurrent = stockAction === 'add'
             ? Math.min(item.current + amount, item.max)
             : Math.max(item.current - amount, 0);
           const newCritical = newCurrent < item.min;
-          
+
           return {
             ...item,
             current: newCurrent,
@@ -475,7 +501,6 @@ export function AdminDashboard() {
         return item;
       })
     );
-
     toast.success(
       stockAction === 'add'
         ? `${amount} bolsas adicionadas ao estoque global de ${selectedBloodType}`
@@ -487,6 +512,18 @@ export function AdminDashboard() {
   // User handlers
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST /auth/users
+    // const payload = {
+    //   name: "...", // Corrigido de nome
+    //   email: "...",
+    //   role: "...", // Corrigido de cargo
+    //   hemocenter_id: "...", // Corrigido de hemocentro
+    //   password: "..." // Corrigido de senha
+    // };
+    // await fetch('/auth/users', { method: 'POST', body: JSON.stringify(payload) });
+
     setShowUserDialog(false);
     toast.success('Usuário criado com sucesso!');
   };
@@ -498,6 +535,18 @@ export function AdminDashboard() {
 
   const handleUpdateUser = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota PUT /users/{id}
+    // const payload = {
+    //   name: selectedUser.name, // Corrigido de nome
+    //   email: selectedUser.email,
+    //   role: selectedUser.role, // Corrigido de cargo
+    //   hemocenter_id: selectedUser.hemocentroId, // Corrigido de hemocentro
+    //   status: selectedUser.status
+    // };
+    // await fetch(`/users/${selectedUser.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
     setUsers(prev =>
       prev.map(u => u.id === selectedUser.id ? selectedUser : u)
     );
@@ -540,6 +589,20 @@ export function AdminDashboard() {
 
   const handleUpdateHemocentro = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota PUT /auth/hemocentros/{id}
+    // const payload = {
+    //   name: selectedHemocentro.name, // Corrigido de nome
+    //   city: selectedHemocentro.city, // Corrigido de cidade
+    //   state: selectedHemocentro.state, // Corrigido de estado
+    //   phone: selectedHemocentro.phone, // Corrigido de telefone
+    //   email: selectedHemocentro.email,
+    //   capacity: selectedHemocentro.capacity, // Corrigido de capacidade
+    //   status: selectedHemocentro.status
+    // };
+    // await fetch(`/auth/hemocentros/${selectedHemocentro.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
     // Aqui você atualizaria no backend/estado
     setShowEditHemocentroDialog(false);
     setSelectedHemocentro(null);

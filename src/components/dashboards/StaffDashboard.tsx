@@ -124,6 +124,14 @@ export function StaffDashboard() {
   };
 
   const handleCompleteDonation = (appointmentId: string) => {
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota PUT /agendamentos/{id} ou endpoint específico
+    // const payload = {
+    //   status: "completed", // Corrigido de status da doação
+    //   blood_amount: 450 // Corrigido de quantidade_sangue
+    // };
+    // await fetch(`/agendamentos/${appointmentId}`, { method: 'PUT', body: JSON.stringify(payload) });
+
     setAppointments(prev =>
       prev.map(apt =>
         apt.id === appointmentId
@@ -135,6 +143,13 @@ export function StaffDashboard() {
   };
 
   const handleCancelDonation = (appointmentId: string) => {
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota PUT /agendamentos/{id} ou endpoint específico
+    // const payload = {
+    //   status: "cancelled" // Corrigido de status
+    // };
+    // await fetch(`/agendamentos/${appointmentId}`, { method: 'PUT', body: JSON.stringify(payload) });
+
     setAppointments(prev =>
       prev.map(apt =>
         apt.id === appointmentId
@@ -176,19 +191,28 @@ export function StaffDashboard() {
     }
 
     const amount = parseInt(stockAmount);
+
+    // REQUEST PARA API
+    // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
+    // const payload = {
+    //   blood_type: selectedBloodType, // Corrigido de tipo_sanguineo
+    //   amount: amount, // Corrigido de quantidade
+    //   action: stockAction, // 'add' ou 'remove' (Corrigido de acao)
+    // };
+    // await fetch('/estoque/atualizar', { method: 'POST', body: JSON.stringify(payload) });
+
     setStock(prev =>
       prev.map(item =>
         item.type === selectedBloodType
           ? {
               ...item,
-              current: stockAction === 'add' 
+              current: stockAction === 'add'
                 ? Math.min(item.current + amount, item.max)
                 : Math.max(item.current - amount, 0)
             }
           : item
       )
     );
-
     toast.success(
       stockAction === 'add'
         ? `${amount} bolsas adicionadas ao estoque de ${selectedBloodType}`
