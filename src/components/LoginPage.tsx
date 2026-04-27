@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,45 +13,71 @@ import api from '../services/api';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const location = useLocation();
+  const { login, user } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [token, setToken] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [resetMode, setResetMode] = useState(false);
-  const [token, setToken] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
-  setIsLoading(true);
+  // ✅ REDIRECIONAMENTO SEM LOOP (CORRIGIDO)
+ useEffect(() => {
+  if (!user) return;
 
-  const user = await login(email, password);
+ const role = typeof user.roles?.[0] === "string"
+  ? user.roles[0].toLowerCase()
+  : user.roles?.[0]?.name?.toLowerCase();
 
-  setIsLoading(false);
+  let target = '';
 
-  if (user) {
-    toast.success('Login realizado com sucesso!');
+  if (role === 'doador') target = '/dashboard/doador';
+  else if (role === 'funcionario') target = '/dashboard/funcionario';
+  else if (role === 'diretor') target = '/dashboard/diretor';
+  else if (role === 'admin') target = '/dashboard/admin';
 
-    const role = user.roles?.[0];
-    
-
-    if (role === 'doador') navigate('/dashboard/doador');
-    else if (role === 'funcionario') navigate('/dashboard/funcionario');
-    else if (role === 'diretor') navigate('/dashboard/diretor');
-    else if (role === 'admin') navigate('/dashboard/admin');
-
-  } else {
-    setError('Email ou senha inválidos');
-    toast.error('Falha no login');
+  // 🔥 evita loop e piscada
+  if (target && location.pathname !== target) {
+    navigate(target, { replace: true });
   }
-};// ✅ handleSubmit fechado aqui
 
-  const handleForgot = async () => {
+}, [user, location.pathname, navigate]);
+
+  // 🔐 LOGIN
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
     try {
-      await api.post("/auth/forgot-password", { email });
+      const loggedUser = await login(email, password);
+
+      if (!loggedUser) {
+        setError('Credenciais inválidas');
+      }
+
+    } catch {
+      setError('Erro ao fazer login');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 📩 ESQUECI SENHA
+  const handleForgot = async () => {
+    if (!resetEmail) {
+      toast.error("Digite o email");
+      return;
+    }
+
+    try {
+      await api.post("/auth/forgot-password", { email: resetEmail });
       toast.success("Email enviado!");
       setResetMode(true);
     } catch {
@@ -59,22 +85,33 @@ export function LoginPage() {
     }
   };
 
+  // 🔁 RESET SENHA
   const handleReset = async () => {
+    if (!token || !resetPassword) {
+      toast.error("Preencha todos os campos");
+      return;
+    }
+
     try {
       await api.post("/auth/reset-password", {
-        email,
-        password,
-        password_confirmation: password,
+        email: resetEmail,
+        password: resetPassword,
+        password_confirmation: resetPassword,
         token,
       });
+
       toast.success("Senha redefinida!");
       setShowForgot(false);
       setResetMode(false);
+      setToken('');
+      setResetPassword('');
+
     } catch {
       toast.error("Erro ao redefinir senha");
     }
   };
 
+  // ⚡ AUTO PREENCHER
   const fillCredentials = (userEmail: string, userPassword: string) => {
     setEmail(userEmail);
     setPassword(userPassword);
