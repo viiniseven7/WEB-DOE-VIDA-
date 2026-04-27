@@ -22,7 +22,7 @@ const bloodCenters = [
 export function DonorDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
-
+  const [dashboard, setDashboard] = useState(null);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -41,30 +41,33 @@ export function DonorDashboard() {
   });
 
   // ✅ navigate() dentro do useEffect
-  useEffect(() => {
-    if (!user || !user?.roles?.includes("doador")) {
-      navigate('/login');
-    }
-  }, [user, navigate]);
-
-  // ✅ Retorna null enquanto redireciona, sem chamar navigate() no render
-  if (!user || !user?.roles?.includes("doador")) {
-    return null;
-  }
-
-  const loadData = async () => {
+// 🔐 proteção de rota
+useEffect(() => {
+  const fetchAll = async () => {
     try {
-      const res = await api.get("/me/agendamentos");
-      setAppointments(res.data);
-      setHistory(res.data.filter((a: any) => a.status === "concluido"));
-    } catch (error) {
-      console.error("Erro ao carregar dados");
+      const [dashboardRes, agendamentosRes] = await Promise.all([
+        api.get("/me/dashboard"),
+        api.get("/me/agendamentos")
+      ]);
+
+      setDashboard(dashboardRes.data);
+      setAppointments(agendamentosRes.data);
+      setHistory(
+        agendamentosRes.data.filter((a: any) => a.status === "concluido")
+      );
+
+    } catch (error: any) {
+      console.error(error);
+
+      if (error.response?.status === 403) {
+        localStorage.removeItem("token");
+        navigate("/login", { replace: true });
+      }
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  fetchAll();
+}, []);
 
   const upcomingAppointment = appointments.find((a: any) => a.status === "pendente");
 
@@ -86,7 +89,7 @@ export function DonorDashboard() {
     try {
       await api.put(`/agendamentos/${upcomingAppointment.id}`, { status: "confirmado" });
       toast.success("Doação confirmada!");
-      loadData();
+      
     } catch {
       toast.error("Erro ao confirmar");
     }
@@ -105,7 +108,7 @@ export function DonorDashboard() {
       });
       toast.success("Reagendado!");
       setRescheduleDialogOpen(false);
-      loadData();
+      
     } catch {
       toast.error("Erro ao reagendar");
     }
@@ -135,7 +138,7 @@ export function DonorDashboard() {
           </div>
           <div className="flex items-center gap-4">
             <Avatar>
-              <AvatarFallback className="bg-red-100 text-red-600">{user.name?.[0]}</AvatarFallback>
+              <AvatarFallback className="bg-red-100 text-red-600">{user?.name?.[0] || "?"}</AvatarFallback>
             </Avatar>
             <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
               <LogOut className="h-4 w-4" /> Sair
@@ -146,9 +149,9 @@ export function DonorDashboard() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card><CardHeader><CardDescription>Total Doações</CardDescription><CardTitle>{user.donationCount || 0}</CardTitle></CardHeader></Card>
-          <Card><CardHeader><CardDescription>Tipo Sanguíneo</CardDescription><CardTitle>{user.tipo_sang || 'N/A'}</CardTitle></CardHeader></Card>
-          <Card><CardHeader><CardDescription>Vidas Salvas</CardDescription><CardTitle>{(user.donationCount || 0) * 4}</CardTitle></CardHeader></Card>
+          <Card><CardHeader><CardDescription>Total Doações</CardDescription><CardTitle>{user?.donationCount || 0}</CardTitle></CardHeader></Card>
+          <Card><CardHeader><CardDescription>Tipo Sanguíneo</CardDescription><CardTitle>{user?.tipo_sang || 'N/A'}</CardTitle></CardHeader></Card>
+          <Card><CardHeader><CardDescription>Vidas Salvas</CardDescription><CardTitle>{(user?.donationCount || 0) * 4}</CardTitle></CardHeader></Card>
           <Card><CardHeader><CardDescription>Dias para Doar</CardDescription><CardTitle>{daysUntilNextDonation < 0 ? 0 : daysUntilNextDonation}</CardTitle></CardHeader></Card>
         </div>
 
@@ -191,7 +194,7 @@ export function DonorDashboard() {
                       try {
                         await api.post("/agendamentos", { data: selectedDate, horario: "09:00", hemocentro_id: 1 });
                         toast.success("Agendado!");
-                        loadData();
+                        
                       } catch {
                         toast.error("Erro ao agendar");
                       }
@@ -227,10 +230,10 @@ export function DonorDashboard() {
               <CardHeader><CardTitle>Dados Pessoais</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div><Label>CPF</Label><p className="font-medium">{user.cpf}</p></div>
-                  <div><Label>Telefone</Label><p className="font-medium">{user.telefone}</p></div>
-                  <div><Label>Tipo Sanguíneo</Label><p className="font-medium">{user.tipo_sang}</p></div>
-                  <div><Label>Endereço</Label><p className="font-medium">{user.rua}, {user.numero}</p></div>
+                  <div><Label>CPF</Label><p className="font-medium">{user?.cpf || "-"}</p></div>
+                  <div><Label>Telefone</Label><p className="font-medium">{user?.telefone || "-"}</p></div>
+                  <div><Label>Tipo Sanguíneo</Label><p className="font-medium">{user?.tipo_sang || "-"}</p></div>
+                  <div><Label>Endereço</Label><p className="font-medium">{user?.rua || "-"}, {user?.numero || "-"}</p></div>
                 </div>
                 <Button onClick={handleEditProfile} variant="outline" className="gap-2">
                   <UserIcon className="h-4 w-4" /> Editar Perfil

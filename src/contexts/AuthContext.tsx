@@ -51,34 +51,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // 🔐 LOGIN CORRETO
-  const login = async (email: string, password: string): Promise<User | null> => {
-    try {
-      const response = await api.post("/auth/login", {
-        email,
-        password,
-      });
+  const login = async (email: string, password: string) => {
+  try {
+    const res = await api.post("/auth/login", {
+      email,
+      password,
+    });
 
-      const token = response.data.token;
+    // 🔥 SALVA O TOKEN
+    localStorage.setItem("token", res.data.token);
 
-      localStorage.setItem("token", token);
+    // 🔥 salva usuário também (se tiver)
+    setUser(res.data.user);
 
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    return res.data.user;
 
-      const me = await api.get("/auth/me");
-
-      const loggedUser: User = {
-        ...me.data.user,
-        roles: me.data.roles || []
-      };
-
-      setUser(loggedUser);
-
-      return loggedUser;
-
-    } catch (error) {
-      return null;
-    }
-  };
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+};
 
   // 📝 REGISTER
  const signup = async (data: any): Promise<boolean> => {
