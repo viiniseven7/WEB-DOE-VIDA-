@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -28,7 +28,7 @@ import {
   Mail,
   MapPin
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 // Mock data
 const todayAppointments = [
@@ -112,7 +112,7 @@ export function StaffDashboard() {
   const [donorSearchResult, setDonorSearchResult] = useState<any>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
 
-  if (!user || user.role !== 'staff') {
+  if (!user || user.roles[0] !== 'staff') {
     navigate('/login');
     return null;
   }

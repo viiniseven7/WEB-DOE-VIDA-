@@ -1,7 +1,7 @@
 import { Button } from "./ui/button";
 import { Droplet } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 
 export function Hero() {
   const navigate = useNavigate();

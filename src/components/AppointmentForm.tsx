@@ -9,49 +9,98 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { CalendarIcon, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { api } from "../services/api";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import api from "../services/api";
 
 
+
+// 🔥 MANTIVE IMPORTS
+
+interface FormData {
+  name: string;
+  email: string;
+  password: string;
+  cpf: string;
+  sexo: string;
+  cep: string;
+  rua: string;
+  numero: string;
+  cidade: string;
+
+  // 👇 campos extras (não vão pro backend agora)
+  telefone?: string;
+  tipo_sang?: string;
+  hemocentro_id?: string;
+  time?: string;
+}
 
 export function AppointmentForm() {
-  const [date, setDate] = useState<Date>();
+  const [date, setDate] = useState<Date | undefined>();
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const handleLogout = () => {
+  logout();
+  navigate("/login");
+};
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     name: "",
     email: "",
+    password: "",
+    cpf: "",
+    sexo: "",
+    cep: "",
+    rua: "",
+    numero: "",
+    cidade: "",
     telefone: "",
     tipo_sang: "",
     hemocentro_id: "",
     time: "",
   });
 
+  function handleChange(field: keyof FormData, value: string) {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  console.log("CLIQUEI NO BOTÃO 🔥"); // 👈 adiciona isso
-
-  try {
+    try {
       if (!date) {
-        console.error("Selecione uma data");
+        alert("Selecione a data de nascimento");
         return;
       }
 
-      const response = await api.post("/users", {
+      // 🔥 ENVIA SÓ O QUE O BACKEND ACEITA
+      const response = await api.post("/auth/register", {
         name: formData.name,
         email: formData.email,
-        telefone: formData.telefone,
-        tipo_sang: formData.tipo_sang,
-        data: format(date, "yyyy-MM-dd"),
-        horario: formData.time,
-        hemocentro_id: Number(formData.hemocentro_id),
+        password: formData.password,
+        password_confirmation: formData.password,
+        cpf: formData.cpf,
+        sexo: formData.sexo,
+        data_nasc: format(date, "dd/MM/yyyy"),
+        cep: formData.cep,
+        rua: formData.rua,
+        numero: formData.numero,
+        cidade: formData.cidade,
       });
 
       console.log(response.data);
+
       setIsSubmitted(true);
+
+      alert("Cadastro realizado com sucesso!");
 
     } catch (error: any) {
       console.error(error.response?.data || error);
+      alert("Erro ao cadastrar");
     }
   };
 
@@ -83,12 +132,37 @@ export function AppointmentForm() {
   return (
     <div id="agendamento" className="bg-white py-20">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl text-gray-900 mb-4">Agende sua Doação</h2>
-          <p className="text-xl text-gray-600">
-            Preencha o formulário abaixo para agendar sua doação de sangue
-          </p>
-        </div>
+       <div className="mb-12 space-y-4">
+
+  {/* 🔥 HEADER */}
+  <div className="flex justify-between items-center">
+
+    <h2 className="text-4xl text-gray-900">Agende sua Doação</h2>
+
+    <div className="flex gap-2">
+      <Button
+        className="bg-red-600 hover:bg-red-700"
+        onClick={() => navigate("/painel")}
+      >
+        Meu Painel
+      </Button>
+
+      <Button
+        variant="destructive"
+        onClick={handleLogout}
+      >
+        Sair
+      </Button>
+    </div>
+
+  </div>
+
+  {/* 🔥 SUBTEXTO */}
+  <p className="text-xl text-gray-600">
+    Preencha o formulário abaixo para agendar sua doação de sangue
+  </p>
+
+</div>
 
         <Card>
           <CardHeader>

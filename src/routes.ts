@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter } from "react-router-dom";
 import { Root } from "./components/Root";
 import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
@@ -23,9 +23,9 @@ export const router = createBrowserRouter([
       { path: "reset-password", Component: ResetPasswordPage },
       { path: "teste-elegibilidade", Component: EligibilityTestPage },
       { path: "cadastro-doacao", Component: RegistrationDonationPage },
-      { path: "dashboard/donor", Component: DonorDashboard },
-      { path: "dashboard/staff", Component: StaffDashboard },
-      { path: "dashboard/director", Component: DirectorDashboard },
+      { path: "dashboard/doador", Component: DonorDashboard },
+      { path: "dashboard/funcionario", Component: StaffDashboard },
+      { path: "dashboard/diretor", Component: DirectorDashboard },
       { path: "dashboard/admin", Component: AdminDashboard },
       { path: "*", Component: NotFound },
     ],

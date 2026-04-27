@@ -1,5 +1,5 @@
 import { Droplet, Facebook, Instagram, Twitter } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 
 export function Footer() {
   const navigate = useNavigate();

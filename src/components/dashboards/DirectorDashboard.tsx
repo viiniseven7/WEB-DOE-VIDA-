@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -29,7 +29,7 @@ import {
   FileSpreadsheet,
   FilePieChart
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 // Mock data
@@ -101,7 +101,7 @@ export function DirectorDashboard() {
   const [reportType, setReportType] = useState('');
   const [reportFormat, setReportFormat] = useState('pdf');
 
-  if (!user || user.role !== 'director') {
+  if (!user || user.roles[0] !== 'director') {
     navigate('/login');
     return null;
   }
