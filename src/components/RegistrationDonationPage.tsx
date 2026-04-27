@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
+import { useAuth } from "../contexts/AuthContext";
 import { 
   ArrowLeft, 
   Calendar as CalendarIcon, 
@@ -25,35 +26,37 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import  api  from "../services/api";
 
 export function RegistrationDonationPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'personal' | 'appointment' | 'success'>('personal');
-  const [date, setDate] = useState<Date>();
+  const { signup } = useAuth(); // ✅ AQUI
+
+  const [step, setStep] = useState<'personal' | 'appointment' | 'success'>('personal');const [date, setDate] = useState<Date>();
   const [showGuardianModal, setShowGuardianModal] = useState(false);
   const [showUnderageModal, setShowUnderageModal] = useState(false);
   
   // Dados pessoais
   const [formData, setFormData] = useState({
-    fullName: '',
-    cpf: '',
-    birthDate: '',
-    gender: '',
-    bloodType: '',
-    email: '',
-    phone: '',
-    zipCode: '',
-    address: '',
-    city: '',
-    state: '',
-    password: '',
-    confirmPassword: '',
-    // Agendamento
-    location: '',
-    appointmentDate: '',
-    appointmentTime: '',
-    notes: ''
-  });
+  fullName: '',
+  cpf: '',
+  birthDate: '',
+  gender: '',
+  bloodType: '',
+  email: '',
+  telefone: '',
+  numero: '', // ✅ CAMPO CORRETO
+  zipCode: '',
+  address: '',
+  city: '',
+  state: '',
+  password: '',
+  confirmPassword: '',
+  location: '',
+  appointmentDate: '',
+  appointmentTime: '',
+  notes: ''
+});
 
   // Dados do responsável legal (para menores de 16-17 anos)
   const [guardianData, setGuardianData] = useState({
@@ -90,7 +93,11 @@ export function RegistrationDonationPage() {
   };
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  setFormData(prev => ({
+    ...prev,
+    [field]: value,
+  }));
+
     
     // Verificar idade quando a data de nascimento mudar
     if (field === 'birthDate') {
@@ -125,14 +132,69 @@ export function RegistrationDonationPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleAppointmentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Aqui seria enviado ao backend
-    console.log('Dados do formulário:', formData);
-    console.log('Dados do responsável:', guardianData);
-    setStep('success');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+ const handleAppointmentSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  try {
+    if (!date) {
+      alert("Selecione uma data");
+      return;
+    }
+
+    // 🔥 TELEFONE LIMPO (APENAS NÚMEROS)
+    const telefoneLimpo = formData.telefone.replace(/\D/g, "");
+
+    if (telefoneLimpo.length !== 11) {
+      alert("Telefone deve ter 11 dígitos (DDD + número)");
+      return;
+    }
+
+    console.log("Telefone enviado:", telefoneLimpo);
+
+    const success = await signup({
+  name: formData.fullName.trim(),
+  email: formData.email.trim(),
+  password: formData.password,
+  password_confirmation: formData.confirmPassword,
+
+  cpf: formData.cpf.replace(/\D/g, ""),
+  sexo:
+    formData.gender === "male"
+      ? "M"
+      : formData.gender === "female"
+      ? "F"
+      : "Outro",
+
+  data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
+  telefone: telefoneLimpo,
+
+  cep: formData.zipCode.replace(/\D/g, ""),
+  rua: formData.address,
+  numero: formData.numero,
+  cidade: formData.city,
+  uf: formData.state.substring(0, 2).toUpperCase(),
+});
+
+if (success) {
+  alert("Cadastro realizado com sucesso!");
+  navigate("/login"); // 🔥 SIMPLES E FUNCIONAL
+} else {
+  alert("Erro ao cadastrar");
+}
+
+    console.log("SUCESSO:", User);
+
+    setStep("success");
+
+  } catch (error: any) {
+    console.error("ERRO COMPLETO:", error.response?.data);
+
+    alert(
+      error.response?.data?.message ||
+      "Erro ao cadastrar. Verifique os dados."
+    );
+  }
+};
 
   if (step === 'success') {
     return (
@@ -382,6 +444,15 @@ export function RegistrationDonationPage() {
     );
   }
 
+  function formatTelefone(value: string): string {
+  const numbers = value.replace(/\D/g, "");
+
+  return numbers
+    .slice(0, 11)
+    .replace(/^(\d{2})(\d)/g, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2");
+}
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -550,14 +621,16 @@ export function RegistrationDonationPage() {
                       </div>
 
                       <div>
-                        <Label htmlFor="phone">Telefone/Celular *</Label>
+                        <Label htmlFor="telefone">Telefone/Celular *</Label>
                         <Input
-                          id="phone"
-                          placeholder="(00) 00000-0000"
-                          value={formData.phone}
-                          onChange={(e) => handleInputChange('phone', e.target.value)}
-                          required
-                        />
+  id="telefone"
+  placeholder="(00) 00000-0000"
+  value={formData.telefone}
+  onChange={(e) =>
+    handleInputChange("telefone", formatTelefone(e.target.value))
+  }
+  required
+/>
                       </div>
                     </div>
                   </div>
@@ -577,6 +650,19 @@ export function RegistrationDonationPage() {
                           required
                         />
                       </div>
+                      <div>
+  <Label htmlFor="numero">Número *</Label>
+  <Input
+    id="numero"
+    placeholder="Ex: 123"
+    maxLength={10}
+    value={formData.numero}
+    onChange={(e) => handleInputChange('numero', e.target.value)}
+    required
+  />
+</div>
+
+
 
                       <div className="sm:col-span-2">
                         <Label htmlFor="address">Endereço Completo *</Label>

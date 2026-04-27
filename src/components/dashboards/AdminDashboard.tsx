@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -39,7 +39,7 @@ import {
   XCircle,
   Filter
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Mock data
@@ -346,7 +346,7 @@ export function AdminDashboard() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userFilter, setUserFilter] = useState('all');
 
-  if (!user || user.role !== 'admin') {
+  if (!user || user.roles[0] !== 'admin') {
     navigate('/login');
     return null;
   }

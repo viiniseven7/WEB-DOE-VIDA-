@@ -1,150 +1,108 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-
-export type UserRole = 'donor' | 'staff' | 'director' | 'admin';
+import api from '../services/api';
 
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
-  role: UserRole;
-  bloodType?: string;
-  phone?: string;
-  cpf?: string;
-  donationCount?: number;
-  lastDonation?: string;
-  hemocenterId?: string;
-  hemocentroName?: string;
+  roles: string[];
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<User | null>;
+  signup: (data: any) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
 
-export interface SignupData {
-  email: string;
-  password: string;
-  name: string;
-  role?: UserRole;
-  bloodType?: string;
-  phone?: string;
-  cpf?: string;
-  hemocenterId?: string;
-  hemocentroName?: string;
-}
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-f9f63502`;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing session on mount
+  // 🔄 AUTO LOGIN
   useEffect(() => {
     const checkSession = async () => {
-      const accessToken = localStorage.getItem('access_token');
-      
-      if (accessToken) {
+      const token = localStorage.getItem('token');
+
+      if (token) {
         try {
-          const response = await fetch(`${API_URL}/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-            },
+          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+          const response = await api.get('/auth/me');
+
+          setUser({
+            ...response.data.user,
+            roles: response.data.roles || []
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-          } else {
-            // Token invalid, clear it
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-          }
-        } catch (error) {
-          console.error('Error checking session:', error);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+        } catch {
+          localStorage.removeItem('token');
         }
       }
-      
+
       setIsLoading(false);
     };
 
     checkSession();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  // 🔐 LOGIN CORRETO
+  const login = async (email: string, password: string): Promise<User | null> => {
     try {
-      const response = await fetch(`${API_URL}/auth/signin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({ email, password }),
+      const response = await api.post("/auth/login", {
+        email,
+        password,
       });
 
-      const data = await response.json();
+      const token = response.data.token;
 
-      if (response.ok) {
-        setUser(data.user);
-        localStorage.setItem('access_token', data.session.access_token);
-        localStorage.setItem('refresh_token', data.session.refresh_token);
-        sessionStorage.setItem('justLoggedIn', 'true');
-        return true;
-      } else {
-        console.error('Login error:', data.error);
-        return false;
-      }
+      localStorage.setItem("token", token);
+
+      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+      const me = await api.get("/auth/me");
+
+      const loggedUser: User = {
+        ...me.data.user,
+        roles: me.data.roles || []
+      };
+
+      setUser(loggedUser);
+
+      return loggedUser;
+
     } catch (error) {
-      console.error('Login request error:', error);
-      return false;
+      return null;
     }
   };
 
-  const signup = async (signupData: SignupData): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(`${API_URL}/auth/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(signupData),
-      });
+  // 📝 REGISTER
+ const signup = async (data: any): Promise<boolean> => {
+  try {
+    await api.post('/auth/register', data);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
 
-      const data = await response.json();
-
-      if (response.ok) {
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Erro ao criar conta' };
-      }
-    } catch (error) {
-      console.error('Signup request error:', error);
-      return { success: false, error: 'Erro ao conectar com o servidor' };
-    }
-  };
-
+  // 🚪 LOGOUT
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common["Authorization"];
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      login, 
+    <AuthContext.Provider value={{
+      user,
+      login,
       signup,
-      logout, 
+      logout,
       isAuthenticated: !!user,
       isLoading,
     }}>
@@ -155,8 +113,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

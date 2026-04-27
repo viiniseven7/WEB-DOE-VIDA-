@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -18,7 +18,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from 'sonner';
 import {
   projectId,
   publicAnonKey,
