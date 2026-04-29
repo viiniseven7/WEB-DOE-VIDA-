@@ -58,10 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
 
-    // 🔥 SALVA O TOKEN
     localStorage.setItem("token", res.data.token);
 
-    // 🔥 salva usuário também (se tiver)
     setUser(res.data.user);
 
     return res.data.user;
@@ -84,10 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 🚪 LOGOUT
   const logout = () => {
-    setUser(null);
-    localStorage.removeItem('token');
-    delete api.defaults.headers.common["Authorization"];
-  };
+  localStorage.removeItem("token");
+  setUser(null); // se tiver state de usuário
+  window.location.href = "/login";
+};
 
   return (
     <AuthContext.Provider value={{

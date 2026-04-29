@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -12,428 +12,342 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { useAuth } from "../contexts/AuthContext";
-import { 
-  ArrowLeft, 
-  Calendar as CalendarIcon, 
-  MapPin, 
-  Clock, 
-  User, 
-  Phone, 
-  Mail, 
+import {
+  ArrowLeft,
+  Calendar as CalendarIcon,
+  MapPin,
+  Clock,
+  User,
+  Phone,
+  Mail,
   Droplet,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import  api  from "../services/api";
+import api from "../services/api";
+
+// ─── Helpers de formatação ────────────────────────────────────────────────────
+
+function formatCPF(value: string): string {
+  const n = value.replace(/\D/g, "").slice(0, 11);
+  return n
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function formatCEP(value: string): string {
+  const n = value.replace(/\D/g, "").slice(0, 8);
+  return n.replace(/(\d{5})(\d)/, "$1-$2");
+}
+
+function formatTelefone(value: string): string {
+  const n = value.replace(/\D/g, "").slice(0, 11);
+  return n
+    .replace(/^(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2");
+}
+
+// ─── Helpers de validação ─────────────────────────────────────────────────────
+
+function validarCPF(cpf: string): boolean {
+  const n = cpf.replace(/\D/g, "");
+  if (n.length !== 11 || /^(\d)\1{10}$/.test(n)) return false;
+  let soma = 0;
+  for (let i = 0; i < 9; i++) soma += parseInt(n[i]) * (10 - i);
+  let r = (soma * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  if (r !== parseInt(n[9])) return false;
+  soma = 0;
+  for (let i = 0; i < 10; i++) soma += parseInt(n[i]) * (11 - i);
+  r = (soma * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  return r === parseInt(n[10]);
+}
+
+function validarEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
+function getPasswordStrength(password: string): { score: number; label: string; color: string } {
+  if (!password) return { score: 0, label: "", color: "" };
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[^a-zA-Z0-9]/.test(password)) score++;
+  if (score <= 2) return { score, label: "Fraca", color: "bg-red-500" };
+  if (score === 3) return { score, label: "Média", color: "bg-yellow-500" };
+  if (score === 4) return { score, label: "Forte", color: "bg-green-500" };
+  return { score, label: "Muito Forte", color: "bg-emerald-600" };
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 export function RegistrationDonationPage() {
   const navigate = useNavigate();
-  const { signup } = useAuth(); // ✅ AQUI
+  const { signup, isAuthenticated, user } = useAuth() as any;
 
-  const [step, setStep] = useState<'personal' | 'appointment' | 'success'>('personal');const [date, setDate] = useState<Date>();
+  const [step, setStep] = useState<"personal" | "appointment" | "success">("personal");
+  const [date, setDate] = useState<Date>();
   const [showGuardianModal, setShowGuardianModal] = useState(false);
   const [showUnderageModal, setShowUnderageModal] = useState(false);
-  
-  // Dados pessoais
-  const [formData, setFormData] = useState({
-  fullName: '',
-  cpf: '',
-  birthDate: '',
-  gender: '',
-  bloodType: '',
-  email: '',
-  telefone: '',
-  numero: '', // ✅ CAMPO CORRETO
-  zipCode: '',
-  address: '',
-  city: '',
-  state: '',
-  password: '',
-  confirmPassword: '',
-  location: '',
-  appointmentDate: '',
-  appointmentTime: '',
-  notes: ''
-});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Dados do responsável legal (para menores de 16-17 anos)
+  useEffect(() => {
+    if (isAuthenticated) setStep("appointment");
+  }, [isAuthenticated]);
+
+  const [formData, setFormData] = useState({
+    fullName: "",
+    cpf: "",
+    birthDate: "",
+    gender: "",
+    bloodType: "",
+    email: "",
+    telefone: "",
+    numero: "",
+    zipCode: "",
+    address: "",
+    city: "",
+    state: "",
+    password: "",
+    confirmPassword: "",
+    location: "",
+    appointmentDate: "",
+    appointmentTime: "",
+    notes: "",
+  });
+
   const [guardianData, setGuardianData] = useState({
-    guardianName: '',
-    guardianCpf: '',
-    guardianBirthDate: '',
-    guardianPhone: '',
+    guardianName: "",
+    guardianCpf: "",
+    guardianBirthDate: "",
+    guardianPhone: "",
   });
 
   const bloodCenters = [
-    { value: "hemepar", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
-    { value: "erasto-gaertner", label: "Hospital Erasto Gaertner - Banco de Sangue" },
-    { value: "hc-ufpr", label: "Hospital de Clínicas - UFPR" },
-    { value: "hc-trabalhador", label: "Hospital do Trabalhador - Banco de Sangue" }
+    { value: "1", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
+    { value: "2", label: "Hospital Erasto Gaertner - Banco de Sangue" },
+    { value: "3", label: "Hospital de Clínicas - UFPR" },
+    { value: "4", label: "Hospital do Trabalhador - Banco de Sangue" },
   ];
 
   const timeSlots = [
-    "08:00", "08:30", "09:00", "09:30", "10:00", "10:30", 
-    "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", 
-    "15:00", "15:30", "16:00", "16:30", "17:00"
+    "08:00","08:30","09:00","09:30","10:00","10:30",
+    "11:00","11:30","13:00","13:30","14:00","14:30",
+    "15:00","15:30","16:00","16:30","17:00",
   ];
 
-  // Função para calcular idade
-  const calculateAge = (birthDateString: string): number => {
-    if (!birthDateString) return 0;
+  const calculateAge = (dateStr: string): number => {
+    if (!dateStr) return 0;
     const today = new Date();
-    const birthDate = new Date(birthDateString);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
+    const birth = new Date(dateStr);
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     return age;
   };
 
-  const handleInputChange = (field: string, value: string) => {
-  setFormData(prev => ({
-    ...prev,
-    [field]: value,
-  }));
+  const setError = (field: string, msg: string) =>
+    setErrors((prev) => ({ ...prev, [field]: msg }));
+  const clearError = (field: string) =>
+    setErrors((prev) => { const e = { ...prev }; delete e[field]; return e; });
 
-    
-    // Verificar idade quando a data de nascimento mudar
-    if (field === 'birthDate') {
+  const handleInputChange = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    clearError(field);
+
+    if (field === "birthDate") {
       const age = calculateAge(value);
       if (age < 16) {
         setShowUnderageModal(true);
-        // Limpar a data de nascimento para impedir o cadastro
-        setFormData(prev => ({ ...prev, birthDate: '' }));
+        setFormData((prev) => ({ ...prev, birthDate: "" }));
       } else if (age === 16 || age === 17) {
         setShowGuardianModal(true);
       }
     }
+
+    if (field === "zipCode") {
+      const clean = value.replace(/\D/g, "");
+      if (clean.length === 8) fetchCEP(clean);
+    }
   };
 
-  const handleGuardianInputChange = (field: string, value: string) => {
-    setGuardianData(prev => ({ ...prev, [field]: value }));
+  // Busca automática de CEP
+  const fetchCEP = async (cep: string) => {
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setFormData((prev) => ({
+          ...prev,
+          address: data.logradouro || prev.address,
+          city: data.localidade || prev.city,
+          state: data.uf || prev.state,
+        }));
+      }
+    } catch {}
   };
+
+  const handleGuardianInputChange = (field: string, value: string) =>
+    setGuardianData((prev) => ({ ...prev, [field]: value }));
 
   const handleGuardianModalConfirm = () => {
-    // Validar campos do responsável
-    if (!guardianData.guardianName || !guardianData.guardianCpf || 
+    if (!guardianData.guardianName || !guardianData.guardianCpf ||
         !guardianData.guardianBirthDate || !guardianData.guardianPhone) {
-      alert('Por favor, preencha todos os campos do responsável.');
+      alert("Preencha todos os campos do responsável.");
+      return;
+    }
+    if (!validarCPF(guardianData.guardianCpf)) {
+      alert("CPF do responsável inválido.");
       return;
     }
     setShowGuardianModal(false);
   };
 
-  const handlePersonalDataSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStep('appointment');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // ── Validação do Step 1 ──────────────────────────────────────────────────────
+  const validatePersonal = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.fullName.trim() || formData.fullName.trim().split(" ").length < 2)
+      newErrors.fullName = "Informe nome e sobrenome.";
+
+    const cpfClean = formData.cpf.replace(/\D/g, "");
+    if (!cpfClean) newErrors.cpf = "CPF obrigatório.";
+    else if (cpfClean.length !== 11) newErrors.cpf = "CPF deve ter 11 dígitos.";
+    else if (!validarCPF(cpfClean)) newErrors.cpf = "CPF inválido.";
+
+    if (!formData.birthDate) newErrors.birthDate = "Data de nascimento obrigatória.";
+
+    if (!formData.gender) newErrors.gender = "Selecione o sexo.";
+
+    if (!validarEmail(formData.email)) newErrors.email = "E-mail inválido.";
+
+    const tel = formData.telefone.replace(/\D/g, "");
+    if (tel.length !== 11) newErrors.telefone = "Telefone deve ter DDD + 9 dígitos.";
+
+    const cep = formData.zipCode.replace(/\D/g, "");
+    if (cep.length !== 8) newErrors.zipCode = "CEP deve ter 8 dígitos.";
+
+    if (!formData.numero.trim()) newErrors.numero = "Número obrigatório.";
+
+    if (!formData.address.trim()) newErrors.address = "Endereço obrigatório.";
+    if (!formData.city.trim()) newErrors.city = "Cidade obrigatória.";
+    if (!formData.state) newErrors.state = "Estado obrigatório.";
+
+    const pwd = formData.password;
+    if (pwd.length < 8) newErrors.password = "Senha deve ter no mínimo 8 caracteres.";
+    else if (!/[A-Z]/.test(pwd)) newErrors.password = "Senha deve ter pelo menos uma letra maiúscula.";
+    else if (!/[0-9]/.test(pwd)) newErrors.password = "Senha deve ter pelo menos um número.";
+
+    if (formData.confirmPassword !== formData.password)
+      newErrors.confirmPassword = "As senhas não coincidem.";
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
- const handleAppointmentSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+  const handlePersonalDataSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validatePersonal()) return;
+    setStep("appointment");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  try {
-    if (!date) {
-      alert("Selecione uma data");
-      return;
+  const handleAppointmentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!date) { alert("Selecione uma data"); return; }
+    if (!formData.location) { alert("Selecione um posto de coleta"); return; }
+    if (!formData.appointmentTime) { alert("Selecione um horário"); return; }
+
+    try {
+      if (isAuthenticated) {
+        await api.post("/agendamentos", {
+          data: format(date, "yyyy-MM-dd"),
+          horario: formData.appointmentTime,
+          hemocentro_id: formData.location,
+          observacoes: formData.notes,
+        });
+        setStep("success");
+        return;
+      }
+
+      const success = await signup({
+        name: formData.fullName.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        password_confirmation: formData.confirmPassword,
+        cpf: formData.cpf.replace(/\D/g, ""),
+        sexo: formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
+        data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
+        telefone: formData.telefone.replace(/\D/g, ""),
+        tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
+          ? formData.bloodType.toUpperCase() : undefined,
+        cep: formData.zipCode.replace(/\D/g, ""),
+        rua: formData.address,
+        numero: formData.numero,
+        cidade: formData.city,
+        uf: formData.state.substring(0, 2).toUpperCase(),
+        responsavel_nome: guardianData.guardianName || undefined,
+        responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
+        responsavel_data_nasc: guardianData.guardianBirthDate
+          ? format(new Date(guardianData.guardianBirthDate), "dd/MM/yyyy") : undefined,
+      });
+
+      if (success) {
+        setStep("success");
+      } else {
+        alert("Erro ao cadastrar. Verifique os dados e tente novamente.");
+      }
+    } catch (error: any) {
+      console.error("ERRO:", error.response?.data);
+      const msg = error.response?.data?.message || "Erro ao processar. Tente novamente.";
+      alert(msg);
     }
+  };
 
-    // 🔥 TELEFONE LIMPO (APENAS NÚMEROS)
-    const telefoneLimpo = formData.telefone.replace(/\D/g, "");
+  const pwdStrength = getPasswordStrength(formData.password);
 
-    if (telefoneLimpo.length !== 11) {
-      alert("Telefone deve ter 11 dígitos (DDD + número)");
-      return;
-    }
-
-    console.log("Telefone enviado:", telefoneLimpo);
-
-    const success = await signup({
-  name: formData.fullName.trim(),
-  email: formData.email.trim(),
-  password: formData.password,
-  password_confirmation: formData.confirmPassword,
-
-  cpf: formData.cpf.replace(/\D/g, ""),
-  sexo:
-    formData.gender === "male"
-      ? "M"
-      : formData.gender === "female"
-      ? "F"
-      : "Outro",
-
-  data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
-  telefone: telefoneLimpo,
-
-  cep: formData.zipCode.replace(/\D/g, ""),
-  rua: formData.address,
-  numero: formData.numero,
-  cidade: formData.city,
-  uf: formData.state.substring(0, 2).toUpperCase(),
-});
-
-if (success) {
-  alert("Cadastro realizado com sucesso!");
-  navigate("/login"); // 🔥 SIMPLES E FUNCIONAL
-} else {
-  alert("Erro ao cadastrar");
-}
-
-    console.log("SUCESSO:", User);
-
-    setStep("success");
-
-  } catch (error: any) {
-    console.error("ERRO COMPLETO:", error.response?.data);
-
-    alert(
-      error.response?.data?.message ||
-      "Erro ao cadastrar. Verifique os dados."
-    );
-  }
-};
-
-  if (step === 'success') {
+  // ── Tela de sucesso ──────────────────────────────────────────────────────────
+  if (step === "success") {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
         <div className="flex-1 bg-gradient-to-br from-green-50 to-emerald-50 py-20">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <Card className="border-green-200">
-              <CardContent className="p-8 md:p-12 space-y-6">
-                {/* Cabeçalho de Sucesso */}
-                <div className="text-center space-y-4">
-                  <div className="flex justify-center">
-                    <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center">
-                      <CheckCircle2 className="w-14 h-14 text-green-600" />
-                    </div>
-                  </div>
-                  <h3 className="text-3xl font-bold text-gray-900">Pré-Agendamento Realizado com Sucesso!</h3>
-                  <p className="text-lg text-gray-600">
-                    Recebemos suas informações e seu agendamento foi registrado.
-                  </p>
-                </div>
-
-                {/* Detalhes do Agendamento */}
-                <div className="bg-green-50 border-2 border-green-200 rounded-lg p-6 space-y-4">
-                  <h4 className="font-semibold text-green-900 text-lg flex items-center gap-2">
-                    <CalendarIcon className="w-5 h-5" />
-                    Detalhes do Seu Agendamento
-                  </h4>
-                  <div className="grid md:grid-cols-2 gap-4 text-green-800">
-                    <div className="flex items-start gap-3">
-                      <User className="w-5 h-5 mt-0.5 text-green-600 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium text-sm text-green-700">Nome</p>
-                        <p className="font-semibold">{formData.fullName}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Mail className="w-5 h-5 mt-0.5 text-green-600 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium text-sm text-green-700">E-mail</p>
-                        <p className="font-semibold">{formData.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 mt-0.5 text-green-600 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium text-sm text-green-700">Local</p>
-                        <p className="font-semibold">{bloodCenters.find(c => c.value === formData.location)?.label}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Clock className="w-5 h-5 mt-0.5 text-green-600 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium text-sm text-green-700">Data e Hora</p>
-                        <p className="font-semibold">{formData.appointmentDate} às {formData.appointmentTime}</p>
-                      </div>
-                    </div>
+          <div className="max-w-2xl mx-auto px-4">
+            <Card className="border-green-200 text-center">
+              <CardContent className="p-10 space-y-6">
+                <div className="flex justify-center">
+                  <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center">
+                    <CheckCircle2 className="w-14 h-14 text-green-600" />
                   </div>
                 </div>
-
-                {/* AVISO IMPORTANTE - Triagem Presencial */}
-                <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-6 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="space-y-3 flex-1">
-                      <h4 className="font-bold text-amber-900 text-lg">⚠️ Informação Muito Importante</h4>
-                      <div className="space-y-2 text-amber-900">
-                        <p className="font-semibold">
-                          Este teste online foi apenas para coletar informações preliminares e agilizar seu atendimento.
-                        </p>
-                        <p>
-                          <strong>A elegibilidade final será determinada no hemocentro</strong> através de uma triagem médica presencial completa, que inclui:
-                        </p>
-                        <ul className="list-disc list-inside space-y-1.5 ml-2 text-sm">
-                          <li>Entrevista detalhada com profissional de saúde</li>
-                          <li>Verificação de sinais vitais (pressão arterial, temperatura, pulso)</li>
-                          <li>Teste de hemoglobina/hematócrito</li>
-                          <li>Análise do histórico médico completo</li>
-                          <li>Avaliação de impedimentos temporários ou definitivos</li>
-                        </ul>
-                        <p className="pt-2 bg-amber-100 -mx-2 -mb-2 px-2 py-3 rounded-b">
-                          <strong>O funcionário do hemocentro tem autoridade para:</strong><br/>
-                          • Atualizar ou corrigir suas informações cadastrais<br/>
-                          • Declarar sua elegibilidade ou inaptidão para doação<br/>
-                          • Solicitar exames ou documentos adicionais<br/>
-                          • Reagendar sua doação se necessário
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Orientações para o Dia da Doação */}
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6 space-y-3">
-                  <h4 className="font-semibold text-blue-900 text-lg flex items-center gap-2">
-                    <Droplet className="w-5 h-5" />
-                    Prepare-se para o Dia da Doação
-                  </h4>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="font-semibold text-blue-900 mb-2">📋 Documentos Obrigatórios:</p>
-                      <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                        <li>• Documento oficial com foto (RG, CNH, Passaporte ou Carteira de Trabalho)</li>
-                        <li>• Se menor de 18 anos: autorização dos pais + documento do responsável</li>
-                      </ul>
-                    </div>
-                    
-                    <div>
-                      <p className="font-semibold text-blue-900 mb-2">🍽️ Alimentação:</p>
-                      <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                        <li>• Faça uma refeição leve antes de doar</li>
-                        <li>• Evite alimentos gordurosos 3-4 horas antes</li>
-                        <li>• NÃO doe em jejum</li>
-                        <li>• Evite bebidas alcoólicas 12 horas antes</li>
-                      </ul>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-blue-900 mb-2">💧 Hidratação:</p>
-                      <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                        <li>• Beba pelo menos 500ml de água antes de doar</li>
-                        <li>• Continue se hidratando após a doação</li>
-                        <li>• Evite bebidas com cafeína em excesso</li>
-                      </ul>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-blue-900 mb-2">😴 Descanso:</p>
-                      <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                        <li>• Durma pelo menos 6 horas na noite anterior</li>
-                        <li>• Evite exercícios físicos intensos no dia</li>
-                        <li>• Chegue com 15 minutos de antecedência</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                {/* O que esperar no hemocentro */}
-                <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-6 space-y-3">
-                  <h4 className="font-semibold text-purple-900 text-lg">🏥 O que Acontece no Hemocentro</h4>
-                  <div className="space-y-2 text-sm text-purple-800">
-                    <div className="flex gap-3">
-                      <span className="font-bold text-purple-600 flex-shrink-0">1.</span>
-                      <p><strong>Cadastro e Recepção:</strong> Apresente seu documento e confirme seus dados (5-10 min)</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-bold text-purple-600 flex-shrink-0">2.</span>
-                      <p><strong>Triagem Clínica:</strong> Entrevista, verificação de sinais vitais e teste de hemoglobina (15-20 min)</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-bold text-purple-600 flex-shrink-0">3.</span>
-                      <p><strong>Coleta de Sangue:</strong> O procedimento em si leva cerca de 10-15 minutos</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-bold text-purple-600 flex-shrink-0">4.</span>
-                      <p><strong>Lanche e Descanso:</strong> Alimentação e hidratação pós-doação (10-15 min)</p>
-                    </div>
-                    <p className="pt-2 font-semibold text-purple-900">
-                      ⏱️ Tempo total estimado: 40 a 60 minutos
-                    </p>
-                  </div>
-                </div>
-
-                {/* Após a doação */}
-                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6 space-y-3">
-                  <h4 className="font-semibold text-red-900 text-lg">❤️ Cuidados Após a Doação</h4>
-                  <ul className="text-sm text-red-800 space-y-2">
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Mantenha o curativo por pelo menos 4 horas</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Evite esforços físicos intensos por 12 horas</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Não fume por 2 horas após doar</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Aumente a ingestão de líquidos nas próximas 24 horas</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Se sentir tontura, sente-se e abaixe a cabeça entre as pernas</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">•</span>
-                      <span>Em caso de sintomas persistentes, entre em contato com o hemocentro</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Confirmação por Email */}
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-indigo-900 mb-1">📧 Confirmação Enviada</h4>
-                      <p className="text-sm text-indigo-800">
-                        Um e-mail de confirmação foi enviado para <strong>{formData.email}</strong> com todos os detalhes do seu agendamento e estas orientações.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mensagem Motivacional */}
-                <div className="text-center py-4 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-100">
-                  <p className="text-lg font-semibold text-gray-900">
-                    🩸 Você está prestes a salvar até 4 vidas!
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Obrigado por ser um herói. Sua doação faz toda a diferença.
-                  </p>
-                </div>
-
-                {/* Botões de Ação */}
-                <div className="flex flex-col gap-4 pt-4">
-                  <Button 
-                    onClick={() => navigate('/login')}
+                <h3 className="text-3xl font-bold text-gray-900">
+                  {isAuthenticated ? "Agendamento Realizado!" : "Cadastro Realizado!"}
+                </h3>
+                <p className="text-gray-600 text-lg">
+                  {isAuthenticated
+                    ? "Seu agendamento foi registrado com sucesso."
+                    : "Seu cadastro foi realizado. Faça login para acompanhar seu agendamento."}
+                </p>
+                <div className="flex flex-col gap-3 pt-4">
+                  <Button
+                    onClick={() => navigate(isAuthenticated ? "/dashboard/doador" : "/login")}
                     className="w-full bg-red-600 hover:bg-red-700 text-lg py-6"
                   >
-                    Fazer Login para Acompanhar Meu Agendamento
+                    {isAuthenticated ? "Ir para Meu Dashboard" : "Fazer Login"}
                   </Button>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Button 
-                      variant="outline"
-                      onClick={() => window.print()}
-                    >
-                      Imprimir Comprovante
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => navigate('/')}
-                    >
-                      Voltar para Início
-                    </Button>
-                  </div>
+                  <Button variant="outline" onClick={() => navigate("/")}>
+                    Voltar para Início
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -444,169 +358,145 @@ if (success) {
     );
   }
 
-  function formatTelefone(value: string): string {
-  const numbers = value.replace(/\D/g, "");
-
-  return numbers
-    .slice(0, 11)
-    .replace(/^(\d{2})(\d)/g, "($1) $2")
-    .replace(/(\d{5})(\d)/, "$1-$2");
-}
-
+  // ── Render principal ─────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
       <div className="flex-1 bg-gradient-to-br from-red-50 to-rose-50 py-12">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <Button 
-              variant="ghost" 
-              onClick={() => step === 'personal' ? navigate('/') : setStep('personal')}
+        <div className="max-w-2xl mx-auto px-4">
+
+          {/* Botão voltar */}
+          <div className="mb-6">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (isAuthenticated) navigate(-1);
+                else if (step === "personal") navigate("/");
+                else setStep("personal");
+              }}
               className="gap-2"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Voltar
+              <ArrowLeft className="w-4 h-4" /> Voltar
             </Button>
           </div>
 
-          {/* Aviso para quem não fez o teste */}
-          {step === 'personal' && (
-            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="font-semibold text-blue-900 mb-1">Recomendação Importante</h4>
-                  <p className="text-sm text-blue-800">
-                    Antes de fazer o cadastro, recomendamos que você realize o{' '}
-                    <button 
-                      onClick={() => navigate('/teste-elegibilidade')}
-                      className="underline font-medium hover:text-blue-600"
-                    >
-                      Teste de Elegibilidade
-                    </button>
-                    {' '}para verificar se você atende aos requisitos para doação de sangue.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Indicador de Progresso */}
-          <div className="mb-8">
-            <div className="flex items-center justify-center gap-4">
-              <div className={`flex items-center gap-2 ${step === 'personal' ? 'text-red-600' : 'text-green-600'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  step === 'personal' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
-                }`}>
-                  {step === 'appointment' ? '✓' : '1'}
+          {/* Progresso */}
+          {!isAuthenticated && (
+            <div className="mb-8 flex items-center justify-center gap-4">
+              <div className={`flex items-center gap-2 ${step === "personal" ? "text-red-600" : "text-green-600"}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-white ${step === "personal" ? "bg-red-600" : "bg-green-600"}`}>
+                  {step === "appointment" ? "✓" : "1"}
                 </div>
                 <span className="hidden sm:inline font-medium">Dados Pessoais</span>
               </div>
-              <div className="h-1 w-16 bg-gray-300">
-                <div className={`h-full ${step === 'appointment' ? 'bg-red-600' : 'bg-gray-300'} transition-all`} />
+              <div className="h-1 w-16 bg-gray-200 rounded">
+                <div className={`h-full rounded transition-all ${step === "appointment" ? "bg-red-600 w-full" : "w-0"}`} />
               </div>
-              <div className={`flex items-center gap-2 ${step === 'appointment' ? 'text-red-600' : 'text-gray-400'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  step === 'appointment' ? 'bg-red-600 text-white' : 'bg-gray-300'
-                }`}>
+              <div className={`flex items-center gap-2 ${step === "appointment" ? "text-red-600" : "text-gray-400"}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-white ${step === "appointment" ? "bg-red-600" : "bg-gray-300"}`}>
                   2
                 </div>
                 <span className="hidden sm:inline font-medium">Agendamento</span>
               </div>
             </div>
-          </div>
+          )}
 
-          {step === 'personal' && (
+          {/* ── STEP 1: DADOS PESSOAIS ─────────────────────────────────────── */}
+          {step === "personal" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-2xl">
-                  <User className="w-6 h-6 text-red-600" />
-                  Dados Pessoais
+                  <User className="w-6 h-6 text-red-600" /> Dados Pessoais
                 </CardTitle>
-                <CardDescription>
-                  Preencha seus dados para fazer o cadastro no sistema de doação
-                </CardDescription>
+                <CardDescription>Preencha seus dados para se cadastrar no sistema</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handlePersonalDataSubmit} className="space-y-6">
-                  {/* Informações Básicas */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Informações Básicas</h3>
-                    
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div className="sm:col-span-2">
-                        <Label htmlFor="fullName">Nome Completo *</Label>
-                        <Input
-                          id="fullName"
-                          placeholder="Digite seu nome completo"
-                          value={formData.fullName}
-                          onChange={(e) => handleInputChange('fullName', e.target.value)}
-                          required
-                        />
-                      </div>
+                <form onSubmit={handlePersonalDataSubmit} className="space-y-6" noValidate>
 
+                  {/* Informações Básicas */}
+                  <section className="space-y-4">
+                    <h3 className="font-semibold text-base border-b pb-2">Informações Básicas</h3>
+
+                    {/* Nome */}
+                    <div>
+                      <Label htmlFor="fullName">Nome Completo *</Label>
+                      <Input
+                        id="fullName"
+                        placeholder="Nome e sobrenome"
+                        value={formData.fullName}
+                        onChange={(e) => handleInputChange("fullName", e.target.value)}
+                        className={errors.fullName ? "border-red-500" : ""}
+                      />
+                      {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>}
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {/* CPF */}
                       <div>
                         <Label htmlFor="cpf">CPF *</Label>
                         <Input
                           id="cpf"
                           placeholder="000.000.000-00"
                           value={formData.cpf}
-                          onChange={(e) => handleInputChange('cpf', e.target.value)}
-                          required
+                          maxLength={14}
+                          onChange={(e) => handleInputChange("cpf", formatCPF(e.target.value))}
+                          className={errors.cpf ? "border-red-500" : ""}
                         />
+                        {errors.cpf && <p className="text-red-500 text-xs mt-1">{errors.cpf}</p>}
                       </div>
 
+                      {/* Data de Nascimento */}
                       <div>
                         <Label htmlFor="birthDate">Data de Nascimento *</Label>
                         <Input
                           id="birthDate"
                           type="date"
                           value={formData.birthDate}
-                          onChange={(e) => handleInputChange('birthDate', e.target.value)}
-                          required
+                          max={format(new Date(), "yyyy-MM-dd")}
+                          onChange={(e) => handleInputChange("birthDate", e.target.value)}
+                          className={errors.birthDate ? "border-red-500" : ""}
                         />
+                        {errors.birthDate && <p className="text-red-500 text-xs mt-1">{errors.birthDate}</p>}
                       </div>
 
+                      {/* Sexo */}
                       <div>
                         <Label htmlFor="gender">Sexo *</Label>
-                        <Select value={formData.gender} onValueChange={(value) => handleInputChange('gender', value)}>
-                          <SelectTrigger>
+                        <Select value={formData.gender} onValueChange={(v) => handleInputChange("gender", v)}>
+                          <SelectTrigger className={errors.gender ? "border-red-500" : ""}>
                             <SelectValue placeholder="Selecione" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="male">Masculino</SelectItem>
                             <SelectItem value="female">Feminino</SelectItem>
                             <SelectItem value="other">Outro</SelectItem>
+                            <SelectItem value="prefer_not">Prefiro não informar</SelectItem>
                           </SelectContent>
                         </Select>
+                        {errors.gender && <p className="text-red-500 text-xs mt-1">{errors.gender}</p>}
                       </div>
 
+                      {/* Tipo Sanguíneo (opcional) */}
                       <div>
-                        <Label htmlFor="bloodType">Tipo Sanguíneo (se souber)</Label>
-                        <Select value={formData.bloodType} onValueChange={(value) => handleInputChange('bloodType', value)}>
+                        <Label htmlFor="bloodType">Tipo Sanguíneo <span className="text-gray-400 font-normal">(opcional)</span></Label>
+                        <Select value={formData.bloodType} onValueChange={(v) => handleInputChange("bloodType", v)}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Selecione" />
+                            <SelectValue placeholder="Selecione se souber" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="a+">A+</SelectItem>
-                            <SelectItem value="a-">A-</SelectItem>
-                            <SelectItem value="b+">B+</SelectItem>
-                            <SelectItem value="b-">B-</SelectItem>
-                            <SelectItem value="ab+">AB+</SelectItem>
-                            <SelectItem value="ab-">AB-</SelectItem>
-                            <SelectItem value="o+">O+</SelectItem>
-                            <SelectItem value="o-">O-</SelectItem>
+                            {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map((t) => (
+                              <SelectItem key={t} value={t.toLowerCase()}>{t}</SelectItem>
+                            ))}
                             <SelectItem value="unknown">Não sei</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                  </div>
+                  </section>
 
                   {/* Contato */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Contato</h3>
-                    
+                  <section className="space-y-4">
+                    <h3 className="font-semibold text-base border-b pb-2">Contato</h3>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="email">E-mail *</Label>
@@ -615,30 +505,29 @@ if (success) {
                           type="email"
                           placeholder="seu@email.com"
                           value={formData.email}
-                          onChange={(e) => handleInputChange('email', e.target.value)}
-                          required
+                          onChange={(e) => handleInputChange("email", e.target.value)}
+                          className={errors.email ? "border-red-500" : ""}
                         />
+                        {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
                       </div>
-
                       <div>
-                        <Label htmlFor="telefone">Telefone/Celular *</Label>
+                        <Label htmlFor="telefone">Telefone *</Label>
                         <Input
-  id="telefone"
-  placeholder="(00) 00000-0000"
-  value={formData.telefone}
-  onChange={(e) =>
-    handleInputChange("telefone", formatTelefone(e.target.value))
-  }
-  required
-/>
+                          id="telefone"
+                          placeholder="(00) 00000-0000"
+                          value={formData.telefone}
+                          maxLength={15}
+                          onChange={(e) => handleInputChange("telefone", formatTelefone(e.target.value))}
+                          className={errors.telefone ? "border-red-500" : ""}
+                        />
+                        {errors.telefone && <p className="text-red-500 text-xs mt-1">{errors.telefone}</p>}
                       </div>
                     </div>
-                  </div>
+                  </section>
 
                   {/* Endereço */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Endereço</h3>
-                    
+                  <section className="space-y-4">
+                    <h3 className="font-semibold text-base border-b pb-2">Endereço</h3>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="zipCode">CEP *</Label>
@@ -646,96 +535,123 @@ if (success) {
                           id="zipCode"
                           placeholder="00000-000"
                           value={formData.zipCode}
-                          onChange={(e) => handleInputChange('zipCode', e.target.value)}
-                          required
+                          maxLength={9}
+                          onChange={(e) => handleInputChange("zipCode", formatCEP(e.target.value))}
+                          className={errors.zipCode ? "border-red-500" : ""}
                         />
+                        {errors.zipCode && <p className="text-red-500 text-xs mt-1">{errors.zipCode}</p>}
+                        <p className="text-xs text-gray-400 mt-1">O endereço será preenchido automaticamente</p>
                       </div>
                       <div>
-  <Label htmlFor="numero">Número *</Label>
-  <Input
-    id="numero"
-    placeholder="Ex: 123"
-    maxLength={10}
-    value={formData.numero}
-    onChange={(e) => handleInputChange('numero', e.target.value)}
-    required
-  />
-</div>
-
-
-
+                        <Label htmlFor="numero">Número *</Label>
+                        <Input
+                          id="numero"
+                          placeholder="Ex: 123"
+                          maxLength={10}
+                          value={formData.numero}
+                          onChange={(e) => handleInputChange("numero", e.target.value.replace(/\D/g, ""))}
+                          className={errors.numero ? "border-red-500" : ""}
+                        />
+                        {errors.numero && <p className="text-red-500 text-xs mt-1">{errors.numero}</p>}
+                      </div>
                       <div className="sm:col-span-2">
-                        <Label htmlFor="address">Endereço Completo *</Label>
+                        <Label htmlFor="address">Rua *</Label>
                         <Input
                           id="address"
-                          placeholder="Rua, número, complemento"
+                          placeholder="Preenchido pelo CEP"
                           value={formData.address}
-                          onChange={(e) => handleInputChange('address', e.target.value)}
-                          required
+                          onChange={(e) => handleInputChange("address", e.target.value)}
+                          className={errors.address ? "border-red-500" : ""}
                         />
+                        {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
                       </div>
-
                       <div>
                         <Label htmlFor="city">Cidade *</Label>
                         <Input
                           id="city"
-                          placeholder="Cidade"
+                          placeholder="Preenchido pelo CEP"
                           value={formData.city}
-                          onChange={(e) => handleInputChange('city', e.target.value)}
-                          required
+                          onChange={(e) => handleInputChange("city", e.target.value)}
+                          className={errors.city ? "border-red-500" : ""}
                         />
+                        {errors.city && <p className="text-red-500 text-xs mt-1">{errors.city}</p>}
                       </div>
-
                       <div>
                         <Label htmlFor="state">Estado *</Label>
-                        <Select value={formData.state} onValueChange={(value) => handleInputChange('state', value)}>
-                          <SelectTrigger>
+                        <Select value={formData.state} onValueChange={(v) => handleInputChange("state", v)}>
+                          <SelectTrigger className={errors.state ? "border-red-500" : ""}>
                             <SelectValue placeholder="Selecione" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="SP">São Paulo</SelectItem>
-                            <SelectItem value="RJ">Rio de Janeiro</SelectItem>
-                            <SelectItem value="MG">Minas Gerais</SelectItem>
-                            <SelectItem value="RS">Rio Grande do Sul</SelectItem>
-                            <SelectItem value="BA">Bahia</SelectItem>
-                            <SelectItem value="PR">Paraná</SelectItem>
-                            <SelectItem value="SC">Santa Catarina</SelectItem>
+                            {["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+                              "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].map((uf) => (
+                              <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
+                        {errors.state && <p className="text-red-500 text-xs mt-1">{errors.state}</p>}
                       </div>
                     </div>
-                  </div>
+                  </section>
 
                   {/* Senha */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Senha</h3>
-                    
+                  <section className="space-y-4">
+                    <h3 className="font-semibold text-base border-b pb-2">Senha</h3>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="password">Senha *</Label>
-                        <Input
-                          id="password"
-                          type="password"
-                          placeholder="Digite sua senha"
-                          value={formData.password}
-                          onChange={(e) => handleInputChange('password', e.target.value)}
-                          required
-                        />
+                        <div className="relative">
+                          <Input
+                            id="password"
+                            type={showPassword ? "text" : "password"}
+                            placeholder="Mínimo 8 caracteres"
+                            value={formData.password}
+                            onChange={(e) => handleInputChange("password", e.target.value)}
+                            className={`pr-10 ${errors.password ? "border-red-500" : ""}`}
+                          />
+                          <button type="button" onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {formData.password && (
+                          <div className="mt-2 space-y-1">
+                            <div className="flex gap-1">
+                              {[1,2,3,4,5].map((i) => (
+                                <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i <= pwdStrength.score ? pwdStrength.color : "bg-gray-200"}`} />
+                              ))}
+                            </div>
+                            <p className="text-xs text-gray-500">Força: <span className="font-medium">{pwdStrength.label}</span></p>
+                          </div>
+                        )}
+                        {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                        <p className="text-xs text-gray-400 mt-1">Mínimo 8 caracteres, 1 maiúscula e 1 número</p>
                       </div>
-
                       <div>
                         <Label htmlFor="confirmPassword">Confirmar Senha *</Label>
-                        <Input
-                          id="confirmPassword"
-                          type="password"
-                          placeholder="Confirme sua senha"
-                          value={formData.confirmPassword}
-                          onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                          required
-                        />
+                        <div className="relative">
+                          <Input
+                            id="confirmPassword"
+                            type={showConfirmPassword ? "text" : "password"}
+                            placeholder="Repita a senha"
+                            value={formData.confirmPassword}
+                            onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                            className={`pr-10 ${errors.confirmPassword ? "border-red-500" : ""}`}
+                          />
+                          <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {formData.confirmPassword && formData.password === formData.confirmPassword && (
+                          <p className="text-green-600 text-xs mt-1 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Senhas coincidem
+                          </p>
+                        )}
+                        {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                       </div>
                     </div>
-                  </div>
+                  </section>
 
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-lg py-6">
                     Continuar para Agendamento →
@@ -745,61 +661,50 @@ if (success) {
             </Card>
           )}
 
-          {step === 'appointment' && (
+          {/* ── STEP 2: AGENDAMENTO ────────────────────────────────────────── */}
+          {step === "appointment" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-2xl">
-                  <CalendarIcon className="w-6 h-6 text-red-600" />
-                  Agendar Doação
+                  <CalendarIcon className="w-6 h-6 text-red-600" /> Agendar Doação
                 </CardTitle>
-                <CardDescription>
-                  Escolha o local, data e horário para sua doação de sangue
-                </CardDescription>
+                <CardDescription>Escolha o local, data e horário para sua doação</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleAppointmentSubmit} className="space-y-6">
-                  {/* Resumo dos Dados Pessoais */}
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                    <h3 className="font-semibold text-sm text-gray-700">Dados Cadastrados:</h3>
-                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
-                      <span><strong>Nome:</strong> {formData.fullName}</span>
-                      <span><strong>CPF:</strong> {formData.cpf}</span>
-                      <span><strong>Email:</strong> {formData.email}</span>
-                    </div>
+                  {/* Resumo */}
+                  <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-1">
+                    <p className="font-semibold text-gray-700 mb-1">Dados do Doador:</p>
+                    <p><strong>Nome:</strong> {isAuthenticated ? user?.name : formData.fullName}</p>
+                    <p><strong>CPF:</strong> {isAuthenticated ? user?.cpf : formData.cpf}</p>
+                    <p><strong>E-mail:</strong> {isAuthenticated ? user?.email : formData.email}</p>
                   </div>
 
-                  {/* Seleção de Local */}
+                  {/* Posto */}
                   <div>
-                    <Label htmlFor="location" className="flex items-center gap-2 text-base mb-2">
-                      <MapPin className="w-4 h-4 text-red-600" />
-                      Posto de Coleta *
+                    <Label className="flex items-center gap-2 text-base mb-2">
+                      <MapPin className="w-4 h-4 text-red-600" /> Posto de Coleta *
                     </Label>
-                    <Select value={formData.location} onValueChange={(value) => handleInputChange('location', value)} required>
+                    <Select value={formData.location} onValueChange={(v) => handleInputChange("location", v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione um posto de coleta" />
                       </SelectTrigger>
                       <SelectContent>
-                        {bloodCenters.map((center) => (
-                          <SelectItem key={center.value} value={center.value}>
-                            {center.label}
-                          </SelectItem>
+                        {bloodCenters.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  {/* Seleção de Data */}
+                  {/* Data */}
                   <div>
                     <Label className="flex items-center gap-2 text-base mb-2">
-                      <CalendarIcon className="w-4 h-4 text-red-600" />
-                      Data da Doação *
+                      <CalendarIcon className="w-4 h-4 text-red-600" /> Data da Doação *
                     </Label>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start text-left font-normal"
-                        >
+                        <Button variant="outline" className="w-full justify-start font-normal">
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {date ? format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR }) : "Selecione uma data"}
                         </Button>
@@ -808,34 +713,29 @@ if (success) {
                         <Calendar
                           mode="single"
                           selected={date}
-                          onSelect={(newDate) => {
-                            setDate(newDate);
-                            if (newDate) {
-                              handleInputChange('appointmentDate', format(newDate, "dd/MM/yyyy"));
-                            }
+                          onSelect={(d) => {
+                            setDate(d);
+                            if (d) handleInputChange("appointmentDate", format(d, "dd/MM/yyyy"));
                           }}
-                          disabled={(date) => date < new Date() || date < new Date(new Date().setHours(0, 0, 0, 0))}
+                          disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
                           initialFocus
                         />
                       </PopoverContent>
                     </Popover>
                   </div>
 
-                  {/* Seleção de Horário */}
+                  {/* Horário */}
                   <div>
-                    <Label htmlFor="time" className="flex items-center gap-2 text-base mb-2">
-                      <Clock className="w-4 h-4 text-red-600" />
-                      Horário *
+                    <Label className="flex items-center gap-2 text-base mb-2">
+                      <Clock className="w-4 h-4 text-red-600" /> Horário *
                     </Label>
-                    <Select value={formData.appointmentTime} onValueChange={(value) => handleInputChange('appointmentTime', value)} required>
+                    <Select value={formData.appointmentTime} onValueChange={(v) => handleInputChange("appointmentTime", v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione um horário" />
                       </SelectTrigger>
                       <SelectContent>
-                        {timeSlots.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
+                        {timeSlots.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -843,23 +743,20 @@ if (success) {
 
                   {/* Observações */}
                   <div>
-                    <Label htmlFor="notes">Observações (opcional)</Label>
+                    <Label htmlFor="notes">Observações <span className="text-gray-400 font-normal">(opcional)</span></Label>
                     <Textarea
                       id="notes"
-                      placeholder="Alguma informação adicional que gostaria de compartilhar..."
+                      placeholder="Alguma informação adicional..."
                       value={formData.notes}
-                      onChange={(e) => handleInputChange('notes', e.target.value)}
-                      rows={4}
+                      onChange={(e) => handleInputChange("notes", e.target.value)}
+                      rows={3}
                     />
                   </div>
 
-                  {/* Informativo */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-                    <h4 className="font-semibold text-blue-900 flex items-center gap-2">
-                      <Droplet className="w-4 h-4" />
-                      Informações Importantes
-                    </h4>
-                    <ul className="text-sm text-blue-800 space-y-1">
+                  {/* Info */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-1 text-sm text-blue-800">
+                    <h4 className="font-semibold flex items-center gap-2"><Droplet className="w-4 h-4" /> Informações Importantes</h4>
+                    <ul className="space-y-1 mt-2">
                       <li>• A doação leva cerca de 40-60 minutos no total</li>
                       <li>• Chegue com 15 minutos de antecedência</li>
                       <li>• Traga um documento oficial com foto</li>
@@ -867,20 +764,22 @@ if (success) {
                     </ul>
                   </div>
 
-                  <div className="flex gap-4">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => setStep('personal')}
-                      className="flex-1"
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-4">
+                      <Button type="button" variant="outline" onClick={() => isAuthenticated ? navigate(-1) : setStep("personal")} className="flex-1">
+                        ← Voltar
+                      </Button>
+                      <Button type="submit" className="flex-1 bg-red-600 hover:bg-red-700 text-lg py-6">
+                        Confirmar Agendamento
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full border-red-200 text-red-600 hover:bg-red-50"
+                      onClick={() => navigate('/dashboard/doador')}
                     >
-                      ← Voltar
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-lg py-6"
-                    >
-                      Confirmar Agendamento
+                      Ir para Meu Painel →
                     </Button>
                   </div>
                 </form>
@@ -891,145 +790,80 @@ if (success) {
       </div>
       <Footer />
 
-      {/* Modal para informações do responsável legal (16-17 anos) */}
+      {/* Modal Responsável (16-17 anos) */}
       <Dialog open={showGuardianModal} onOpenChange={setShowGuardianModal}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <User className="w-5 h-5 text-red-600" />
-              Informações do Responsável Legal
+            <DialogTitle className="flex items-center gap-2">
+              <User className="w-5 h-5 text-red-600" /> Informações do Responsável Legal
             </DialogTitle>
             <DialogDescription>
-              Como você tem 16 ou 17 anos, precisamos das informações do seu responsável legal para prosseguir com o cadastro.
+              Como você tem 16 ou 17 anos, precisamos dos dados do seu responsável legal.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-2">
             <div>
-              <Label htmlFor="guardianName">Nome do Responsável *</Label>
-              <Input
-                id="guardianName"
-                placeholder="Digite o nome completo do responsável"
-                value={guardianData.guardianName}
-                onChange={(e) => handleGuardianInputChange('guardianName', e.target.value)}
-              />
+              <Label>Nome do Responsável *</Label>
+              <Input placeholder="Nome completo" value={guardianData.guardianName}
+                onChange={(e) => handleGuardianInputChange("guardianName", e.target.value)} />
             </div>
-
             <div>
-              <Label htmlFor="guardianCpf">CPF do Responsável *</Label>
-              <Input
-                id="guardianCpf"
-                placeholder="000.000.000-00"
-                value={guardianData.guardianCpf}
-                onChange={(e) => handleGuardianInputChange('guardianCpf', e.target.value)}
-              />
+              <Label>CPF do Responsável *</Label>
+              <Input placeholder="000.000.000-00" maxLength={14} value={guardianData.guardianCpf}
+                onChange={(e) => handleGuardianInputChange("guardianCpf", formatCPF(e.target.value))} />
             </div>
-
             <div>
-              <Label htmlFor="guardianBirthDate">Data de Nascimento do Responsável *</Label>
-              <Input
-                id="guardianBirthDate"
-                type="date"
-                value={guardianData.guardianBirthDate}
-                onChange={(e) => handleGuardianInputChange('guardianBirthDate', e.target.value)}
-              />
+              <Label>Data de Nascimento do Responsável *</Label>
+              <Input type="date" value={guardianData.guardianBirthDate}
+                onChange={(e) => handleGuardianInputChange("guardianBirthDate", e.target.value)} />
             </div>
-
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold">Meios de Contato do Responsável *</Label>
-              
-              <div>
-                <Label htmlFor="guardianPhone" className="text-sm flex items-center gap-2">
-                  <Phone className="w-3.5 h-3.5 text-gray-600" />
-                  Telefone
-                </Label>
-                <Input
-                  id="guardianPhone"
-                  placeholder="(00) 00000-0000"
-                  value={guardianData.guardianPhone}
-                  onChange={(e) => handleGuardianInputChange('guardianPhone', e.target.value)}
-                />
-              </div>
+            <div>
+              <Label className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /> Telefone *</Label>
+              <Input placeholder="(00) 00000-0000" maxLength={15} value={guardianData.guardianPhone}
+                onChange={(e) => handleGuardianInputChange("guardianPhone", formatTelefone(e.target.value))} />
             </div>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <p className="text-xs text-amber-800">
-                <strong>Importante:</strong> O responsável legal deverá estar presente no dia da doação com um documento de identificação.
-              </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+              <strong>Importante:</strong> O responsável deverá estar presente no dia da doação com documento de identificação.
             </div>
           </div>
-
-          <DialogFooter className="gap-2">
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => setShowGuardianModal(false)}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              type="button" 
-              className="bg-red-600 hover:bg-red-700"
-              onClick={handleGuardianModalConfirm}
-            >
-              Confirmar
-            </Button>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGuardianModal(false)}>Cancelar</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleGuardianModalConfirm}>Confirmar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal para menores de 16 anos */}
+      {/* Modal Menor de 16 anos */}
       <Dialog open={showUnderageModal} onOpenChange={setShowUnderageModal}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-              Idade Mínima Não Atingida
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600" /> Idade Mínima Não Atingida
             </DialogTitle>
-            <DialogDescription>
-              Você não possui a idade mínima para doação de sangue.
-            </DialogDescription>
+            <DialogDescription>Você não possui a idade mínima para doação de sangue.</DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-sm text-red-900 font-semibold mb-2">
-                ❌ Infelizmente, você não pode doar sangue neste momento.
-              </p>
-              <p className="text-sm text-red-800">
-                Para ser apto à doação de sangue no Brasil, você precisa ter <strong>no mínimo 16 anos de idade</strong>.
-              </p>
+          <div className="space-y-4 py-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-900">
+              <p className="font-semibold mb-1">❌ Infelizmente, você não pode doar sangue neste momento.</p>
+              <p>Para ser apto à doação no Brasil, você precisa ter <strong>no mínimo 16 anos de idade</strong>.</p>
             </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-900 font-semibold mb-2">
-                📅 Requisitos de Idade para Doação:
-              </p>
-              <ul className="text-sm text-blue-800 space-y-1 ml-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+              <p className="font-semibold mb-2">📅 Requisitos de Idade:</p>
+              <ul className="space-y-1 ml-2">
                 <li>• <strong>16 a 17 anos:</strong> Pode doar com autorização dos pais ou responsável legal</li>
                 <li>• <strong>18 a 69 anos:</strong> Pode doar sem restrições</li>
                 <li>• <strong>Acima de 60 anos:</strong> Somente se já tiver doado antes dos 60 anos</li>
               </ul>
             </div>
-
-            <div className="text-center pt-2">
-              <p className="text-sm text-gray-600">
-                Agradecemos seu interesse em ajudar a salvar vidas! 💙<br/>
-                Quando atingir a idade mínima, esperamos você de volta.
-              </p>
-            </div>
+            <p className="text-center text-sm text-gray-500">
+              Agradecemos seu interesse em ajudar a salvar vidas! 💙<br />
+              Quando atingir a idade mínima, esperamos você de volta.
+            </p>
           </div>
-
           <DialogFooter>
-            <Button 
-              type="button" 
-              className="w-full bg-red-600 hover:bg-red-700"
-              onClick={() => {
-                setShowUnderageModal(false);
-                navigate('/');
-              }}
-            >
-              Entendi, Voltar para Início
+            {/* ✅ Apenas fecha o modal, NÃO navega */}
+            <Button className="w-full bg-red-600 hover:bg-red-700" onClick={() => setShowUnderageModal(false)}>
+              Entendi
             </Button>
           </DialogFooter>
         </DialogContent>
