@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -9,159 +10,279 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
-import { 
-  Droplet, 
-  Calendar,
-  Users,
-  LogOut,
-  Bell,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Search,
-  TrendingUp,
-  Activity,
-  Plus,
-  Minus,
-  Phone,
-  Mail,
-  MapPin
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import {
+  Droplet, Calendar, Users, LogOut, Bell, CheckCircle2, XCircle,
+  Clock, Search, Activity, Plus, Minus, Phone, Mail, Edit, AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
-// Mock data
-const todayAppointments = [
-  { 
-    id: '1', 
-    time: '08:00', 
-    donorName: 'Ana Silva', 
-    bloodType: 'O+', 
-    phone: '(11) 98765-4321',
-    status: 'pending',
-    confirmed: true
-  },
-  { 
-    id: '2', 
-    time: '09:00', 
-    donorName: 'Carlos Santos', 
-    bloodType: 'A+', 
-    phone: '(11) 97654-3210',
-    status: 'pending',
-    confirmed: true
-  },
-  { 
-    id: '3', 
-    time: '09:30', 
-    donorName: 'Maria Oliveira', 
-    bloodType: 'B+', 
-    phone: '(11) 96543-2109',
-    status: 'completed',
-    confirmed: true,
-    bloodAmount: 450
-  },
-  { 
-    id: '4', 
-    time: '10:00', 
-    donorName: 'João Pereira', 
-    bloodType: 'AB+', 
-    phone: '(11) 95432-1098',
-    status: 'pending',
-    confirmed: false
-  },
-  { 
-    id: '5', 
-    time: '11:00', 
-    donorName: 'Paula Costa', 
-    bloodType: 'O-', 
-    phone: '(11) 94321-0987',
-    status: 'completed',
-    confirmed: true,
-    bloodAmount: 450
-  },
+// ─── Mocks (sem API equivalente) ─────────────────────────────────────────────
+const bloodStockMock = [
+  { type: 'A+', current: 45, min: 30, max: 100 },
+  { type: 'A-', current: 12, min: 20, max: 60  },
+  { type: 'B+', current: 28, min: 25, max: 80  },
+  { type: 'B-', current: 8,  min: 15, max: 50  },
+  { type: 'AB+', current: 15, min: 15, max: 40 },
+  { type: 'AB-', current: 5,  min: 10, max: 30 },
+  { type: 'O+', current: 62, min: 40, max: 120 },
+  { type: 'O-', current: 18, min: 25, max: 70  },
 ];
 
-const bloodStock = [
-  { type: 'A+', current: 45, min: 30, max: 100, unit: 'bolsas' },
-  { type: 'A-', current: 12, min: 20, max: 60, unit: 'bolsas' },
-  { type: 'B+', current: 28, min: 25, max: 80, unit: 'bolsas' },
-  { type: 'B-', current: 8, min: 15, max: 50, unit: 'bolsas' },
-  { type: 'AB+', current: 15, min: 15, max: 40, unit: 'bolsas' },
-  { type: 'AB-', current: 5, min: 10, max: 30, unit: 'bolsas' },
-  { type: 'O+', current: 62, min: 40, max: 120, unit: 'bolsas' },
-  { type: 'O-', current: 18, min: 25, max: 70, unit: 'bolsas' },
-];
+const tiposSanguineos = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 
+// ─── Componente ───────────────────────────────────────────────────────────────
 export function StaffDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
-  const [appointments, setAppointments] = useState(todayAppointments);
+
+  // ── Estado: dados da API
+  const [agendamentos, setAgendamentos] = useState<any[]>([]);
+  const [doadores, setDoadores] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // ── Estado: mock local
+  const [stock, setStock] = useState(bloodStockMock);
+
+  // ── Busca
   const [searchTerm, setSearchTerm] = useState('');
-  const [stock, setStock] = useState(bloodStock);
-  
-  // Update Stock Dialog states
+  const [donorSearchTerm, setDonorSearchTerm] = useState('');
+  const [donorBloodTypeFilter, setDonorBloodTypeFilter] = useState('');
+  const [donorResult, setDonorResult] = useState<any[]>([]);
+  const [searchPerformed, setSearchPerformed] = useState(false);
+
+  // ── Dialogs
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [selectedAgendamento, setSelectedAgendamento] = useState<any>(null);
+  const [cancelMotivo, setCancelMotivo] = useState('');
+
+  const [triagemDialogOpen, setTriagemDialogOpen] = useState(false);
+  const [triagemData, setTriagemData] = useState({
+    apto: true,
+    motivo_inaptidao: '',
+    observacoes: '',
+    ml_coletados: '450',
+  });
+
+  const [editDonorDialogOpen, setEditDonorDialogOpen] = useState(false);
+  const [selectedDonor, setSelectedDonor] = useState<any>(null);
+  const [editDonorData, setEditDonorData] = useState({
+    tipo_sang: '',
+    telefone: '',
+    status: '1',
+    tempo_restricao: '',
+  });
+
   const [updateStockDialogOpen, setUpdateStockDialogOpen] = useState(false);
   const [selectedBloodType, setSelectedBloodType] = useState('');
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
-  
-  // Search Donor Dialog states
-  const [searchDonorDialogOpen, setSearchDonorDialogOpen] = useState(false);
-  const [donorSearchTerm, setDonorSearchTerm] = useState('');
-  const [donorBloodType, setDonorBloodType] = useState('');
-  const [donorSearchResult, setDonorSearchResult] = useState<any>(null);
-  const [searchPerformed, setSearchPerformed] = useState(false);
 
-  if (!user || user.roles[0] !== 'staff') {
-    navigate('/login');
-    return null;
-  }
+  // ─── Guard ────────────────────────────────────────────────────────────────
+  if (!user) { navigate('/login'); return null; }
+  if (user.role_id !== 2) { navigate('/login'); return null; }
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    toast.success('Logout realizado com sucesso');
+  // ─── Fetch ────────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [agendRes, usersRes] = await Promise.all([
+        api.get('/agendamentos'),
+        api.get('/users'),
+      ]);
+
+      const agends = Array.isArray(agendRes.data)
+        ? agendRes.data : agendRes.data.data ?? [];
+
+      // Filtra agendamentos do hemocentro do funcionário
+      const agendsFiltrados = agends.filter(
+        (a: any) => Number(a.hemocentro_id) === Number(user.hemocentro_id)
+      );
+      setAgendamentos(agendsFiltrados);
+
+      const users = Array.isArray(usersRes.data)
+        ? usersRes.data : usersRes.data.data ?? [];
+
+      // Apenas doadores (role_id = 1)
+      setDoadores(users.filter((u: any) => u.role_id === 1));
+    } catch (err: any) {
+      console.error('Erro ao carregar:', err.response?.data);
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user.hemocentro_id]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+  const hemocentroNome = user.hemocentro?.nome || `Hemocentro #${user.hemocentro_id}`;
+
+  const formatDataHora = (agendamento: any) => {
+    const campo = agendamento.data_hora_doacao || agendamento.data;
+    if (!campo) return { data: '-', hora: '-' };
+    try {
+      const d = new Date(campo);
+      return {
+        data: format(d, "dd/MM/yyyy", { locale: ptBR }),
+        hora: format(d, 'HH:mm'),
+      };
+    } catch { return { data: campo, hora: '-' }; }
   };
 
-  const handleCompleteDonation = (appointmentId: string) => {
-    setAppointments(prev =>
-      prev.map(apt =>
-        apt.id === appointmentId
-          ? { ...apt, status: 'completed', bloodAmount: 450 }
-          : apt
-      )
-    );
-    toast.success('Doação registrada com sucesso!');
+  const getStatusLabel = (status: string) => {
+    const map: Record<string, { label: string; color: string }> = {
+      AGE: { label: 'Agendado',   color: 'bg-blue-100 text-blue-600'   },
+      CON: { label: 'Confirmado', color: 'bg-green-100 text-green-600' },
+      CAN: { label: 'Cancelado',  color: 'bg-red-100 text-red-600'     },
+      FIN: { label: 'Finalizado', color: 'bg-gray-100 text-gray-600'   },
+      E:   { label: 'Reagendado', color: 'bg-yellow-100 text-yellow-600'},
+    };
+    return map[status] || { label: status, color: 'bg-gray-100 text-gray-600' };
   };
 
-  const handleCancelDonation = (appointmentId: string) => {
-    setAppointments(prev =>
-      prev.map(apt =>
-        apt.id === appointmentId
-          ? { ...apt, status: 'cancelled' }
-          : apt
-      )
-    );
-    toast.error('Doação cancelada');
-  };
+  // Agendamentos de hoje
+  const hoje = new Date().toISOString().split('T')[0];
+  const agendamentosHoje = agendamentos.filter((a: any) => {
+    const data = a.data_hora_doacao?.split(' ')[0] || a.data?.split('T')[0];
+    return data === hoje;
+  });
 
-  const getStockStatus = (current: number, min: number, max: number) => {
-    const percentage = (current / max) * 100;
-    if (current < min) return { color: 'red', label: 'Crítico', textColor: 'text-red-600', bgColor: 'bg-red-100' };
-    if (percentage < 50) return { color: 'orange', label: 'Baixo', textColor: 'text-orange-600', bgColor: 'bg-orange-100' };
-    if (percentage < 80) return { color: 'blue', label: 'Normal', textColor: 'text-blue-600', bgColor: 'bg-blue-100' };
-    return { color: 'green', label: 'Ótimo', textColor: 'text-green-600', bgColor: 'bg-green-100' };
-  };
+  const concluidos = agendamentosHoje.filter((a: any) => a.status === 'FIN').length;
+  const pendentes  = agendamentosHoje.filter((a: any) => ['AGE','CON'].includes(a.status)).length;
 
-  const filteredAppointments = appointments.filter(apt =>
-    apt.donorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    apt.bloodType.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAgendamentos = agendamentosHoje.filter((a: any) =>
+    a.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.user?.tipo_sang?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const completedToday = appointments.filter(apt => apt.status === 'completed').length;
-  const pendingToday = appointments.filter(apt => apt.status === 'pending').length;
+  // ─── Handlers: Agendamentos ───────────────────────────────────────────────
 
-  // Handle Update Stock
+  const handleConfirmar = async (agend: any) => {
+    try {
+      await api.put(`/auth/agendamentos/${agend.id}`, { status: 'CON' });
+      toast.success('Agendamento confirmado!');
+      fetchData();
+    } catch { toast.error('Erro ao confirmar agendamento'); }
+  };
+
+  const handleAbrirCancelar = (agend: any) => {
+    setSelectedAgendamento(agend);
+    setCancelMotivo('');
+    setCancelDialogOpen(true);
+  };
+
+  const handleConfirmarCancelamento = async () => {
+    if (!cancelMotivo) { toast.error('Selecione o motivo do cancelamento'); return; }
+    try {
+      await api.put(`/auth/agendamentos/${selectedAgendamento.id}`, {
+        status: 'CAN',
+        motivo_cancelamento: cancelMotivo,
+      });
+      toast.success('Agendamento cancelado!');
+      setCancelDialogOpen(false);
+      setSelectedAgendamento(null);
+      fetchData();
+    } catch { toast.error('Erro ao cancelar agendamento'); }
+  };
+
+  const handleAbrirTriagem = (agend: any) => {
+    setSelectedAgendamento(agend);
+    setTriagemData({ apto: true, motivo_inaptidao: '', observacoes: '', ml_coletados: '450' });
+    setTriagemDialogOpen(true);
+  };
+
+  const handleRegistrarTriagem = async () => {
+    if (!selectedAgendamento) return;
+    try {
+      // Cria triagem
+      await api.post('/auth/triagens', {
+        user_id:       selectedAgendamento.user_id,
+        funcionario_id: user.id,
+        hemocentro_id: user.hemocentro_id,
+        data_triagem:  new Date().toISOString().split('T')[0],
+        apto:          triagemData.apto,
+        motivo_inaptidao: !triagemData.apto ? triagemData.motivo_inaptidao : null,
+        observacoes:   triagemData.observacoes || null,
+      });
+
+      // Finaliza agendamento
+      await api.put(`/auth/agendamentos/${selectedAgendamento.id}`, {
+        status: 'FIN',
+      });
+
+      toast.success(triagemData.apto ? 'Doação registrada com sucesso!' : 'Triagem registrada — doador inapto');
+      setTriagemDialogOpen(false);
+      setSelectedAgendamento(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao registrar triagem: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
+  };
+
+  // ─── Handlers: Doadores ───────────────────────────────────────────────────
+
+  const handleSearchDonor = () => {
+    if (!donorSearchTerm.trim() && !donorBloodTypeFilter) {
+      toast.error('Digite um nome, CPF ou selecione um tipo sanguíneo');
+      return;
+    }
+    setSearchPerformed(true);
+    const results = doadores.filter((d: any) => {
+      const matchNome = donorSearchTerm
+        ? d.name?.toLowerCase().includes(donorSearchTerm.toLowerCase()) ||
+          d.cpf?.includes(donorSearchTerm.replace(/\D/g, ''))
+        : true;
+      const matchTipo = donorBloodTypeFilter
+        ? d.tipo_sang === donorBloodTypeFilter
+        : true;
+      return matchNome && matchTipo;
+    });
+    setDonorResult(results);
+    if (results.length === 0) toast.error('Nenhum doador encontrado');
+    else toast.success(`${results.length} doador(es) encontrado(s)`);
+  };
+
+  const handleAbrirEditDonor = (donor: any) => {
+    setSelectedDonor(donor);
+    setEditDonorData({
+      tipo_sang:       donor.tipo_sang || '',
+      telefone:        donor.telefone  || '',
+      status:          String(donor.status ?? 1),
+      tempo_restricao: '',
+    });
+    setEditDonorDialogOpen(true);
+  };
+
+  const handleSalvarDonor = async () => {
+    if (!selectedDonor) return;
+    try {
+      const payload: any = {
+        tipo_sang: editDonorData.tipo_sang || undefined,
+        telefone:  editDonorData.telefone.replace(/\D/g, '') || undefined,
+        status:    Number(editDonorData.status),
+      };
+      if (editDonorData.tempo_restricao) {
+        payload.tempo_restricao = editDonorData.tempo_restricao;
+      }
+      await api.put(`/users/${selectedDonor.id}`, payload);
+      toast.success('Doador atualizado com sucesso!');
+      setEditDonorDialogOpen(false);
+      setSelectedDonor(null);
+      fetchData();
+      // Atualiza resultado da busca
+      setDonorResult(prev =>
+        prev.map(d => d.id === selectedDonor.id ? { ...d, ...payload } : d)
+      );
+    } catch (err: any) {
+      toast.error('Erro ao atualizar doador: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
+  };
+
+  // ─── Handlers: Estoque ────────────────────────────────────────────────────
+
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
@@ -174,362 +295,227 @@ export function StaffDashboard() {
       toast.error('Digite uma quantidade válida');
       return;
     }
-
     const amount = parseInt(stockAmount);
-    setStock(prev =>
-      prev.map(item =>
-        item.type === selectedBloodType
-          ? {
-              ...item,
-              current: stockAction === 'add' 
-                ? Math.min(item.current + amount, item.max)
-                : Math.max(item.current - amount, 0)
-            }
-          : item
-      )
-    );
-
-    toast.success(
-      stockAction === 'add'
-        ? `${amount} bolsas adicionadas ao estoque de ${selectedBloodType}`
-        : `${amount} bolsas removidas do estoque de ${selectedBloodType}`
-    );
+    setStock(prev => prev.map(item => {
+      if (item.type !== selectedBloodType) return item;
+      const newCurrent = stockAction === 'add'
+        ? Math.min(item.current + amount, item.max)
+        : Math.max(item.current - amount, 0);
+      return { ...item, current: newCurrent };
+    }));
+    toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
     setUpdateStockDialogOpen(false);
   };
 
-  // Handle Search Donor
-  const handleSearchDonor = () => {
-    if (!donorSearchTerm.trim()) {
-      toast.error('Digite um CPF ou nome para buscar');
-      return;
-    }
+  const handleLogout = () => { logout(); navigate('/'); };
 
-    setSearchPerformed(true);
-
-    // Mock data - simula busca no banco
-    const mockDonors = [
-      {
-        name: 'Ana Silva Santos',
-        cpf: '123.456.789-00',
-        bloodType: 'O+',
-        phone: '(41) 98765-4321',
-        email: 'ana.silva@email.com',
-        lastDonation: '2025-12-15',
-        totalDonations: 5,
-        address: 'Rua das Flores, 123 - Centro, Curitiba - PR'
-      },
-      {
-        name: 'Carlos Eduardo Mendes',
-        cpf: '987.654.321-00',
-        bloodType: 'A+',
-        phone: '(41) 97654-3210',
-        email: 'carlos.mendes@email.com',
-        lastDonation: '2026-01-10',
-        totalDonations: 8,
-        address: 'Av. Brasil, 456 - Batel, Curitiba - PR'
-      }
-    ];
-
-    // Simula busca por nome ou CPF
-    const found = mockDonors.find(donor =>
-      donor.name.toLowerCase().includes(donorSearchTerm.toLowerCase()) ||
-      donor.cpf.includes(donorSearchTerm.replace(/\D/g, ''))
-    );
-
-    if (found && (!donorBloodType || found.bloodType === donorBloodType)) {
-      setDonorSearchResult(found);
-      toast.success('Doador encontrado!');
-    } else {
-      setDonorSearchResult(null);
-      toast.error('Doador não encontrado');
-    }
-  };
-
-  const handleClearDonorSearch = () => {
-    setDonorSearchTerm('');
-    setDonorBloodType('');
-    setDonorSearchResult(null);
-    setSearchPerformed(false);
-  };
-
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-600 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
-                <p className="text-xs text-gray-600">Painel do Funcionário</p>
-              </div>
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-600 p-2 rounded-lg"><Droplet className="h-6 w-6 text-white" /></div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
+              <p className="text-xs text-gray-600">Painel do Funcionário</p>
             </div>
-
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-blue-600 rounded-full"></span>
-              </Button>
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarFallback className="bg-blue-100 text-blue-600">
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:block">
-                  <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-600">{user.hemocentroName}</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Sair</span>
-              </Button>
+          </div>
+          <div className="flex items-center gap-4">
+            <Avatar>
+              <AvatarFallback className="bg-blue-100 text-blue-600">
+                {user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="hidden md:block">
+              <p className="text-sm font-semibold">{user.name}</p>
+              <p className="text-xs text-gray-600">{hemocentroNome}</p>
             </div>
+            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+              <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
+        {/* Welcome */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Olá, {user.name.split(' ')[0]}! 👋
-          </h2>
-          <p className="text-gray-600">
-            {user.hemocentroName} - Gerencie as doações e o estoque de sangue
-          </p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name.split(' ')[0]}! 👋</h2>
+          <p className="text-gray-600">{hemocentroNome} — Gerencie as doações e o estoque</p>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="border-l-4 border-l-blue-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Doações Hoje</CardDescription>
-              <CardTitle className="text-3xl">{appointments.length}</CardTitle>
+            <CardHeader className="pb-3"><CardDescription>Agendamentos Hoje</CardDescription>
+              <CardTitle className="text-3xl">{isLoading ? '...' : agendamentosHoje.length}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                <span>Agendamentos do dia</span>
-              </div>
-            </CardContent>
+            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Calendar className="h-4 w-4 text-blue-600" /><span>Do seu hemocentro</span></div></CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Concluídas</CardDescription>
-              <CardTitle className="text-3xl">{completedToday}</CardTitle>
+            <CardHeader className="pb-3"><CardDescription>Concluídos</CardDescription>
+              <CardTitle className="text-3xl">{isLoading ? '...' : concluidos}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <span>{(completedToday * 450)}ml coletados</span>
-              </div>
-            </CardContent>
+            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><CheckCircle2 className="h-4 w-4 text-green-600" /><span>{concluidos * 450}ml coletados</span></div></CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-orange-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Pendentes</CardDescription>
-              <CardTitle className="text-3xl">{pendingToday}</CardTitle>
+            <CardHeader className="pb-3"><CardDescription>Pendentes</CardDescription>
+              <CardTitle className="text-3xl">{isLoading ? '...' : pendentes}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Clock className="h-4 w-4 text-orange-600" />
-                <span>Aguardando atendimento</span>
-              </div>
-            </CardContent>
+            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Clock className="h-4 w-4 text-orange-600" /><span>Aguardando atendimento</span></div></CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Doadores Ativos</CardDescription>
-              <CardTitle className="text-3xl">2.847</CardTitle>
+            <CardHeader className="pb-3"><CardDescription>Total de Doadores</CardDescription>
+              <CardTitle className="text-3xl">{isLoading ? '...' : doadores.length}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="h-4 w-4 text-purple-600" />
-                <span>Cadastrados no sistema</span>
-              </div>
-            </CardContent>
+            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Users className="h-4 w-4 text-purple-600" /><span>Cadastrados no sistema</span></div></CardContent>
           </Card>
         </div>
 
-        {/* Main Content Tabs */}
+        {/* Tabs */}
         <Tabs defaultValue="schedule" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 lg:w-auto">
             <TabsTrigger value="schedule">Agenda do Dia</TabsTrigger>
-            <TabsTrigger value="stock">Estoque de Sangue</TabsTrigger>
+            <TabsTrigger value="stock">Estoque</TabsTrigger>
             <TabsTrigger value="donors">Doadores</TabsTrigger>
           </TabsList>
 
-          {/* Schedule Tab */}
+          {/* ── Agenda ── */}
           <TabsContent value="schedule" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Agenda de Doações - Hoje</CardTitle>
+                    <CardTitle>Agenda de Doações — Hoje</CardTitle>
                     <CardDescription>
-                      {new Date().toLocaleDateString('pt-BR', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
+                      {new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </CardDescription>
                   </div>
                   <div className="relative w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      placeholder="Buscar doador..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
+                    <Input placeholder="Buscar doador..." value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {filteredAppointments.map((appointment) => (
-                    <div
-                      key={appointment.id}
-                      className={`p-4 border rounded-lg ${
-                        appointment.status === 'completed' 
-                          ? 'bg-green-50 border-green-200' 
-                          : appointment.status === 'cancelled'
-                          ? 'bg-gray-50 border-gray-200'
-                          : 'bg-white border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="bg-white p-3 rounded-lg border-2 border-blue-600">
-                            <p className="text-lg font-bold text-blue-600">{appointment.time}</p>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-lg">{appointment.donorName}</p>
-                              <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
-                                {appointment.bloodType}
-                              </Badge>
-                              {!appointment.confirmed && (
-                                <Badge variant="outline" className="border-orange-600 text-orange-600">
-                                  Não confirmado
-                                </Badge>
-                              )}
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando agendamentos...</div>
+                ) : filteredAgendamentos.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p>Nenhum agendamento para hoje.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredAgendamentos.map((agend: any) => {
+                      const { hora } = formatDataHora(agend);
+                      const statusInfo = getStatusLabel(agend.status);
+                      const ativo = ['AGE', 'CON'].includes(agend.status);
+                      return (
+                        <div key={agend.id} className={`p-4 border rounded-lg ${agend.status === 'FIN' ? 'bg-green-50 border-green-200' : agend.status === 'CAN' ? 'bg-gray-50 border-gray-200' : 'bg-white'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="bg-white p-3 rounded-lg border-2 border-blue-600 text-center min-w-[60px]">
+                                <p className="text-lg font-bold text-blue-600">{hora}</p>
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-lg">{agend.user?.name || `Doador #${agend.user_id}`}</p>
+                                  {agend.user?.tipo_sang && (
+                                    <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
+                                      {agend.user.tipo_sang}
+                                    </Badge>
+                                  )}
+                                  <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+                                </div>
+                                {agend.user?.telefone && (
+                                  <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
+                                    <Phone className="h-3 w-3" />{agend.user.telefone}
+                                  </p>
+                                )}
+                                {agend.status === 'FIN' && (
+                                  <p className="text-sm text-green-600 font-semibold mt-1">✓ Doação finalizada</p>
+                                )}
+                                {agend.status === 'CAN' && (
+                                  <p className="text-sm text-gray-500 font-semibold mt-1">✗ Cancelada</p>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-sm text-gray-600">{appointment.phone}</p>
-                            {appointment.status === 'completed' && (
-                              <p className="text-sm text-green-600 font-semibold mt-1">
-                                ✓ Doação concluída - {appointment.bloodAmount}ml
-                              </p>
-                            )}
-                            {appointment.status === 'cancelled' && (
-                              <p className="text-sm text-gray-500 font-semibold mt-1">
-                                ✗ Cancelada
-                              </p>
+                            {ativo && (
+                              <div className="flex gap-2 flex-wrap">
+                                {agend.status === 'AGE' && (
+                                  <Button size="sm" variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50"
+                                    onClick={() => handleConfirmar(agend)}>
+                                    <CheckCircle2 className="h-4 w-4 mr-1" />Confirmar
+                                  </Button>
+                                )}
+                                <Button size="sm" className="bg-green-600 hover:bg-green-700"
+                                  onClick={() => handleAbrirTriagem(agend)}>
+                                  <Activity className="h-4 w-4 mr-1" />Registrar Doação
+                                </Button>
+                                <Button size="sm" variant="outline" className="border-red-600 text-red-600 hover:bg-red-50"
+                                  onClick={() => handleAbrirCancelar(agend)}>
+                                  <XCircle className="h-4 w-4 mr-1" />Cancelar
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>
-                        
-                        {appointment.status === 'pending' && (
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => handleCompleteDonation(appointment.id)}
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Concluir
-                            </Button>
-                            <Button
-                              onClick={() => handleCancelDonation(appointment.id)}
-                              size="sm"
-                              variant="outline"
-                              className="border-red-600 text-red-600 hover:bg-red-50"
-                            >
-                              <XCircle className="h-4 w-4 mr-2" />
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Stock Tab */}
+          {/* ── Estoque ── */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Estoque de Sangue</CardTitle>
-                <CardDescription>
-                  Monitoramento em tempo real do estoque por tipo sanguíneo
-                </CardDescription>
+                <CardDescription>Monitoramento por tipo sanguíneo — dados locais</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
-                  {stock.map((stock) => {
-                    const status = getStockStatus(stock.current, stock.min, stock.max);
-                    const percentage = (stock.current / stock.max) * 100;
-                    
+                  {stock.map(item => {
+                    const pct = Math.round((item.current / item.max) * 100);
+                    const critico = item.current < item.min;
+                    const baixo   = !critico && pct < 50;
                     return (
-                      <div key={stock.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
+                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-100 p-2 rounded-lg">
-                              <Droplet className="h-5 w-5 text-red-600" />
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold">{stock.type}</p>
-                              <p className="text-sm text-gray-600">Tipo sanguíneo</p>
-                            </div>
+                            <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
+                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <Badge className={status.bgColor + ' ' + status.textColor}>
-                            {status.label}
+                          <Badge className={critico ? 'bg-red-100 text-red-600' : baixo ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
+                            {critico ? 'Crítico' : baixo ? 'Baixo' : 'Normal'}
                           </Badge>
                         </div>
-                        
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Estoque atual</span>
-                            <span className="font-semibold">{stock.current} {stock.unit}</span>
+                            <span className="font-semibold">{item.current} bolsas</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                stock.current < stock.min ? 'bg-red-600' :
-                                percentage < 50 ? 'bg-orange-600' :
-                                percentage < 80 ? 'bg-blue-600' : 'bg-green-600'
-                              }`}
-                              style={{ width: `${Math.min(percentage, 100)}%` }}
-                            />
+                            <div className={`h-2 rounded-full ${critico ? 'bg-red-600' : baixo ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Mín: {stock.min}</span>
-                            <span>Máx: {stock.max}</span>
+                            <span>Mín: {item.min}</span><span>Máx: {item.max}</span>
                           </div>
                         </div>
-
                         <div className="mt-3 pt-3 border-t">
-                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenUpdateStock(stock.type)}>
-                            <Activity className="h-4 w-4 mr-2" />
-                            Atualizar Estoque
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenUpdateStock(item.type)}>
+                            <Activity className="h-4 w-4 mr-2" />Atualizar Estoque
                           </Button>
                         </div>
                       </div>
@@ -540,108 +526,102 @@ export function StaffDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Donors Tab */}
+          {/* ── Doadores ── */}
           <TabsContent value="donors" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Buscar Doador</CardTitle>
-                <CardDescription>
-                  Acesso limitado às informações dos doadores
-                </CardDescription>
+                <CardDescription>Busque doadores para visualizar e editar informações</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>CPF ou Nome</Label>
-                    <Input placeholder="Digite o CPF ou nome do doador" value={donorSearchTerm} onChange={(e) => setDonorSearchTerm(e.target.value)} />
+                  <div>
+                    <Label>Nome ou CPF</Label>
+                    <Input placeholder="Digite o nome ou CPF" value={donorSearchTerm}
+                      onChange={e => setDonorSearchTerm(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSearchDonor()} />
                   </div>
-                  <div className="space-y-2">
+                  <div>
                     <Label>Tipo Sanguíneo</Label>
-                    <Select value={donorBloodType} onValueChange={(value) => setDonorBloodType(value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="A+">A+</SelectItem>
-                        <SelectItem value="A-">A-</SelectItem>
-                        <SelectItem value="B+">B+</SelectItem>
-                        <SelectItem value="B-">B-</SelectItem>
-                        <SelectItem value="AB+">AB+</SelectItem>
-                        <SelectItem value="AB-">AB-</SelectItem>
-                        <SelectItem value="O+">O+</SelectItem>
-                        <SelectItem value="O-">O-</SelectItem>
-                      </SelectContent>
+                    <Select
+                        value={donorBloodTypeFilter || 'todos'}
+                        onValueChange={v => setDonorBloodTypeFilter(v === 'todos' ? '' : v)}
+                        >
+                    <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                          {tiposSanguineos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
                     </Select>
                   </div>
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSearchDonor}>
-                  <Search className="h-4 w-4 mr-2" />
-                  Buscar Doador
-                </Button>
 
-                <div className="pt-4 border-t">
-                  <p className="text-sm text-gray-600">
-                    ℹ️ Como funcionário, você tem acesso limitado às informações dos doadores.
-                    Apenas dados necessários para o atendimento são exibidos.
-                  </p>
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSearchDonor}>
+                    <Search className="h-4 w-4 mr-2" />Buscar
+                  </Button>
+                  {searchPerformed && (
+                    <Button variant="outline" onClick={() => {
+                      setDonorSearchTerm(''); setDonorBloodTypeFilter('');
+                      setDonorResult([]); setSearchPerformed(false);
+                    }}>
+                      <XCircle className="h-4 w-4 mr-2" />Limpar
+                    </Button>
+                  )}
                 </div>
 
                 {searchPerformed && (
-                  <div className="mt-4">
-                    {donorSearchResult ? (
-                      <Card className="border-l-4 border-l-green-600">
-                        <CardHeader className="pb-3">
-                          <CardDescription>Doador Encontrado</CardDescription>
-                          <CardTitle className="text-3xl">{donorSearchResult.name}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Phone className="h-4 w-4 text-blue-600" />
-                              <span>{donorSearchResult.phone}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Mail className="h-4 w-4 text-blue-600" />
-                              <span>{donorSearchResult.email}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <MapPin className="h-4 w-4 text-blue-600" />
-                              <span>{donorSearchResult.address}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
-                                {donorSearchResult.bloodType}
-                              </Badge>
-                              <span>Última doação: {new Date(donorSearchResult.lastDonation).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Badge variant="outline" className="bg-green-50 border-green-600 text-green-600">
-                                {donorSearchResult.totalDonations} doações
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                  <div className="pt-2">
+                    {donorResult.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 border-dashed border-2 rounded-lg">
+                        <Users className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+                        <p>Nenhum doador encontrado.</p>
+                      </div>
                     ) : (
-                      <Card className="border-l-4 border-l-red-600">
-                        <CardHeader className="pb-3">
-                          <CardDescription>Doador Não Encontrado</CardDescription>
-                          <CardTitle className="text-3xl">Nenhum resultado encontrado</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <XCircle className="h-4 w-4 text-red-600" />
-                              <span>Não foi possível encontrar um doador com os critérios fornecidos.</span>
+                      <div className="space-y-3">
+                        {donorResult.map((donor: any) => (
+                          <div key={donor.id} className="p-4 border rounded-lg hover:bg-gray-50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <Avatar>
+                                  <AvatarFallback className="bg-blue-100 text-blue-600">
+                                    {donor.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-semibold">{donor.name}</p>
+                                    {donor.tipo_sang && (
+                                      <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
+                                        {donor.tipo_sang}
+                                      </Badge>
+                                    )}
+                                    <Badge className={donor.status === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
+                                      {donor.status === 1 ? 'Ativo' : 'Inativo'}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-1">
+                                    {donor.email && (
+                                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                                        <Mail className="h-3 w-3" />{donor.email}
+                                      </p>
+                                    )}
+                                    {donor.telefone && (
+                                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                                        <Phone className="h-3 w-3" />{donor.telefone}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <Button size="sm" variant="outline" onClick={() => handleAbrirEditDonor(donor)}>
+                                <Edit className="h-4 w-4 mr-1" />Editar
+                              </Button>
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
+                        ))}
+                      </div>
                     )}
-                    <Button className="bg-gray-600 hover:bg-gray-700" onClick={handleClearDonorSearch}>
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Limpar Busca
-                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -650,82 +630,206 @@ export function StaffDashboard() {
         </Tabs>
       </main>
 
-      {/* Update Stock Dialog */}
+      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
+
+      {/* Cancelar Agendamento */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle>Cancelar Agendamento</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            {selectedAgendamento && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p className="font-semibold">{selectedAgendamento.user?.name}</p>
+                <p className="text-gray-600">{formatDataHora(selectedAgendamento).hora}</p>
+              </div>
+            )}
+            <div>
+              <Label>Motivo do Cancelamento *</Label>
+              <Select value={cancelMotivo} onValueChange={setCancelMotivo}>
+                <SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nao_compareceu">Não compareceu</SelectItem>
+                  <SelectItem value="inaptidao">Inaptidão clínica</SelectItem>
+                  <SelectItem value="nao_elegivel">Não elegível</SelectItem>
+                  <SelectItem value="solicitacao_doador">Solicitação do doador</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>Voltar</Button>
+            <Button onClick={handleConfirmarCancelamento} className="bg-red-600 hover:bg-red-700">
+              <XCircle className="h-4 w-4 mr-2" />Confirmar Cancelamento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registrar Doação / Triagem */}
+      <Dialog open={triagemDialogOpen} onOpenChange={setTriagemDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Registrar Doação</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            {selectedAgendamento && (
+              <div className="bg-blue-50 p-3 rounded-lg text-sm">
+                <p className="font-semibold">{selectedAgendamento.user?.name}</p>
+                <p className="text-gray-600">
+                  Tipo: <strong>{selectedAgendamento.user?.tipo_sang || 'Não informado'}</strong>
+                  {' '}• {formatDataHora(selectedAgendamento).hora}
+                </p>
+              </div>
+            )}
+
+            <div>
+              <Label>Aptidão para Doação *</Label>
+              <Select
+                value={triagemData.apto ? 'true' : 'false'}
+                onValueChange={v => setTriagemData({ ...triagemData, apto: v === 'true', motivo_inaptidao: '' })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">✅ Apto — doação realizada</SelectItem>
+                  <SelectItem value="false">❌ Inapto — doação não realizada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {triagemData.apto && (
+              <div>
+                <Label>Volume Coletado (ml)</Label>
+                <Input type="number" min="100" max="600" value={triagemData.ml_coletados}
+                  onChange={e => setTriagemData({ ...triagemData, ml_coletados: e.target.value })} />
+                <p className="text-xs text-gray-400 mt-1">Padrão: 450ml</p>
+              </div>
+            )}
+
+            {!triagemData.apto && (
+              <div>
+                <Label>Motivo da Inaptidão *</Label>
+                <Select value={triagemData.motivo_inaptidao}
+                  onValueChange={v => setTriagemData({ ...triagemData, motivo_inaptidao: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pressao_arterial">Pressão arterial alterada</SelectItem>
+                    <SelectItem value="hemoglobina_baixa">Hemoglobina baixa</SelectItem>
+                    <SelectItem value="febre">Febre</SelectItem>
+                    <SelectItem value="medicamento">Uso de medicamento</SelectItem>
+                    <SelectItem value="tatuagem_recente">Tatuagem/piercing recente</SelectItem>
+                    <SelectItem value="cirurgia_recente">Cirurgia recente</SelectItem>
+                    <SelectItem value="doacao_recente">Doação recente (intervalo mínimo)</SelectItem>
+                    <SelectItem value="outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div>
+              <Label>Observações</Label>
+              <Input placeholder="Observações adicionais (opcional)" value={triagemData.observacoes}
+                onChange={e => setTriagemData({ ...triagemData, observacoes: e.target.value })} />
+            </div>
+
+            {!triagemData.apto && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2 text-amber-800 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <p>O agendamento será finalizado e o doador notificado sobre a inaptidão.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTriagemDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleRegistrarTriagem}
+              className={triagemData.apto ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}>
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              {triagemData.apto ? 'Confirmar Doação' : 'Registrar Inaptidão'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Doador */}
+      <Dialog open={editDonorDialogOpen} onOpenChange={setEditDonorDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle>Editar Doador</DialogTitle></DialogHeader>
+          {selectedDonor && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p className="font-semibold">{selectedDonor.name}</p>
+                <p className="text-gray-600">{selectedDonor.email}</p>
+              </div>
+              <div>
+                <Label>Tipo Sanguíneo</Label>
+                <Select value={editDonorData.tipo_sang} onValueChange={v => setEditDonorData({ ...editDonorData, tipo_sang: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {tiposSanguineos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Telefone</Label>
+                <Input value={editDonorData.telefone}
+                  onChange={e => setEditDonorData({ ...editDonorData, telefone: e.target.value })}
+                  placeholder="(00) 00000-0000" />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={editDonorData.status} onValueChange={v => setEditDonorData({ ...editDonorData, status: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Ativo</SelectItem>
+                    <SelectItem value="0">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Restrição até (data)</Label>
+                <Input type="date" value={editDonorData.tempo_restricao}
+                  onChange={e => setEditDonorData({ ...editDonorData, tempo_restricao: e.target.value })}
+                  min={new Date().toISOString().split('T')[0]} />
+                <p className="text-xs text-gray-400 mt-1">Deixe em branco para não alterar</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDonorDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSalvarDonor} className="bg-blue-600 hover:bg-blue-700">
+              <CheckCircle2 className="h-4 w-4 mr-2" />Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Atualizar Estoque */}
       <Dialog open={updateStockDialogOpen} onOpenChange={setUpdateStockDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Atualizar Estoque - {selectedBloodType}</DialogTitle>
-            <DialogDescription>
-              Adicione ou remova bolsas de sangue do estoque
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Ação</Label>
-              <Select value={stockAction} onValueChange={(value) => setStockAction(value as 'add' | 'remove')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+              <Select value={stockAction} onValueChange={v => setStockAction(v as 'add' | 'remove')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="add">
-                    <div className="flex items-center gap-2">
-                      <Plus className="h-4 w-4 text-green-600" />
-                      <span>Adicionar ao estoque</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="remove">
-                    <div className="flex items-center gap-2">
-                      <Minus className="h-4 w-4 text-red-600" />
-                      <span>Remover do estoque</span>
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="add"><div className="flex items-center gap-2"><Plus className="h-4 w-4 text-green-600" />Adicionar</div></SelectItem>
+                  <SelectItem value="remove"><div className="flex items-center gap-2"><Minus className="h-4 w-4 text-red-600" />Remover</div></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label htmlFor="amount">Quantidade (bolsas)</Label>
-              <Input
-                id="amount"
-                type="number"
-                min="1"
-                placeholder="Digite a quantidade"
-                value={stockAmount}
-                onChange={(e) => setStockAmount(e.target.value)}
-              />
+              <Label>Quantidade (bolsas)</Label>
+              <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
             </div>
-            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
-              <p>
-                Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
-                <strong>
-                  {stock.find(s => s.type === selectedBloodType)?.current} bolsas
-                </strong>
-              </p>
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+              Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
+              <strong>{stock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setUpdateStockDialogOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleUpdateStock}
-              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
-            >
-              {stockAction === 'add' ? (
-                <>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar
-                </>
-              ) : (
-                <>
-                  <Minus className="h-4 w-4 mr-2" />
-                  Remover
-                </>
-              )}
+            <Button variant="outline" onClick={() => setUpdateStockDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateStock}
+              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
+              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -114,12 +114,6 @@ const role = typeof rawRole === 'string'
     setToken('');
   };
 
-  // ⚡ Auto preencher
-  const fillCredentials = (userEmail: string, userPassword: string) => {
-    setEmail(userEmail);
-    setPassword(userPassword);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center p-4">
 
@@ -317,48 +311,6 @@ const role = typeof rawRole === 'string'
                     </button>
                   </p>
                 </form>
-
-                {/* Credenciais de teste */}
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm text-gray-600 font-semibold">Credenciais de teste:</p>
-                    <SeedButton />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-xs">
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('doador@example.com', 'doador123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-red-600">Doador</p>
-                        <p className="text-gray-600">doador@example.com / doador123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('funcionario@hemocentro.com', 'funcionario123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-blue-600">Funcionário</p>
-                        <p className="text-gray-600">funcionario@hemocentro.com / funcionario123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('diretor@hemocentro.com', 'diretor123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-purple-600">Diretor</p>
-                        <p className="text-gray-600">diretor@hemocentro.com / diretor123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('admin@doavida.com', 'admin123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-green-600">Administrador</p>
-                        <p className="text-gray-600">admin@doavida.com / admin123</p>
-                      </div>
-                    </Button>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>

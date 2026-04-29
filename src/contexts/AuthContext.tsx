@@ -5,6 +5,7 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  role_id: number | null;
   roles: string[];
 }
 
@@ -19,6 +20,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const roleMap: Record<number, string> = {
+  1: 'doador',
+  2: 'funcionario',
+  3: 'diretor',
+  4: 'admin',
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,13 +38,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (token) {
         try {
-          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
           const response = await api.get('/auth/me');
 
+          const roles =
+            response.data.roles?.length > 0
+              ? response.data.roles
+              : response.data.user.role_id
+              ? [roleMap[response.data.user.role_id]]
+              : ['doador'];
+
           setUser({
             ...response.data.user,
-            roles: response.data.roles || []
+            roles,
           });
 
         } catch {
@@ -50,42 +65,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkSession();
   }, []);
 
-  // 🔐 LOGIN CORRETO
+  // 🔐 LOGIN
   const login = async (email: string, password: string) => {
-  try {
-    const res = await api.post("/auth/login", {
-      email,
-      password,
-    });
+    try {
+      const res = await api.post('/auth/login', { email, password });
 
-    localStorage.setItem("token", res.data.token);
+      localStorage.setItem('token', res.data.token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
 
-    setUser(res.data.user);
+      const roles =
+        res.data.roles?.length > 0
+          ? res.data.roles
+          : res.data.user.role_id
+          ? [roleMap[res.data.user.role_id]]
+          : ['doador'];
 
-    return res.data.user;
+      const userData = {
+        ...res.data.user,
+        roles,
+      };
 
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
-};
+      setUser(userData);
+      return userData;
+
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  };
 
   // 📝 REGISTER
- const signup = async (data: any): Promise<boolean> => {
-  try {
-    await api.post('/auth/register', data);
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
+  const signup = async (data: any): Promise<boolean> => {
+    try {
+      await api.post('/auth/register', data);
+      return true;
+    } catch (error: any) {
+      console.error('ERROS DE VALIDAÇÃO:', JSON.stringify(error.response?.data, null, 2));
+      throw error;
+    }
+  };
 
   // 🚪 LOGOUT
   const logout = () => {
-  localStorage.removeItem("token");
-  setUser(null); // se tiver state de usuário
-  window.location.href = "/login";
-};
+    setUser(null);
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common['Authorization'];
+    window.location.href = '/login';
+  };
 
   return (
     <AuthContext.Provider value={{

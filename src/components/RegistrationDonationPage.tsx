@@ -263,56 +263,71 @@ export function RegistrationDonationPage() {
   };
 
   const handleAppointmentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!date) { alert("Selecione uma data"); return; }
-    if (!formData.location) { alert("Selecione um posto de coleta"); return; }
-    if (!formData.appointmentTime) { alert("Selecione um horário"); return; }
+  e.preventDefault();
+  if (!date) { alert("Selecione uma data"); return; }
+  if (!formData.location) { alert("Selecione um posto de coleta"); return; }
+  if (!formData.appointmentTime) { alert("Selecione um horário"); return; }
 
-    try {
-      if (isAuthenticated) {
-        await api.post("/agendamentos", {
-          data: format(date, "yyyy-MM-dd"),
-          horario: formData.appointmentTime,
-          hemocentro_id: formData.location,
-          observacoes: formData.notes,
-        });
-        setStep("success");
-        return;
-      }
-
-      const success = await signup({
-        name: formData.fullName.trim(),
-        email: formData.email.trim(),
-        password: formData.password,
-        password_confirmation: formData.confirmPassword,
-        cpf: formData.cpf.replace(/\D/g, ""),
-        sexo: formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
-        data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
-        telefone: formData.telefone.replace(/\D/g, ""),
-        tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
-          ? formData.bloodType.toUpperCase() : undefined,
-        cep: formData.zipCode.replace(/\D/g, ""),
-        rua: formData.address,
-        numero: formData.numero,
-        cidade: formData.city,
-        uf: formData.state.substring(0, 2).toUpperCase(),
-        responsavel_nome: guardianData.guardianName || undefined,
-        responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
-        responsavel_data_nasc: guardianData.guardianBirthDate
-          ? format(new Date(guardianData.guardianBirthDate), "dd/MM/yyyy") : undefined,
+  try {
+    if (isAuthenticated) {
+      // Usuário já logado — só cria o agendamento
+      await api.post("/auth/agendamentos", {
+        hemocentro_id: Number(formData.location),
+        data_hora_doacao: `${format(date, "yyyy-MM-dd")} ${formData.appointmentTime}:00`,
       });
-
-      if (success) {
-        setStep("success");
-      } else {
-        alert("Erro ao cadastrar. Verifique os dados e tente novamente.");
-      }
-    } catch (error: any) {
-      console.error("ERRO:", error.response?.data);
-      const msg = error.response?.data?.message || "Erro ao processar. Tente novamente.";
-      alert(msg);
+      setStep("success");
+      return;
     }
-  };
+
+    // Usuário novo — cadastra primeiro, depois redireciona para login
+    const success = await signup({
+      name: formData.fullName.trim(),
+      email: formData.email.trim(),
+      password: formData.password,
+      password_confirmation: formData.confirmPassword,
+      cpf: formData.cpf.replace(/\D/g, ""),
+      sexo: formData.gender === "male"
+        ? "M"
+        : formData.gender === "female"
+        ? "F"
+        : formData.gender === "prefer_not"
+        ? "Prefiro não informar"
+        : "Outro",
+      data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
+      telefone: formData.telefone.replace(/\D/g, ""),
+      tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
+        ? formData.bloodType.toUpperCase()
+        : undefined,
+      cep: formData.zipCode.replace(/\D/g, ""),
+      rua: formData.address,
+      numero: formData.numero,
+      bairro: undefined,
+      cidade: formData.city,
+      uf: formData.state.substring(0, 2).toUpperCase(),
+      responsavel_nome: guardianData.guardianName || undefined,
+      responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
+      responsavel_data_nasc: guardianData.guardianBirthDate
+        ? format(new Date(guardianData.guardianBirthDate), "dd/MM/yyyy")
+        : undefined,
+    });
+
+    if (success) {
+      setStep("success");
+    } else {
+      alert("Erro ao cadastrar. Verifique os dados e tente novamente.");
+    }
+  } catch (error: any) {
+    console.error("ERRO:", error.response?.data);
+    const erros = error.response?.data?.errors;
+    if (erros) {
+      // Mostra todos os erros de validação do Laravel
+      const msgs = Object.values(erros).flat().join("\n");
+      alert(msgs);
+    } else {
+      alert(error.response?.data?.message || "Erro ao processar. Tente novamente.");
+    }
+  }
+};
 
   const pwdStrength = getPasswordStrength(formData.password);
 
