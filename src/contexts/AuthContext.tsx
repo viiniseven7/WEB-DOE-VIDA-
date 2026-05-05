@@ -9,9 +9,11 @@ export interface User {
   email: string;
   role: UserRole;
   role_id: number;
-  bloodType?: string;
-  phone?: string;
+  tipo_sang?: string;
+  sexo?: string;
+  telefone?: string;
   cpf?: string;
+  tempo_restricao?: string | null; // Novo campo oficial do Back-end
   donationCount?: number;
   lastDonation?: string;
   hemocenterId?: string;
@@ -32,8 +34,8 @@ export interface SignupData {
   password: string;
   name: string;
   role_id?: number;
-  bloodType?: string;
-  phone?: string;
+  tipo_sang?: string;
+  telefone?: string;
   cpf?: string;
 }
 
@@ -48,7 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Normalizador Universal de Usuário (conforme DOC-API.md)
   const normalizeUser = (data: any): User => {
     const userData = data.user || data;
-    // Captura o role_id de onde quer que ele venha (raiz ou dentro do user)
     const rid = Number(data.role_id || userData.role_id || userData.role || 1);
 
     const roleMap: Record<number, UserRole> = {
@@ -63,7 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: userData.id?.toString(),
       role: roleMap[rid] || 'donor',
       role_id: rid,
-      phone: userData.phone || userData.telefone, // Mapeia telefone da API para o padrão do front
+      // Mapeamento direto da API
+      telefone: userData.telefone,
+      tipo_sang: userData.tipo_sang,
+      tempo_restricao: userData.tempo_restricao, // Consumindo a fonte da verdade oficial
     };
   };
 

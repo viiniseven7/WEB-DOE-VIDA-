@@ -6,6 +6,7 @@ import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { EligibilityTestPage } from "./components/EligibilityTestPage";
 import { RegistrationDonationPage } from "./components/RegistrationDonationPage";
+import { AppointmentPage } from "./components/AppointmentPage";
 import { DonorDashboard } from "./components/dashboards/DonorDashboard";
 import { StaffDashboard } from "./components/dashboards/StaffDashboard";
 import { DirectorDashboard } from "./components/dashboards/DirectorDashboard";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "reset-password", Component: ResetPasswordPage },
       { path: "teste-elegibilidade", Component: EligibilityTestPage },
       { path: "cadastro-doacao", Component: RegistrationDonationPage },
+      { path: "agendar", Component: AppointmentPage },
       { path: "dashboard/donor", Component: DonorDashboard },
       { path: "dashboard/staff", Component: StaffDashboard },
       { path: "dashboard/director", Component: DirectorDashboard },
