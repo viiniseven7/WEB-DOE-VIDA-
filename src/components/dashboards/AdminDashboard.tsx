@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -12,102 +13,63 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Switch } from '../ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../ui/dialog';
-import { 
-  Droplet, 
-  Users,
-  LogOut,
-  Bell,
-  Building2,
-  Shield,
-  Mail,
-  MessageSquare,
-  Send,
-  Plus,
-  Settings,
-  BarChart3,
-  Globe,
-  UserPlus,
-  Edit,
-  Trash2,
-  Activity,
-  Minus,
-  Search,
-  FileText,
-  Download,
-  Eye,
-  CheckCircle2,
-  XCircle,
-  Filter
+import {
+  Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
+  Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
+  Minus, Search, FileText, Download, Eye, CheckCircle2, XCircle, Filter
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { toast } from 'sonner';
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
-// Mock data
-const hemocentros = [
-  { id: 'hc-001', name: 'Hemepar', city: 'Curitiba', donations: 325, active: true },
-  { id: 'hc-002', name: 'Hospital Erasto Gaertner', city: 'Curitiba', donations: 198, active: true },
-  { id: 'hc-003', name: 'Hospital de Clínicas - UFPR', city: 'Curitiba', donations: 245, active: true },
-  { id: 'hc-004', name: 'Hospital do Trabalhador', city: 'Curitiba', donations: 176, active: true },
-];
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+
+interface Hemocentro {
+  id: number;
+  nome: string;
+  cidade?: string;
+  uf?: string;
+  status: number; // 1 = ativo, 0 = inativo
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  numero?: string;
+  bairro?: string;
+  cep?: string;
+}
+
+interface UserItem {
+  id: number;
+  name: string;
+  email: string;
+  role_id: number;
+  hemocentro_id?: number;
+  status: number;
+  cpf?: string;
+  telefone?: string;
+  hemocentro?: Hemocentro;
+}
+
+// ─── Mocks (sem equivalente na API) ──────────────────────────────────────────
 
 const permissionGroups = [
-  { 
-    id: 'pg-001', 
-    name: 'Funcionário Padrão', 
-    description: 'Acesso básico ao sistema', 
-    permissions: ['view_donors', 'register_donations', 'view_schedule'],
-    users: 45
-  },
-  { 
-    id: 'pg-002', 
-    name: 'Enfermeiro', 
-    description: 'Acesso completo ao registro de doações', 
-    permissions: ['view_donors', 'register_donations', 'view_schedule', 'manage_stock'],
-    users: 18
-  },
-  { 
-    id: 'pg-003', 
-    name: 'Diretor', 
-    description: 'Gestão completa do hemocentro', 
-    permissions: ['all_hemocentro'],
-    users: 5
-  },
+  { id: 'pg-001', name: 'Funcionário Padrão', description: 'Acesso básico ao sistema', permissions: ['view_donors', 'register_donations', 'view_schedule'], users: 45 },
+  { id: 'pg-002', name: 'Enfermeiro', description: 'Acesso completo ao registro de doações', permissions: ['view_donors', 'register_donations', 'view_schedule', 'manage_stock'], users: 18 },
+  { id: 'pg-003', name: 'Diretor', description: 'Gestão completa do hemocentro', permissions: ['all_hemocentro'], users: 5 },
 ];
 
 const campaignsMock = [
-  { 
-    id: 'c-001', 
-    title: 'Campanha de Urgência - Tipo O-', 
-    subtitle: 'Precisamos urgentemente de doadores O-',
-    status: 'active',
-    sent: 2847,
-    opened: 1523,
-    clicks: 289,
-    date: '2026-03-05'
-  },
-  { 
-    id: 'c-002', 
-    title: 'Doação de Junho - Salve Vidas', 
-    subtitle: 'Sua doação pode salvar até 4 vidas',
-    status: 'scheduled',
-    date: '2026-06-01'
-  },
-  { 
-    id: 'c-003', 
-    title: 'Campanha de Natal 2025', 
-    subtitle: 'Doe sangue neste Natal',
-    status: 'completed',
-    sent: 3120,
-    opened: 1890,
-    clicks: 456,
-    date: '2025-12-20'
-  },
+  { id: 'c-001', title: 'Campanha de Urgência - Tipo O-', subtitle: 'Precisamos urgentemente de doadores O-', status: 'active', sent: 2847, opened: 1523, clicks: 289, date: '2026-03-05' },
+  { id: 'c-002', title: 'Doação de Junho - Salve Vidas', subtitle: 'Sua doação pode salvar até 4 vidas', status: 'scheduled', date: '2026-06-01' },
+  { id: 'c-003', title: 'Campanha de Natal 2025', subtitle: 'Doe sangue neste Natal', status: 'completed', sent: 3120, opened: 1890, clicks: 456, date: '2025-12-20' },
 ];
 
 const systemStats = [
-  { month: 'Jan', total: 1245, hc1: 245, hc2: 198, hc3: 245, hc4: 176, hc5: 142 },
-  { month: 'Fev', total: 1389, hc1: 289, hc2: 212, hc3: 267, hc4: 189, hc5: 156 },
-  { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176, hc5: 142 },
+  { month: 'Jan', total: 1245, hc1: 245, hc2: 198, hc3: 245, hc4: 176 },
+  { month: 'Fev', total: 1389, hc1: 289, hc2: 212, hc3: 267, hc4: 189 },
+  { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176 },
 ];
 
 const globalStockMock = [
@@ -121,190 +83,25 @@ const globalStockMock = [
   { type: 'O-', current: 91, min: 125, max: 350, critical: true },
 ];
 
-const usersMock = [
-  { id: 'u-001', name: 'Dr. Roberto Silva', email: 'roberto@doavida.com', role: 'Diretor', hemocentro: 'Hemepar', status: 'online', lastLogin: '2026-03-28 14:30' },
-  { id: 'u-002', name: 'Ana Paula Santos', email: 'ana.santos@doavida.com', role: 'Funcionário', hemocentro: 'Hospital Erasto Gaertner', status: 'online', lastLogin: '2026-03-28 08:15' },
-  { id: 'u-003', name: 'Carlos Mendes', email: 'carlos.m@doavida.com', role: 'Diretor', hemocentro: 'Hospital de Clínicas - UFPR', status: 'offline', lastLogin: '2026-03-27 18:45' },
-  { id: 'u-004', name: 'Maria Oliveira', email: 'maria.o@doavida.com', role: 'Enfermeira', hemocentro: 'Hospital do Trabalhador', status: 'online', lastLogin: '2026-03-28 09:00' },
-  { id: 'u-005', name: 'João Pedro Costa', email: 'joao.costa@doavida.com', role: 'Funcionário', hemocentro: 'Hemepar', status: 'online', lastLogin: '2026-03-28 13:20' },
-];
+const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 
-const stockDetailsByType: { [key: string]: any } = {
-  'A+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 82, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 56, percentage: 23 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 48, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 59, percentage: 24 },
-    ],
-    history: [
-      { date: '24/03', stock: 230, entries: 25, exits: 18 },
-      { date: '25/03', stock: 237, entries: 18, exits: 11 },
-      { date: '26/03', stock: 244, entries: 22, exits: 15 },
-      { date: '27/03', stock: 251, entries: 20, exits: 13 },
-      { date: '28/03', stock: 245, entries: 15, exits: 21 },
-    ],
-    stats: {
-      avgDailyConsumption: 16,
-      daysUntilCritical: 9,
-      lastDonation: '2026-03-28 13:45',
-      totalDonationsMonth: 87
-    }
-  },
-  'A-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 28, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 18, percentage: 23 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 14, percentage: 18 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 18, percentage: 23 },
-    ],
-    history: [
-      { date: '24/03', stock: 74, entries: 8, exits: 12 },
-      { date: '25/03', stock: 70, entries: 6, exits: 10 },
-      { date: '26/03', stock: 66, entries: 9, exits: 13 },
-      { date: '27/03', stock: 62, entries: 7, exits: 11 },
-      { date: '28/03', stock: 78, entries: 22, exits: 6 },
-    ],
-    stats: {
-      avgDailyConsumption: 10,
-      daysUntilCritical: 2,
-      lastDonation: '2026-03-28 10:20',
-      totalDonationsMonth: 34
-    }
-  },
-  'B+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 52, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 38, percentage: 24 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 31, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 35, percentage: 22 },
-    ],
-    history: [
-      { date: '24/03', stock: 148, entries: 14, exits: 11 },
-      { date: '25/03', stock: 151, entries: 12, exits: 9 },
-      { date: '26/03', stock: 154, entries: 15, exits: 12 },
-      { date: '27/03', stock: 157, entries: 11, exits: 8 },
-      { date: '28/03', stock: 156, entries: 10, exits: 11 },
-    ],
-    stats: {
-      avgDailyConsumption: 10,
-      daysUntilCritical: 3,
-      lastDonation: '2026-03-28 11:30',
-      totalDonationsMonth: 56
-    }
-  },
-  'B-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 15, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 11, percentage: 26 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 8, percentage: 19 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 8, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 46, entries: 5, exits: 8 },
-      { date: '25/03', stock: 43, entries: 4, exits: 7 },
-      { date: '26/03', stock: 40, entries: 3, exits: 6 },
-      { date: '27/03', stock: 37, entries: 6, exits: 9 },
-      { date: '28/03', stock: 42, entries: 10, exits: 5 },
-    ],
-    stats: {
-      avgDailyConsumption: 7,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-28 09:15',
-      totalDonationsMonth: 21
-    }
-  },
-  'AB+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 32, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 22, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 18, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 17, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 85, entries: 8, exits: 6 },
-      { date: '25/03', stock: 87, entries: 7, exits: 5 },
-      { date: '26/03', stock: 89, entries: 6, exits: 4 },
-      { date: '27/03', stock: 91, entries: 5, exits: 3 },
-      { date: '28/03', stock: 89, entries: 4, exits: 6 },
-    ],
-    stats: {
-      avgDailyConsumption: 5,
-      daysUntilCritical: 3,
-      lastDonation: '2026-03-27 16:45',
-      totalDonationsMonth: 28
-    }
-  },
-  'AB-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 10, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 7, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 5, percentage: 18 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 6, percentage: 21 },
-    ],
-    history: [
-      { date: '24/03', stock: 30, entries: 3, exits: 4 },
-      { date: '25/03', stock: 29, entries: 2, exits: 3 },
-      { date: '26/03', stock: 28, entries: 3, exits: 4 },
-      { date: '27/03', stock: 27, entries: 2, exits: 3 },
-      { date: '28/03', stock: 28, entries: 3, exits: 2 },
-    ],
-    stats: {
-      avgDailyConsumption: 3,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-26 14:20',
-      totalDonationsMonth: 12
-    }
-  },
-  'O+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 108, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 82, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 68, percentage: 21 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 66, percentage: 20 },
-    ],
-    history: [
-      { date: '24/03', stock: 310, entries: 32, exits: 28 },
-      { date: '25/03', stock: 314, entries: 28, exits: 24 },
-      { date: '26/03', stock: 318, entries: 30, exits: 26 },
-      { date: '27/03', stock: 322, entries: 26, exits: 22 },
-      { date: '28/03', stock: 324, entries: 24, exits: 22 },
-    ],
-    stats: {
-      avgDailyConsumption: 24,
-      daysUntilCritical: 5,
-      lastDonation: '2026-03-28 14:50',
-      totalDonationsMonth: 142
-    }
-  },
-  'O-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 32, percentage: 35 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 24, percentage: 26 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 18, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 17, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 95, entries: 12, exits: 18 },
-      { date: '25/03', stock: 89, entries: 10, exits: 16 },
-      { date: '26/03', stock: 83, entries: 14, exits: 20 },
-      { date: '27/03', stock: 77, entries: 11, exits: 17 },
-      { date: '28/03', stock: 91, entries: 25, exits: 11 },
-    ],
-    stats: {
-      avgDailyConsumption: 16,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-28 12:30',
-      totalDonationsMonth: 48
-    }
-  }
-};
+// ─── Componente ──────────────────────────────────────────────────────────────
 
 export function AdminDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  
-  // Dialog states
+
+  // ── Estado: dados da API
+  const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // ── Estado: mocks locais
+  const [campaigns, setCampaigns] = useState(campaignsMock);
+  const [globalStock, setGlobalStock] = useState(globalStockMock);
+  const [permissions, setPermissions] = useState(permissionGroups);
+
+  // ── Estado: dialogs
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showHemocentroDialog, setShowHemocentroDialog] = useState(false);
@@ -316,120 +113,210 @@ export function AdminDashboard() {
   const [showDeleteUserDialog, setShowDeleteUserDialog] = useState(false);
   const [showViewHemocentroDialog, setShowViewHemocentroDialog] = useState(false);
   const [showEditHemocentroDialog, setShowEditHemocentroDialog] = useState(false);
-  const [showSettingsHemocentroDialog, setShowSettingsHemocentroDialog] = useState(false);
   const [showEditCampaignDialog, setShowEditCampaignDialog] = useState(false);
   const [showDeleteCampaignDialog, setShowDeleteCampaignDialog] = useState(false);
   const [showEditPermissionDialog, setShowEditPermissionDialog] = useState(false);
   const [showDeletePermissionDialog, setShowDeletePermissionDialog] = useState(false);
-  
-  // Data states
-  const [campaigns, setCampaigns] = useState(campaignsMock);
-  const [globalStock, setGlobalStock] = useState(globalStockMock);
-  const [users, setUsers] = useState(usersMock);
-  const [permissions, setPermissions] = useState(permissionGroups);
-  
-  // Form states
+
+  // ── Estado: formulários / seleções
   const [selectedBloodType, setSelectedBloodType] = useState('');
   const [selectedBloodTypeForDetails, setSelectedBloodTypeForDetails] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [userToDelete, setUserToDelete] = useState<any>(null);
-  const [selectedHemocentro, setSelectedHemocentro] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+  const [selectedHemocentro, setSelectedHemocentro] = useState<Hemocentro | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [campaignToDelete, setCampaignToDelete] = useState<any>(null);
   const [selectedPermission, setSelectedPermission] = useState<any>(null);
   const [permissionToDelete, setPermissionToDelete] = useState<any>(null);
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
-  const [selectedHemocentroForStock, setSelectedHemocentroForStock] = useState('');
+  const [selectedHemocentroForStock, setSelectedHemocentroForStock] = useState('all');
   const [reportType, setReportType] = useState('');
   const [reportFormat, setReportFormat] = useState('pdf');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userFilter, setUserFilter] = useState('all');
 
-  if (!user || user.role !== 'admin') {
-    navigate('/login');
-    return null;
+  // ── Formulário: novo hemocentro
+  const [hcForm, setHcForm] = useState({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
+
+  // ── Formulário: novo usuário
+  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
+
+  // ─── Fetch inicial ──────────────────────────────────────────────────────────
+
+  const fetchData = useCallback(async () => {
+  setIsLoading(true);
+  try {
+    const [hcRes, usersRes] = await Promise.all([
+      api.get('/hemocentros'),
+      api.get('/users'),
+    ]);
+
+    // ADICIONE ESSES LOGS TEMPORÁRIOS:
+    console.log('STATUS hemocentros:', hcRes.status);
+    console.log('DATA hemocentros:', hcRes.data);
+    console.log('STATUS users:', usersRes.status);
+    console.log('DATA users:', usersRes.data);
+
+    setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
+    setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+  } catch (err: any) {
+    console.error('ERRO fetchData:', err.response?.status, err.response?.data);
+    toast.error('Erro ao carregar dados');
+  } finally {
+    setIsLoading(false);
   }
+}, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    toast.success('Logout realizado com sucesso');
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Campaign handlers
-  const handleCreateCampaign = (e: React.FormEvent) => {
+  // ─── Guard ──────────────────────────────────────────────────────────────────
+
+  if (!user) { navigate('/login'); return null; }
+
+  const handleLogout = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
+
+  // ─── Hemocentros ────────────────────────────────────────────────────────────
+
+  const handleCreateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowCampaignDialog(false);
-    toast.success('Campanha criada e agendada com sucesso!');
-  };
-
-  const handleEditCampaign = (id: string) => {
-    const campaign = campaigns.find(c => c.id === id);
-    if (campaign) {
-      setSelectedCampaign(campaign);
-      setShowEditCampaignDialog(true);
+    try {
+      await api.post('/auth/hemocentros', { ...hcForm, status: 1 });
+      toast.success('Hemocentro criado com sucesso!');
+      setShowHemocentroDialog(false);
+      setHcForm({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro: ' + (err.response?.data?.message || JSON.stringify(err.response?.data)));
     }
   };
 
-  const handleUpdateCampaign = (e: React.FormEvent) => {
+  const handleUpdateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowEditCampaignDialog(false);
-    setSelectedCampaign(null);
-    toast.success('Campanha atualizada com sucesso!');
-  };
-
-  const handleDeleteCampaign = (id: string) => {
-    const campaign = campaigns.find(c => c.id === id);
-    if (campaign) {
-      setCampaignToDelete(campaign);
-      setShowDeleteCampaignDialog(true);
+    if (!selectedHemocentro) return;
+    try {
+      await api.put(`/auth/hemocentros/${selectedHemocentro.id}`, selectedHemocentro);
+      toast.success('Hemocentro atualizado!');
+      setShowEditHemocentroDialog(false);
+      setSelectedHemocentro(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro: ' + (err.response?.data?.message || 'Tente novamente'));
     }
   };
 
-  const handleConfirmDeleteCampaign = () => {
-    if (campaignToDelete) {
-      setCampaigns(campaigns.filter(c => c.id !== campaignToDelete.id));
-      setShowDeleteCampaignDialog(false);
-      setCampaignToDelete(null);
-      toast.success('Campanha excluída com sucesso!');
+  const handleToggleHemocentroStatus = async (hc: Hemocentro) => {
+    try {
+      const novoStatus = hc.status === 1 ? 0 : 1;
+      await api.put(`/auth/hemocentros/${hc.id}`, { status: novoStatus });
+      toast.success(`Hemocentro ${novoStatus === 1 ? 'ativado' : 'desativado'}!`);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao alterar status');
     }
   };
 
-  // Permission handlers
-  const handleEditPermission = (permission: any) => {
-    setSelectedPermission(permission);
-    setShowEditPermissionDialog(true);
-  };
+  // ─── Usuários ───────────────────────────────────────────────────────────────
 
-  const handleUpdatePermission = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowEditPermissionDialog(false);
-    setSelectedPermission(null);
-    toast.success('Grupo de permissões atualizado com sucesso!');
-  };
+  const roleNames: Record<string, string> = {
+  '1': 'doador',
+  '2': 'funcionario', 
+  '3': 'diretor',
+  '4': 'admin',
+};
+  const roleLabels: Record<number, string> = {
+  1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
+};
 
-  const handleDeletePermission = (permission: any) => {
-    setPermissionToDelete(permission);
-    setShowDeletePermissionDialog(true);
-  };
+const handleCreateUser = async (e: React.FormEvent) => {
+  e.preventDefault();
+  try {
+    const payload: any = {
+      name: newUserForm.name,
+      email: newUserForm.email,
+      password: newUserForm.password,
+      cpf: newUserForm.cpf.replace(/\D/g, ''),
+      role_id: Number(newUserForm.role_id),
+      role: roleNames[newUserForm.role_id], // campo que o Laravel exige
+    };
+    if (newUserForm.hemocentro_id) payload.hemocentro_id = Number(newUserForm.hemocentro_id);
 
-  const handleConfirmDeletePermission = () => {
-    if (permissionToDelete) {
-      setPermissions(permissions.filter(p => p.id !== permissionToDelete.id));
-      setShowDeletePermissionDialog(false);
-      setPermissionToDelete(null);
-      toast.success('Grupo de permissões removido com sucesso!');
+    console.log('PAYLOAD:', JSON.stringify(payload, null, 2));
+
+    await api.post('/auth/users', payload);
+    toast.success('Usuário criado com sucesso!');
+    setShowUserDialog(false);
+    setNewUserForm({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
+    fetchData();
+  } catch (err: any) {
+    console.log('ERRO:', JSON.stringify(err.response?.data, null, 2));
+    const erros = err.response?.data?.errors;
+    if (erros) {
+      toast.error(Object.values(erros).flat().join('\n'));
+    } else {
+      toast.error(err.response?.data?.message || 'Erro ao criar usuário');
+    }
+  }
+};
+
+
+const handleUpdateUser = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!selectedUser) return;
+  try {
+    const payload: any = {
+      name: selectedUser.name,
+      email: selectedUser.email,
+      role_id: selectedUser.role_id,
+      role: roleNames[selectedUser.role_id], // campo que o Laravel exige
+    };
+
+    if (selectedUser.hemocentro_id) payload.hemocentro_id = selectedUser.hemocentro_id;
+    if (selectedUser.status !== undefined) payload.status = selectedUser.status;
+
+    console.log('PAYLOAD UPDATE:', JSON.stringify(payload, null, 2));
+
+    await api.put(`/users/${selectedUser.id}`, payload);
+    toast.success('Usuário atualizado!');
+    setShowEditUserDialog(false);
+    setSelectedUser(null);
+    fetchData();
+  } catch (err: any) {
+    console.log('ERRO UPDATE:', JSON.stringify(err.response?.data, null, 2));
+    const erros = err.response?.data?.errors;
+    if (erros) {
+      toast.error(Object.values(erros).flat().join('\n'));
+    } else {
+      toast.error(err.response?.data?.message || 'Erro ao atualizar usuário');
+    }
+  }
+};
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      await api.delete(`/users/${userToDelete.id}`);
+      toast.success('Usuário removido!');
+      setShowDeleteUserDialog(false);
+      setUserToDelete(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao remover usuário');
     }
   };
 
-  // Permission handlers
-  const handleCreatePermissionGroup = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowPermissionDialog(false);
-    toast.success('Grupo de permissões criado com sucesso!');
+  const handleToggleUserStatus = async (userItem: UserItem) => {
+    try {
+      const novoStatus = userItem.status === 1 ? 0 : 1;
+      await api.put(`/users/${userItem.id}`, { status: novoStatus });
+      toast.success('Status atualizado!');
+      fetchData();
+    } catch {
+      toast.error('Erro ao alterar status');
+    }
   };
 
+<<<<<<< HEAD
   // Hemocentro handlers
   const handleCreateHemocentro = (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,8 +338,10 @@ export function AdminDashboard() {
     setShowHemocentroDialog(false);
     toast.success('Hemocentro criado com sucesso!');
   };
+=======
+  // ─── Estoque (local) ─────────────────────────────────────────────────────────
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
 
-  // Stock handlers
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
@@ -461,18 +350,10 @@ export function AdminDashboard() {
     setShowStockDialog(true);
   };
 
-  const handleOpenStockDetails = (bloodType: string) => {
-    setSelectedBloodTypeForDetails(bloodType);
-    setShowStockDetailsDialog(true);
-  };
-
   const handleUpdateStock = () => {
-    if (!stockAmount || parseInt(stockAmount) <= 0) {
-      toast.error('Digite uma quantidade válida');
-      return;
-    }
-
+    if (!stockAmount || parseInt(stockAmount) <= 0) { toast.error('Digite uma quantidade válida'); return; }
     const amount = parseInt(stockAmount);
+<<<<<<< HEAD
 
     // REQUEST PARA API
     // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
@@ -526,13 +407,44 @@ export function AdminDashboard() {
 
     setShowUserDialog(false);
     toast.success('Usuário criado com sucesso!');
+=======
+    setGlobalStock(prev => prev.map(item => {
+      if (item.type !== selectedBloodType) return item;
+      const newCurrent = stockAction === 'add'
+        ? Math.min(item.current + amount, item.max)
+        : Math.max(item.current - amount, 0);
+      return { ...item, current: newCurrent, critical: newCurrent < item.min };
+    }));
+    toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+    setShowStockDialog(false);
   };
 
-  const handleEditUser = (user: any) => {
-    setSelectedUser(user);
-    setShowEditUserDialog(true);
+  // ─── Campanhas (local) ──────────────────────────────────────────────────────
+
+  const handleCreateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowCampaignDialog(false); toast.success('Campanha criada!'); };
+  const handleUpdateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowEditCampaignDialog(false); toast.success('Campanha atualizada!'); };
+  const handleConfirmDeleteCampaign = () => {
+    if (!campaignToDelete) return;
+    setCampaigns(c => c.filter(x => x.id !== campaignToDelete.id));
+    setShowDeleteCampaignDialog(false);
+    setCampaignToDelete(null);
+    toast.success('Campanha excluída!');
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
   };
 
+  // ─── Permissões (local) ─────────────────────────────────────────────────────
+
+  const handleCreatePermissionGroup = (e: React.FormEvent) => { e.preventDefault(); setShowPermissionDialog(false); toast.success('Grupo criado!'); };
+  const handleUpdatePermission = (e: React.FormEvent) => { e.preventDefault(); setShowEditPermissionDialog(false); toast.success('Grupo atualizado!'); };
+  const handleConfirmDeletePermission = () => {
+    if (!permissionToDelete) return;
+    setPermissions(p => p.filter(x => x.id !== permissionToDelete.id));
+    setShowDeletePermissionDialog(false);
+    setPermissionToDelete(null);
+    toast.success('Grupo removido!');
+  };
+
+<<<<<<< HEAD
   const handleUpdateUser = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -626,112 +538,81 @@ export function AdminDashboard() {
   };
 
   // Report handlers
+=======
+  // ─── Relatório (simulado) ───────────────────────────────────────────────────
+
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
   const handleExportReport = () => {
-    if (!reportType) {
-      toast.error('Selecione um tipo de relatório');
-      return;
-    }
-
-    const reportNames: { [key: string]: string } = {
-      donations: 'Relatório de Doações',
-      stock: 'Relatório de Estoque Global',
-      users: 'Relatório de Usuários',
-      campaigns: 'Relatório de Campanhas',
-      hemocentros: 'Relatório de Hemocentros'
-    };
-
-    const formatExt = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
-    
-    toast.success(`${reportNames[reportType]} exportado em ${formatExt} com sucesso!`);
+    if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
+    const names: Record<string, string> = { donations: 'Doações', stock: 'Estoque Global', users: 'Usuários', campaigns: 'Campanhas', hemocentros: 'Hemocentros' };
+    const ext = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
+    toast.success(`Relatório de ${names[reportType]} exportado em ${ext}!`);
     setShowReportDialog(false);
     setReportType('');
     setReportFormat('pdf');
   };
 
-  const totalDonations = hemocentros.reduce((acc, hc) => acc + hc.donations, 0);
-  const totalDonors = 12847;
-  
+  // ─── Computados ─────────────────────────────────────────────────────────────
+
+  const hemocentrosAtivos = hemocentros.filter(h => h.status === 1);
+  const totalDonors = users.filter(u => u.role_id === 1).length;
+
   const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                         u.email.toLowerCase().includes(userSearchTerm.toLowerCase());
-    const matchesFilter = userFilter === 'all' || 
-                         (userFilter === 'online' && u.status === 'online') ||
-                         (userFilter === 'offline' && u.status === 'offline') ||
-                         u.role === userFilter;
+    const matchesSearch =
+      u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+      u.email.toLowerCase().includes(userSearchTerm.toLowerCase());
+    const matchesFilter =
+      userFilter === 'all' ||
+      (userFilter === 'ativo' && u.status === 1) ||
+      (userFilter === 'inativo' && u.status === 0) ||
+      String(u.role_id) === userFilter;
     return matchesSearch && matchesFilter;
   });
 
   const stockDistribution = globalStock.map(item => ({
     name: item.type,
     value: item.current,
-    color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A'
+    color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A',
   }));
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-green-600 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
-                <p className="text-xs text-gray-600">Painel do Administrador</p>
-              </div>
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-green-600 p-2 rounded-lg"><Droplet className="h-6 w-6 text-white" /></div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
+              <p className="text-xs text-gray-600">Painel do Administrador</p>
             </div>
-
-            <div className="flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowReportDialog(true)}
-                className="gap-2"
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden md:inline">Exportar</span>
-              </Button>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-green-600 rounded-full"></span>
-              </Button>
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarFallback className="bg-green-100 text-green-600">
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:block">
-                  <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-600">Administrador do Sistema</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Sair</span>
-              </Button>
+          </div>
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => setShowReportDialog(true)} className="gap-2">
+              <Download className="h-4 w-4" /><span className="hidden md:inline">Exportar</span>
+            </Button>
+            <Avatar>
+              <AvatarFallback className="bg-green-100 text-green-600">
+                {user.name.split(' ').map(n => n[0]).join('')}
+              </AvatarFallback>
+            </Avatar>
+            <div className="hidden md:block">
+              <p className="text-sm font-semibold">{user.name}</p>
+              <p className="text-xs text-gray-600">Administrador</p>
             </div>
+            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+              <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Olá, {user.name.split(' ')[0]}! 👋
-          </h2>
-          <p className="text-gray-600">
-            Visão global do sistema DoaVida - Gerenciamento completo de todos os hemocentros
-          </p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name.split(' ')[0]}! 👋</h2>
+          <p className="text-gray-600">Visão global do sistema DoaVida</p>
         </div>
 
         {/* Stats Cards */}
@@ -739,12 +620,12 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Total de Hemocentros</CardDescription>
-              <CardTitle className="text-3xl">{hemocentros.length}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : hemocentros.length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Building2 className="h-4 w-4 text-green-600" />
-                <span>Todos ativos</span>
+                <span>{hemocentrosAtivos.length} ativos</span>
               </div>
             </CardContent>
           </Card>
@@ -752,12 +633,11 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">{totalDonations}</CardTitle>
+              <CardTitle className="text-3xl">944</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
-                <BarChart3 className="h-4 w-4" />
-                <span>+12% vs mês anterior</span>
+                <BarChart3 className="h-4 w-4" /><span>+12% vs mês anterior</span>
               </div>
             </CardContent>
           </Card>
@@ -765,12 +645,11 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
               <CardDescription>Total de Doadores</CardDescription>
-              <CardTitle className="text-3xl">{totalDonors.toLocaleString()}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : totalDonors}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="h-4 w-4 text-purple-600" />
-                <span>Cadastrados no sistema</span>
+                <Users className="h-4 w-4 text-purple-600" /><span>Cadastrados no sistema</span>
               </div>
             </CardContent>
           </Card>
@@ -782,14 +661,13 @@ export function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Mail className="h-4 w-4 text-orange-600" />
-                <span>Em andamento</span>
+                <Mail className="h-4 w-4 text-orange-600" /><span>Em andamento</span>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Tabs */}
+        {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-7 lg:w-auto">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
@@ -801,54 +679,41 @@ export function AdminDashboard() {
             <TabsTrigger value="settings">Configurações</TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
+          {/* ── Overview ── */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              {/* Donations Chart */}
               <Card>
                 <CardHeader>
                   <CardTitle>Doações por Hemocentro</CardTitle>
-                  <CardDescription>Comparativo de performance - Este Mês</CardDescription>
+                  <CardDescription>Comparativo — Este Mês</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={systemStats}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="hc1" fill="#16A34A" name="SP Central" />
-                      <Bar dataKey="hc2" fill="#2563EB" name="Zona Leste" />
-                      <Bar dataKey="hc3" fill="#9333EA" name="Zona Sul" />
-                      <Bar dataKey="hc4" fill="#EA580C" name="Campinas" />
-                      <Bar dataKey="hc5" fill="#DC2626" name="Santos" />
+                      <XAxis dataKey="month" /><YAxis />
+                      <Tooltip /><Legend />
+                      <Bar dataKey="hc1" fill="#16A34A" name="HC 1" />
+                      <Bar dataKey="hc2" fill="#2563EB" name="HC 2" />
+                      <Bar dataKey="hc3" fill="#9333EA" name="HC 3" />
+                      <Bar dataKey="hc4" fill="#EA580C" name="HC 4" />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
-              {/* Stock Distribution */}
               <Card>
                 <CardHeader>
                   <CardTitle>Distribuição de Estoque Global</CardTitle>
-                  <CardDescription>Bolsas disponíveis por tipo sanguíneo</CardDescription>
+                  <CardDescription>Bolsas por tipo sanguíneo</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
-                      <Pie
-                        data={stockDistribution}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {stockDistribution.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
+                      <Pie data={stockDistribution} cx="50%" cy="50%" outerRadius={100}
+                        label={({ name, value }) => `${name}: ${value}`} dataKey="value">
+                        {stockDistribution.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
                         ))}
                       </Pie>
                       <Tooltip />
@@ -858,75 +723,50 @@ export function AdminDashboard() {
               </Card>
             </div>
 
-            {/* Evolution Chart */}
             <Card>
               <CardHeader>
                 <CardTitle>Evolução Total do Sistema</CardTitle>
-                <CardDescription>Doações acumuladas - Últimos 3 meses</CardDescription>
+                <CardDescription>Últimos 3 meses</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={systemStats}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={3} name="Total de Doações" />
+                    <XAxis dataKey="month" /><YAxis />
+                    <Tooltip /><Legend />
+                    <Line type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={3} name="Total" />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
 
-            {/* Quick Stats */}
             <div className="grid md:grid-cols-3 gap-6">
               <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Taxa de Comparecimento</CardDescription>
-                  <CardTitle className="text-3xl">87%</CardTitle>
-                </CardHeader>
+                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">87%</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} />
-                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} /></div>
                   <p className="text-sm text-gray-600 mt-2">Em todos os hemocentros</p>
                 </CardContent>
               </Card>
-
               <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Usuários Online</CardDescription>
-                  <CardTitle className="text-3xl">{users.filter(u => u.status === 'online').length}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">de {users.length} usuários totais</p>
-                  <p className="text-sm text-green-600 mt-1">Sistema operacional</p>
-                </CardContent>
+                <CardHeader className="pb-3"><CardDescription>Hemocentros Ativos</CardDescription><CardTitle className="text-3xl">{hemocentrosAtivos.length}</CardTitle></CardHeader>
+                <CardContent><p className="text-sm text-gray-600">de {hemocentros.length} cadastrados</p></CardContent>
               </Card>
-
               <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Estoque Crítico</CardDescription>
-                  <CardTitle className="text-3xl text-red-600">{globalStock.filter(s => s.critical).length}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">tipos sanguíneos abaixo do mínimo</p>
-                  <p className="text-sm text-red-600 mt-1">Requer atenção urgente</p>
-                </CardContent>
+                <CardHeader className="pb-3"><CardDescription>Estoque Crítico</CardDescription><CardTitle className="text-3xl text-red-600">{globalStock.filter(s => s.critical).length}</CardTitle></CardHeader>
+                <CardContent><p className="text-sm text-red-600">tipos abaixo do mínimo</p></CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Stock Tab */}
+          {/* ── Estoque Global ── */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Estoque Global de Sangue</CardTitle>
-                    <CardDescription>
-                      Monitoramento consolidado de todos os hemocentros
-                    </CardDescription>
+                    <CardDescription>Monitoramento consolidado — dados simulados</CardDescription>
                   </div>
                   <Badge variant="outline" className="text-red-600 border-red-600">
                     {globalStock.filter(s => s.critical).length} Críticos
@@ -936,64 +776,40 @@ export function AdminDashboard() {
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {globalStock.map((stock) => {
-                    const percentage = (stock.current / stock.max) * 100;
-                    const status = stock.critical 
+                    const pct = (stock.current / stock.max) * 100;
+                    const status = stock.critical
                       ? { label: 'Crítico', color: 'bg-red-600', textColor: 'text-red-600', bgColor: 'bg-red-100' }
-                      : percentage < 50 
+                      : pct < 50
                       ? { label: 'Baixo', color: 'bg-orange-600', textColor: 'text-orange-600', bgColor: 'bg-orange-100' }
-                      : percentage < 80
+                      : pct < 80
                       ? { label: 'Normal', color: 'bg-blue-600', textColor: 'text-blue-600', bgColor: 'bg-blue-100' }
                       : { label: 'Ótimo', color: 'bg-green-600', textColor: 'text-green-600', bgColor: 'bg-green-100' };
-                    
                     return (
                       <div key={stock.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-100 p-2 rounded-lg">
-                              <Droplet className="h-5 w-5 text-red-600" />
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold">{stock.type}</p>
-                              <p className="text-sm text-gray-600">Tipo sanguíneo</p>
-                            </div>
+                            <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
+                            <div><p className="text-2xl font-bold">{stock.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <Badge className={`${status.bgColor} ${status.textColor}`}>
-                            {status.label}
-                          </Badge>
+                          <Badge className={`${status.bgColor} ${status.textColor}`}>{status.label}</Badge>
                         </div>
-                        
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Estoque atual</span>
                             <span className="font-semibold">{stock.current} bolsas</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${status.color}`}
-                              style={{ width: `${Math.min(percentage, 100)}%` }}
-                            />
+                            <div className={`h-2 rounded-full ${status.color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Mín: {stock.min}</span>
-                            <span>Máx: {stock.max}</span>
+                            <span>Mín: {stock.min}</span><span>Máx: {stock.max}</span>
                           </div>
                         </div>
-
                         <div className="mt-3 pt-3 border-t flex gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="flex-1"
-                            onClick={() => handleOpenUpdateStock(stock.type)}
-                          >
-                            <Activity className="h-4 w-4 mr-2" />
-                            Atualizar
+                          <Button size="sm" variant="outline" className="flex-1" onClick={() => handleOpenUpdateStock(stock.type)}>
+                            <Activity className="h-4 w-4 mr-2" />Atualizar
                           </Button>
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => handleOpenStockDetails(stock.type)}
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => { setSelectedBloodTypeForDetails(stock.type); setShowStockDetailsDialog(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
                         </div>
@@ -1005,244 +821,163 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Users Tab */}
+          {/* ── Usuários ── */}
           <TabsContent value="users" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Gerenciar Usuários do Sistema</CardTitle>
-                    <CardDescription>
-                      Todos os usuários cadastrados em todos os hemocentros
-                    </CardDescription>
+                    <CardTitle>Gerenciar Usuários</CardTitle>
+                    <CardDescription>Todos os usuários do sistema</CardDescription>
                   </div>
-                  <Button 
-                    onClick={() => setShowUserDialog(true)}
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    Novo Usuário
+                  <Button onClick={() => setShowUserDialog(true)} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <UserPlus className="h-4 w-4" />Novo Usuário
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
+                {/* Filtros */}
                 <div className="flex gap-4 mb-4">
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      placeholder="Buscar por nome ou email..."
-                      value={userSearchTerm}
-                      onChange={(e) => setUserSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
+                    <Input placeholder="Buscar por nome ou email..." value={userSearchTerm}
+                      onChange={e => setUserSearchTerm(e.target.value)} className="pl-10" />
                   </div>
                   <Select value={userFilter} onValueChange={setUserFilter}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos os usuários</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="offline">Offline</SelectItem>
-                      <SelectItem value="Diretor">Diretores</SelectItem>
-                      <SelectItem value="Funcionário">Funcionários</SelectItem>
-                      <SelectItem value="Enfermeira">Enfermeiras</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="ativo">Ativos</SelectItem>
+                      <SelectItem value="inativo">Inativos</SelectItem>
+                      <SelectItem value="1">Doadores</SelectItem>
+                      <SelectItem value="2">Funcionários</SelectItem>
+                      <SelectItem value="3">Diretores</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="space-y-3">
-                  {filteredUsers.map((userItem) => (
-                    <div
-                      key={userItem.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <Avatar>
-                          <AvatarFallback className="bg-purple-100 text-purple-600">
-                            {userItem.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">{userItem.name}</p>
-                            <Badge className={userItem.status === 'online' ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-600"}>
-                              <div className={`h-2 w-2 ${userItem.status === 'online' ? 'bg-green-600' : 'bg-gray-600'} rounded-full mr-2`}></div>
-                              {userItem.status === 'online' ? 'Online' : 'Offline'}
-                            </Badge>
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando usuários...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredUsers.map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-4">
+                          <Avatar>
+                            <AvatarFallback className="bg-purple-100 text-purple-600">
+                              {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">{u.name}</p>
+                              <Badge className={u.status === 1 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}>
+                                {u.status === 1 ? 'Ativo' : 'Inativo'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600">{u.email}</p>
+                            <p className="text-xs text-gray-500">
+                              {roleLabels[u.role_id] || 'Usuário'}{u.hemocentro ? ` • ${u.hemocentro.nome}` : ''}
+                            </p>
                           </div>
-                          <p className="text-sm text-gray-600">{userItem.email}</p>
-                          <p className="text-xs text-gray-500">{userItem.role} • {userItem.hemocentro}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => handleToggleUserStatus(u)}
+                            title={u.status === 1 ? 'Desativar' : 'Ativar'}>
+                            {u.status === 1 ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedUser(u); setShowEditUserDialog(true); }}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setUserToDelete(u); setShowDeleteUserDialog(true); }}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-right mr-4">
-                          <p className="text-xs text-gray-600">Último acesso</p>
-                          <p className="text-sm font-semibold">{userItem.lastLogin}</p>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleToggleUserStatus(userItem.id)}
-                        >
-                          {userItem.status === 'online' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleEditUser(userItem)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleOpenDeleteUser(userItem)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {filteredUsers.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhum usuário encontrado.</div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Hemocentros Tab */}
+          {/* ── Hemocentros ── */}
           <TabsContent value="hemocentros" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Gerenciar Hemocentros</CardTitle>
-                    <CardDescription>Todos os hemocentros cadastrados no sistema</CardDescription>
+                    <CardDescription>Hemocentros cadastrados no sistema</CardDescription>
                   </div>
-                  <Button 
-                    onClick={() => setShowHemocentroDialog(true)}
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Novo Hemocentro
+                  <Button onClick={() => setShowHemocentroDialog(true)} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Plus className="h-4 w-4" />Novo Hemocentro
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {hemocentros.map((hc) => (
-                    <div
-                      key={hc.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="bg-green-100 p-3 rounded-lg">
-                          <Building2 className="h-6 w-6 text-green-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">{hc.name}</p>
-                            {hc.active && (
-                              <Badge className="bg-green-100 text-green-600">Ativo</Badge>
-                            )}
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando hemocentros...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {hemocentros.map(hc => (
+                      <div key={hc.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-4">
+                          <div className="bg-green-100 p-3 rounded-lg"><Building2 className="h-6 w-6 text-green-600" /></div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">{hc.nome}</p>
+                              <Badge className={hc.status === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
+                                {hc.status === 1 ? 'Ativo' : 'Inativo'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600">{hc.cidade}{hc.uf ? ` - ${hc.uf}` : ''} • ID: {hc.id}</p>
                           </div>
-                          <p className="text-sm text-gray-600">{hc.city} • ID: {hc.id}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">Doações este mês</p>
-                          <p className="text-xl font-bold text-green-600">{hc.donations}</p>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleViewHemocentro(hc)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedHemocentro(hc); setShowViewHemocentroDialog(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditHemocentro(hc)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedHemocentro({ ...hc }); setShowEditHemocentroDialog(true); }}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleSettingsHemocentro(hc)}
-                          >
-                            <Settings className="h-4 w-4" />
+                          <Button variant="outline" size="sm" onClick={() => handleToggleHemocentroStatus(hc)}
+                            title={hc.status === 1 ? 'Desativar' : 'Ativar'}>
+                            {hc.status === 1 ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {hemocentros.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhum hemocentro cadastrado.</div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Permissions Tab */}
+          {/* ── Permissões (local) ── */}
           <TabsContent value="permissions" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Grupos de Permissões</CardTitle>
-                    <CardDescription>Gerencie os níveis de acesso ao sistema</CardDescription>
-                  </div>
+                  <div><CardTitle>Grupos de Permissões</CardTitle><CardDescription>Níveis de acesso ao sistema</CardDescription></div>
                   <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
                     <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700">
-                        <Plus className="h-4 w-4" />
-                        Novo Grupo
-                      </Button>
+                      <Button className="gap-2 bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4" />Novo Grupo</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Criar Grupo de Permissões</DialogTitle>
-                        <DialogDescription>
-                          Defina um novo grupo de permissões para os usuários
-                        </DialogDescription>
-                      </DialogHeader>
+                      <DialogHeader><DialogTitle>Criar Grupo de Permissões</DialogTitle></DialogHeader>
                       <form onSubmit={handleCreatePermissionGroup} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Nome do Grupo</Label>
-                          <Input placeholder="Ex: Técnico de Laboratório" required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Descrição</Label>
-                          <Textarea placeholder="Descreva as responsabilidades deste grupo" />
-                        </div>
-                        <div className="space-y-3">
-                          <Label>Permissões</Label>
-                          <div className="grid grid-cols-2 gap-3">
-                            {[
-                              'Visualizar Doadores',
-                              'Registrar Doações',
-                              'Gerenciar Estoque',
-                              'Ver Agenda',
-                              'Editar Perfis',
-                              'Gerar Relatórios',
-                              'Gerenciar Campanhas',
-                              'Configurações do Sistema'
-                            ].map((perm) => (
-                              <div key={perm} className="flex items-center space-x-2">
-                                <Switch id={perm} />
-                                <Label htmlFor={perm} className="text-sm">{perm}</Label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        <div><Label>Nome do Grupo</Label><Input placeholder="Ex: Técnico de Laboratório" required /></div>
+                        <div><Label>Descrição</Label><Textarea placeholder="Descreva as responsabilidades" /></div>
                         <div className="flex gap-2 justify-end">
-                          <Button type="button" variant="outline" onClick={() => setShowPermissionDialog(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                            Criar Grupo
-                          </Button>
+                          <Button type="button" variant="outline" onClick={() => setShowPermissionDialog(false)}>Cancelar</Button>
+                          <Button type="submit" className="bg-green-600 hover:bg-green-700">Criar Grupo</Button>
                         </div>
                       </form>
                     </DialogContent>
@@ -1251,46 +986,27 @@ export function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {permissions.map((group) => (
-                    <div
-                      key={group.id}
-                      className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
+                  {permissions.map(group => (
+                    <div key={group.id} className="p-4 border rounded-lg hover:bg-gray-50">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4">
-                          <div className="bg-purple-100 p-3 rounded-lg">
-                            <Shield className="h-6 w-6 text-purple-600" />
-                          </div>
-                          <div className="flex-1">
+                          <div className="bg-purple-100 p-3 rounded-lg"><Shield className="h-6 w-6 text-purple-600" /></div>
+                          <div>
                             <div className="flex items-center gap-2 mb-1">
                               <p className="font-semibold">{group.name}</p>
                               <Badge variant="outline">{group.users} usuários</Badge>
                             </div>
-                            <p className="text-sm text-gray-600 mb-3">{group.description}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {group.permissions.map((perm) => (
-                                <Badge key={perm} variant="outline" className="bg-green-50 text-green-700">
-                                  {perm.replace(/_/g, ' ')}
-                                </Badge>
+                            <p className="text-sm text-gray-600 mb-2">{group.description}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {group.permissions.map(p => (
+                                <Badge key={p} variant="outline" className="bg-green-50 text-green-700 text-xs">{p.replace(/_/g, ' ')}</Badge>
                               ))}
                             </div>
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditPermission(group)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleDeletePermission(group)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedPermission(group); setShowEditPermissionDialog(true); }}><Edit className="h-4 w-4" /></Button>
+                          <Button variant="outline" size="sm" onClick={() => { setPermissionToDelete(group); setShowDeletePermissionDialog(true); }}><Trash2 className="h-4 w-4 text-red-600" /></Button>
                         </div>
                       </div>
                     </div>
@@ -1300,125 +1016,31 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Campaigns Tab */}
+          {/* ── Campanhas (local) ── */}
           <TabsContent value="campaigns" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Campanhas de Doação</CardTitle>
-                    <CardDescription>Gerencie e crie campanhas para doadores via email e WhatsApp</CardDescription>
-                  </div>
+                  <div><CardTitle>Campanhas de Doação</CardTitle><CardDescription>Campanhas por email e WhatsApp</CardDescription></div>
                   <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
                     <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700">
-                        <Plus className="h-4 w-4" />
-                        Nova Campanha
-                      </Button>
+                      <Button className="gap-2 bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4" />Nova Campanha</Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                      <DialogHeader>
-                        <DialogTitle>Criar Nova Campanha</DialogTitle>
-                        <DialogDescription>
-                          Configure uma campanha de doação para engajar doadores
-                        </DialogDescription>
-                      </DialogHeader>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader><DialogTitle>Criar Nova Campanha</DialogTitle></DialogHeader>
                       <form onSubmit={handleCreateCampaign} className="space-y-4">
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Título da Campanha</Label>
-                            <Input placeholder="Ex: Campanha de Urgência - Tipo O-" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Subtítulo</Label>
-                            <Input placeholder="Ex: Precisamos urgentemente de doadores" />
-                          </div>
+                          <div><Label>Título</Label><Input required /></div>
+                          <div><Label>Subtítulo</Label><Input /></div>
                         </div>
-
-                        <div className="space-y-2">
-                          <Label>Mensagem da Campanha</Label>
-                          <Textarea 
-                            placeholder="Digite a mensagem completa que será enviada aos doadores..." 
-                            rows={5}
-                            required
-                          />
-                        </div>
-
+                        <div><Label>Mensagem</Label><Textarea rows={4} required /></div>
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Tipo Sanguíneo Alvo</Label>
-                            <Select>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all">Todos</SelectItem>
-                                <SelectItem value="O+">O+</SelectItem>
-                                <SelectItem value="O-">O-</SelectItem>
-                                <SelectItem value="A+">A+</SelectItem>
-                                <SelectItem value="A-">A-</SelectItem>
-                                <SelectItem value="B+">B+</SelectItem>
-                                <SelectItem value="B-">B-</SelectItem>
-                                <SelectItem value="AB+">AB+</SelectItem>
-                                <SelectItem value="AB-">AB-</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Hemocentro</Label>
-                            <Select>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all">Todos os Hemocentros</SelectItem>
-                                {hemocentros.map(hc => (
-                                  <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                          <div><Label>Data de Envio</Label><Input type="date" required /></div>
+                          <div><Label>Horário</Label><Input type="time" defaultValue="09:00" required /></div>
                         </div>
-
-                        <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                          <Label>Canais de Envio</Label>
-                          <div className="space-y-2">
-                            <div className="flex items-center space-x-2">
-                              <Switch id="email" defaultChecked />
-                              <Label htmlFor="email" className="flex items-center gap-2">
-                                <Mail className="h-4 w-4" />
-                                Email
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch id="whatsapp" defaultChecked />
-                              <Label htmlFor="whatsapp" className="flex items-center gap-2">
-                                <MessageSquare className="h-4 w-4" />
-                                WhatsApp
-                              </Label>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Data de Envio</Label>
-                            <Input type="date" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Horário de Envio</Label>
-                            <Input type="time" defaultValue="09:00" required />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 justify-end pt-4">
-                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                            <Send className="h-4 w-4 mr-2" />
-                            Criar e Agendar
-                          </Button>
+                        <div className="flex gap-2 justify-end">
+                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>Cancelar</Button>
+                          <Button type="submit" className="bg-green-600 hover:bg-green-700"><Send className="h-4 w-4 mr-2" />Criar e Agendar</Button>
                         </div>
                       </form>
                     </DialogContent>
@@ -1427,66 +1049,29 @@ export function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {campaigns.map((campaign) => (
-                    <div
-                      key={campaign.id}
-                      className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
+                  {campaigns.map(campaign => (
+                    <div key={campaign.id} className="p-4 border rounded-lg hover:bg-gray-50">
                       <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
+                        <div>
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-semibold">{campaign.title}</p>
-                            <Badge className={
-                              campaign.status === 'active' 
-                                ? 'bg-green-100 text-green-600' 
-                                : campaign.status === 'scheduled'
-                                ? 'bg-blue-100 text-blue-600'
-                                : 'bg-gray-100 text-gray-600'
-                            }>
+                            <Badge className={campaign.status === 'active' ? 'bg-green-100 text-green-600' : campaign.status === 'scheduled' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}>
                               {campaign.status === 'active' ? 'Ativa' : campaign.status === 'scheduled' ? 'Agendada' : 'Concluída'}
                             </Badge>
                           </div>
                           <p className="text-sm text-gray-600">{campaign.subtitle}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(campaign.date).toLocaleDateString('pt-BR')}
-                          </p>
+                          <p className="text-xs text-gray-500 mt-1">{new Date(campaign.date).toLocaleDateString('pt-BR')}</p>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditCampaign(campaign.id)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleDeleteCampaign(campaign.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedCampaign(campaign); setShowEditCampaignDialog(true); }}><Edit className="h-4 w-4" /></Button>
+                          <Button variant="outline" size="sm" onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}><Trash2 className="h-4 w-4 text-red-600" /></Button>
                         </div>
                       </div>
-
-                      {campaign.sent && (
+                      {(campaign as any).sent && (
                         <div className="grid grid-cols-3 gap-4 pt-3 border-t">
-                          <div>
-                            <p className="text-xs text-gray-600">Enviados</p>
-                            <p className="text-lg font-semibold">{campaign.sent.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Abertos</p>
-                            <p className="text-lg font-semibold text-blue-600">
-                              {campaign.opened?.toLocaleString()} ({Math.round((campaign.opened! / campaign.sent) * 100)}%)
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Cliques</p>
-                            <p className="text-lg font-semibold text-green-600">
-                              {campaign.clicks?.toLocaleString()} ({Math.round((campaign.clicks! / campaign.sent) * 100)}%)
-                            </p>
-                          </div>
+                          <div><p className="text-xs text-gray-600">Enviados</p><p className="text-lg font-semibold">{(campaign as any).sent.toLocaleString()}</p></div>
+                          <div><p className="text-xs text-gray-600">Abertos</p><p className="text-lg font-semibold text-blue-600">{(campaign as any).opened?.toLocaleString()} ({Math.round(((campaign as any).opened / (campaign as any).sent) * 100)}%)</p></div>
+                          <div><p className="text-xs text-gray-600">Cliques</p><p className="text-lg font-semibold text-green-600">{(campaign as any).clicks?.toLocaleString()} ({Math.round(((campaign as any).clicks / (campaign as any).sent) * 100)}%)</p></div>
                         </div>
                       )}
                     </div>
@@ -1496,64 +1081,28 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Settings Tab */}
+          {/* ── Configurações ── */}
           <TabsContent value="settings" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Configurações do Sistema</CardTitle>
-                <CardDescription>Gerencie configurações globais do DoaVida</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
+              <CardHeader><CardTitle>Configurações do Sistema</CardTitle><CardDescription>Configurações globais do DoaVida</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                {[
+                  { icon: Globe, label: 'Sistema Ativo', desc: 'Todos os hemocentros operacionais' },
+                  { icon: Mail, label: 'Notificações por Email', desc: 'Emails automáticos aos doadores' },
+                  { icon: MessageSquare, label: 'Notificações por WhatsApp', desc: 'Mensagens via WhatsApp' },
+                  { icon: UserPlus, label: 'Cadastro Aberto', desc: 'Permitir novos cadastros de doadores' },
+                ].map(({ icon: Icon, label, desc }) => (
+                  <div key={label} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center gap-3">
-                      <Globe className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Sistema Ativo</p>
-                        <p className="text-sm text-gray-600">Todos os hemocentros operacionais</p>
-                      </div>
+                      <Icon className="h-5 w-5 text-gray-600" />
+                      <div><p className="font-semibold">{label}</p><p className="text-sm text-gray-600">{desc}</p></div>
                     </div>
                     <Switch defaultChecked />
                   </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Mail className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Notificações por Email</p>
-                        <p className="text-sm text-gray-600">Enviar emails automáticos aos doadores</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Notificações por WhatsApp</p>
-                        <p className="text-sm text-gray-600">Enviar mensagens via WhatsApp</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <UserPlus className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Cadastro Aberto</p>
-                        <p className="text-sm text-gray-600">Permitir novos cadastros de doadores</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t">
-                  <Button onClick={handleSaveSettings} className="bg-green-600 hover:bg-green-700">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Salvar Configurações
+                ))}
+                <div className="pt-4">
+                  <Button onClick={() => toast.success('Configurações salvas!')} className="bg-green-600 hover:bg-green-700">
+                    <Settings className="h-4 w-4 mr-2" />Salvar Configurações
                   </Button>
                 </div>
               </CardContent>
@@ -1562,284 +1111,192 @@ export function AdminDashboard() {
         </Tabs>
       </main>
 
-      {/* Update Stock Dialog */}
-      <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Atualizar Estoque Global - {selectedBloodType}</DialogTitle>
-            <DialogDescription>
-              Gerencie o estoque consolidado de todos os hemocentros
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Hemocentro</Label>
-              <Select value={selectedHemocentroForStock} onValueChange={setSelectedHemocentroForStock}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Hemocentros (Global)</SelectItem>
-                  {hemocentros.map(hc => (
-                    <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Ação</Label>
-              <Select value={stockAction} onValueChange={(value) => setStockAction(value as 'add' | 'remove')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="add">
-                    <div className="flex items-center gap-2">
-                      <Plus className="h-4 w-4 text-green-600" />
-                      <span>Adicionar ao estoque</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="remove">
-                    <div className="flex items-center gap-2">
-                      <Minus className="h-4 w-4 text-red-600" />
-                      <span>Remover do estoque</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="amount">Quantidade (bolsas)</Label>
-              <Input
-                id="amount"
-                type="number"
-                min="1"
-                placeholder="Digite a quantidade"
-                value={stockAmount}
-                onChange={(e) => setStockAmount(e.target.value)}
-              />
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
-              <p>
-                Estoque global de <strong>{selectedBloodType}</strong>:{' '}
-                <strong>
-                  {globalStock.find(s => s.type === selectedBloodType)?.current} bolsas
-                </strong>
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowStockDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleUpdateStock}
-              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
-            >
-              {stockAction === 'add' ? (
-                <>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar
-                </>
-              ) : (
-                <>
-                  <Minus className="h-4 w-4 mr-2" />
-                  Remover
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
 
-      {/* Add Hemocentro Dialog */}
+      {/* Criar Hemocentro */}
       <Dialog open={showHemocentroDialog} onOpenChange={setShowHemocentroDialog}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Adicionar Novo Hemocentro</DialogTitle>
-            <DialogDescription>
-              Cadastre um novo hemocentro no sistema DoaVida
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Adicionar Novo Hemocentro</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateHemocentro} className="space-y-4">
-            <div>
-              <Label>Nome do Hemocentro</Label>
-              <Input placeholder="Ex: Hemocentro Belo Horizonte" required />
-            </div>
+            <div><Label>Nome *</Label><Input value={hcForm.nome} onChange={e => setHcForm({ ...hcForm, nome: e.target.value })} required /></div>
             <div className="grid grid-cols-2 gap-4">
+              <div><Label>Cidade *</Label><Input value={hcForm.cidade} onChange={e => setHcForm({ ...hcForm, cidade: e.target.value })} required /></div>
               <div>
-                <Label>Cidade</Label>
-                <Input placeholder="Ex: Belo Horizonte" required />
-              </div>
-              <div>
-                <Label>Estado</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="UF" />
-                  </SelectTrigger>
+                <Label>UF *</Label>
+                <Select value={hcForm.uf} onValueChange={v => setHcForm({ ...hcForm, uf: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="SP">SP</SelectItem>
-                    <SelectItem value="RJ">RJ</SelectItem>
-                    <SelectItem value="MG">MG</SelectItem>
-                    <SelectItem value="PR">PR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Endereço Completo</Label>
-              <Input placeholder="Rua, número, bairro" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Telefone</Label>
-                <Input placeholder="(00) 0000-0000" required />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input type="email" placeholder="contato@hemocentro.com" required />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowHemocentroDialog(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                <Plus className="h-4 w-4 mr-2" />
-                Criar Hemocentro
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add User Dialog */}
-      <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Adicionar Novo Usuário</DialogTitle>
-            <DialogDescription>
-              Cadastre um novo usuário para o sistema
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateUser} className="space-y-4">
-            <div>
-              <Label>Nome Completo</Label>
-              <Input placeholder="Digite o nome completo" required />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" placeholder="email@exemplo.com" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Cargo</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Diretor">Diretor</SelectItem>
-                    <SelectItem value="Funcionário">Funcionário</SelectItem>
-                    <SelectItem value="Enfermeira">Enfermeira</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Hemocentro</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {hemocentros.map(hc => (
-                      <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
+                    {['PR', 'SP', 'RJ', 'MG', 'RS', 'SC', 'BA', 'DF'].map(uf => (
+                      <SelectItem key={uf} value={uf}>{uf}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div>
-              <Label>Senha Temporária</Label>
-              <Input type="password" placeholder="Mínimo 8 caracteres" required />
+            <div><Label>Endereço *</Label><Input value={hcForm.endereco} onChange={e => setHcForm({ ...hcForm, endereco: e.target.value })} required /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Número *</Label><Input value={hcForm.numero} onChange={e => setHcForm({ ...hcForm, numero: e.target.value })} required /></div>
+              <div><Label>CEP *</Label><Input value={hcForm.cep} onChange={e => setHcForm({ ...hcForm, cep: e.target.value.replace(/\D/g, '') })} maxLength={8} required /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Telefone</Label><Input value={hcForm.telefone} onChange={e => setHcForm({ ...hcForm, telefone: e.target.value })} /></div>
+              <div><Label>Email</Label><Input type="email" value={hcForm.email} onChange={e => setHcForm({ ...hcForm, email: e.target.value })} /></div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowUserDialog(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Criar Usuário
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowHemocentroDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4 mr-2" />Criar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
-      <Dialog open={showEditUserDialog} onOpenChange={setShowEditUserDialog}>
+      {/* Ver Hemocentro */}
+      <Dialog open={showViewHemocentroDialog} onOpenChange={setShowViewHemocentroDialog}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Editar Usuário</DialogTitle>
-            <DialogDescription>
-              Atualize as informações do usuário
-            </DialogDescription>
-          </DialogHeader>
-          {selectedUser && (
-            <form onSubmit={handleUpdateUser} className="space-y-4">
+          <DialogHeader><DialogTitle>Detalhes do Hemocentro</DialogTitle></DialogHeader>
+          {selectedHemocentro && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label className="text-gray-500">Nome</Label><p className="font-semibold">{selectedHemocentro.nome}</p></div>
+                <div><Label className="text-gray-500">ID</Label><p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">{selectedHemocentro.id}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label className="text-gray-500">Cidade / UF</Label><p>{selectedHemocentro.cidade} {selectedHemocentro.uf}</p></div>
+                <div><Label className="text-gray-500">Status</Label>
+                  <Badge className={selectedHemocentro.status === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
+                    {selectedHemocentro.status === 1 ? 'Ativo' : 'Inativo'}
+                  </Badge>
+                </div>
+              </div>
+              {selectedHemocentro.telefone && <div><Label className="text-gray-500">Telefone</Label><p>{selectedHemocentro.telefone}</p></div>}
+              {selectedHemocentro.email && <div><Label className="text-gray-500">Email</Label><p>{selectedHemocentro.email}</p></div>}
+            </div>
+          )}
+          <DialogFooter><Button variant="outline" onClick={() => setShowViewHemocentroDialog(false)}>Fechar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Hemocentro */}
+      <Dialog open={showEditHemocentroDialog} onOpenChange={setShowEditHemocentroDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Hemocentro</DialogTitle></DialogHeader>
+          {selectedHemocentro && (
+            <form onSubmit={handleUpdateHemocentro} className="space-y-4">
+              <div><Label>Nome *</Label>
+                <Input value={selectedHemocentro.nome} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, nome: e.target.value })} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Cidade</Label>
+                  <Input value={selectedHemocentro.cidade || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, cidade: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={String(selectedHemocentro.status)} onValueChange={v => setSelectedHemocentro({ ...selectedHemocentro, status: Number(v) })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Ativo</SelectItem>
+                      <SelectItem value="0">Inativo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Telefone</Label>
+                  <Input value={selectedHemocentro.telefone || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, telefone: e.target.value })} />
+                </div>
+                <div><Label>Email</Label>
+                  <Input type="email" value={selectedHemocentro.email || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, email: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowEditHemocentroDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Criar Usuário */}
+      <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Adicionar Novo Usuário</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateUser} className="space-y-4">
+            <div><Label>Nome Completo *</Label>
+              <Input value={newUserForm.name} onChange={e => setNewUserForm({ ...newUserForm, name: e.target.value })} required />
+            </div>
+            <div><Label>Email *</Label>
+              <Input type="email" value={newUserForm.email} onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })} required />
+            </div>
+            <div><Label>CPF * (só números)</Label>
+              <Input value={newUserForm.cpf} onChange={e => setNewUserForm({ ...newUserForm, cpf: e.target.value.replace(/\D/g, '') })} maxLength={11} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Nome Completo</Label>
-                <Input 
-                  placeholder="Digite o nome completo" 
-                  value={selectedUser.name}
-                  onChange={(e) => setSelectedUser({...selectedUser, name: e.target.value})}
-                  required 
-                />
+                <Label>Perfil *</Label>
+                <Select value={newUserForm.role_id} onValueChange={v => setNewUserForm({ ...newUserForm, role_id: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2">Funcionário</SelectItem>
+                    <SelectItem value="3">Diretor</SelectItem>
+                    <SelectItem value="4">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label>Email</Label>
-                <Input 
-                  type="email" 
-                  placeholder="email@exemplo.com" 
-                  value={selectedUser.email}
-                  onChange={(e) => setSelectedUser({...selectedUser, email: e.target.value})}
-                  required 
-                />
+                <Label>Hemocentro</Label>
+                <Select value={newUserForm.hemocentro_id} onValueChange={v => setNewUserForm({ ...newUserForm, hemocentro_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {hemocentros.filter(h => h.status === 1).map(hc => (
+                      <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div><Label>Senha * (mín. 6 caracteres)</Label>
+              <Input type="password" value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} minLength={6} required />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowUserDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700"><UserPlus className="h-4 w-4 mr-2" />Criar Usuário</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Usuário */}
+      <Dialog open={showEditUserDialog} onOpenChange={setShowEditUserDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Usuário</DialogTitle></DialogHeader>
+          {selectedUser && (
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div><Label>Nome *</Label>
+                <Input value={selectedUser.name} onChange={e => setSelectedUser({ ...selectedUser, name: e.target.value })} required />
+              </div>
+              <div><Label>Email *</Label>
+                <Input type="email" value={selectedUser.email} onChange={e => setSelectedUser({ ...selectedUser, email: e.target.value })} required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Cargo</Label>
-                  <Select 
-                    value={selectedUser.role}
-                    onValueChange={(value) => setSelectedUser({...selectedUser, role: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
+                  <Label>Perfil</Label>
+                  <Select value={String(selectedUser.role_id)} onValueChange={v => setSelectedUser({ ...selectedUser, role_id: Number(v) })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Diretor">Diretor</SelectItem>
-                      <SelectItem value="Funcionário">Funcionário</SelectItem>
-                      <SelectItem value="Enfermeira">Enfermeira</SelectItem>
+                      <SelectItem value="2">Funcionário</SelectItem>
+                      <SelectItem value="3">Diretor</SelectItem>
+                      <SelectItem value="4">Admin</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label>Hemocentro</Label>
-                  <Select
-                    value={selectedUser.hemocentro}
-                    onValueChange={(value) => setSelectedUser({...selectedUser, hemocentro: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
+                  <Select value={selectedUser.hemocentro_id ? String(selectedUser.hemocentro_id) : ''} onValueChange={v => setSelectedUser({ ...selectedUser, hemocentro_id: Number(v) })}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
                       {hemocentros.map(hc => (
-                        <SelectItem key={hc.id} value={hc.name}>{hc.name}</SelectItem>
+                        <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1847,369 +1304,88 @@ export function AdminDashboard() {
               </div>
               <div>
                 <Label>Status</Label>
-                <Select
-                  value={selectedUser.status}
-                  onValueChange={(value) => setSelectedUser({...selectedUser, status: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={String(selectedUser.status)} onValueChange={v => setSelectedUser({ ...selectedUser, status: Number(v) })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="offline">Offline</SelectItem>
+                    <SelectItem value="1">Ativo</SelectItem>
+                    <SelectItem value="0">Inativo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditUserDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowEditUserDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-green-600 hover:bg-green-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Confirmation Dialog */}
+      {/* Confirmar Excluir Usuário */}
       <Dialog open={showDeleteUserDialog} onOpenChange={setShowDeleteUserDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-red-600"><XCircle className="h-5 w-5" />Confirmar Exclusão</DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
           </DialogHeader>
           {userToDelete && (
-            <div className="space-y-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-gray-700 mb-3">
-                  Você está prestes a excluir o seguinte usuário:
-                </p>
-                <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
-                  <Avatar>
-                    <AvatarFallback className="bg-red-100 text-red-600">
-                      {userToDelete.name.split(' ').map((n: string) => n[0]).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-semibold">{userToDelete.name}</p>
-                    <p className="text-sm text-gray-600">{userToDelete.email}</p>
-                    <p className="text-xs text-gray-500">{userToDelete.role} • {userToDelete.hemocentro}</p>
-                  </div>
-                </div>
-              </div>
-              <p className="text-sm text-gray-600">
-                Tem certeza que deseja excluir este usuário do sistema?
-              </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="font-semibold">{userToDelete.name}</p>
+              <p className="text-sm text-gray-600">{userToDelete.email}</p>
+              <p className="text-xs text-gray-500">{roleLabels[userToDelete.role_id]}</p>
             </div>
           )}
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => setShowDeleteUserDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              type="button"
-              variant="destructive"
-              onClick={handleConfirmDeleteUser}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Sim, Excluir
+            <Button variant="outline" onClick={() => setShowDeleteUserDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteUser}><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Atualizar Estoque */}
+      <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader><DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Ação</Label>
+              <Select value={stockAction} onValueChange={(v) => setStockAction(v as 'add' | 'remove')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add"><div className="flex items-center gap-2"><Plus className="h-4 w-4 text-green-600" />Adicionar</div></SelectItem>
+                  <SelectItem value="remove"><div className="flex items-center gap-2"><Minus className="h-4 w-4 text-red-600" />Remover</div></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Quantidade (bolsas)</Label>
+              <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
+            </div>
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+              Estoque atual de <strong>{selectedBloodType}</strong>: <strong>{globalStock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStockDialog(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
+              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Hemocentro Dialog */}
-      <Dialog open={showViewHemocentroDialog} onOpenChange={setShowViewHemocentroDialog}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5 text-purple-600" />
-              Detalhes do Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Visualize as informações completas do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Nome</Label>
-                  <p className="font-semibold text-lg">{selectedHemocentro.name}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-gray-500">ID</Label>
-                  <p className="font-mono text-sm bg-gray-100 px-3 py-2 rounded">{selectedHemocentro.id}</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Cidade</Label>
-                  <p className="font-semibold">{selectedHemocentro.city}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Status</Label>
-                  <Badge className={selectedHemocentro.active ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
-                    {selectedHemocentro.active ? 'Ativo' : 'Inativo'}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <Label className="text-gray-500 mb-2 block">Doações Este Mês</Label>
-                <p className="text-3xl font-bold text-purple-600">{selectedHemocentro.donations}</p>
-                <p className="text-sm text-gray-600 mt-1">+12% vs mês anterior</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Doadores Ativos</p>
-                  <p className="text-2xl font-bold text-blue-600">1.245</p>
-                </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Estoque Total</p>
-                  <p className="text-2xl font-bold text-green-600">856</p>
-                </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Agendamentos</p>
-                  <p className="text-2xl font-bold text-amber-600">78</p>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowViewHemocentroDialog(false)}>
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Hemocentro Dialog */}
-      <Dialog open={showEditHemocentroDialog} onOpenChange={setShowEditHemocentroDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Atualize as informações do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <form onSubmit={handleUpdateHemocentro} className="space-y-4">
-              <div>
-                <Label>Nome do Hemocentro</Label>
-                <Input 
-                  value={selectedHemocentro.name}
-                  onChange={(e) => setSelectedHemocentro({...selectedHemocentro, name: e.target.value})}
-                  required 
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Cidade</Label>
-                  <Input 
-                    value={selectedHemocentro.city}
-                    onChange={(e) => setSelectedHemocentro({...selectedHemocentro, city: e.target.value})}
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label>Status</Label>
-                  <Select
-                    value={selectedHemocentro.active ? 'active' : 'inactive'}
-                    onValueChange={(value) => setSelectedHemocentro({...selectedHemocentro, active: value === 'active'})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
-                      <SelectItem value="inactive">Inativo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <Label>Endereço</Label>
-                <Textarea 
-                  placeholder="Digite o endereço completo"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Telefone</Label>
-                  <Input placeholder="(XX) XXXXX-XXXX" />
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <Input type="email" placeholder="contato@hemocentro.com" />
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditHemocentroDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings Hemocentro Dialog */}
-      <Dialog open={showSettingsHemocentroDialog} onOpenChange={setShowSettingsHemocentroDialog}>
-        <DialogContent className="sm:max-w-[550px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-gray-600" />
-              Configurações do Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Gerencie as configurações operacionais do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <form onSubmit={handleSaveHemocentroSettings} className="space-y-6">
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Horários de Funcionamento</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Abertura</Label>
-                    <Input type="time" defaultValue="08:00" />
-                  </div>
-                  <div>
-                    <Label>Fechamento</Label>
-                    <Input type="time" defaultValue="18:00" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Capacidade</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Doações por Dia</Label>
-                    <Input type="number" defaultValue="50" />
-                  </div>
-                  <div>
-                    <Label>Estoque Máximo</Label>
-                    <Input type="number" defaultValue="1000" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Notificações</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Alertas de Estoque Baixo</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Notificações de Agendamento</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Relatórios Diários</Label>
-                    <Switch />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Permissões</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Permitir Agendamentos Online</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Aceitar Novos Doadores</Label>
-                    <Switch defaultChecked />
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowSettingsHemocentroDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Configurações
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Campaign Dialog */}
+      {/* Editar Campanha */}
       <Dialog open={showEditCampaignDialog} onOpenChange={setShowEditCampaignDialog}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Campanha
-            </DialogTitle>
-            <DialogDescription>
-              Atualize as informações da campanha de doação
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Campanha</DialogTitle></DialogHeader>
           {selectedCampaign && (
             <form onSubmit={handleUpdateCampaign} className="space-y-4">
-              <div>
-                <Label>Título da Campanha</Label>
-                <Input 
-                  value={selectedCampaign.title}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, title: e.target.value})}
-                  required 
-                />
-              </div>
-              
-              <div>
-                <Label>Subtítulo</Label>
-                <Input 
-                  value={selectedCampaign.subtitle}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, subtitle: e.target.value})}
-                  required 
-                />
-              </div>
-
+              <div><Label>Título</Label><Input value={selectedCampaign.title} onChange={e => setSelectedCampaign({ ...selectedCampaign, title: e.target.value })} required /></div>
+              <div><Label>Subtítulo</Label><Input value={selectedCampaign.subtitle} onChange={e => setSelectedCampaign({ ...selectedCampaign, subtitle: e.target.value })} /></div>
               <div>
                 <Label>Status</Label>
-                <Select
-                  value={selectedCampaign.status}
-                  onValueChange={(value) => setSelectedCampaign({...selectedCampaign, status: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={selectedCampaign.status} onValueChange={v => setSelectedCampaign({ ...selectedCampaign, status: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Ativa</SelectItem>
                     <SelectItem value="scheduled">Agendada</SelectItem>
@@ -2217,484 +1393,142 @@ export function AdminDashboard() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <Label>Data</Label>
-                <Input 
-                  type="date"
-                  value={selectedCampaign.date}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, date: e.target.value})}
-                  required 
-                />
-              </div>
-
+              <div><Label>Data</Label><Input type="date" value={selectedCampaign.date} onChange={e => setSelectedCampaign({ ...selectedCampaign, date: e.target.value })} required /></div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Campaign Dialog */}
+      {/* Excluir Campanha */}
       <Dialog open={showDeleteCampaignDialog} onOpenChange={setShowDeleteCampaignDialog}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <Trash2 className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Campanha</DialogTitle></DialogHeader>
           {campaignToDelete && (
-            <div className="py-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Tem certeza que deseja excluir a campanha:
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="font-semibold text-gray-900">{campaignToDelete.title}</p>
-                <p className="text-sm text-gray-600">{campaignToDelete.subtitle}</p>
-                {campaignToDelete.sent && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    {campaignToDelete.sent.toLocaleString()} doadores impactados
-                  </p>
-                )}
-              </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="font-semibold">{campaignToDelete.title}</p>
+              <p className="text-sm text-gray-600">{campaignToDelete.subtitle}</p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteCampaignDialog(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleConfirmDeleteCampaign}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir Campanha
-            </Button>
+            <Button variant="outline" onClick={() => setShowDeleteCampaignDialog(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmDeleteCampaign} className="bg-red-600 hover:bg-red-700"><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Permission Dialog */}
+      {/* Editar Permissão */}
       <Dialog open={showEditPermissionDialog} onOpenChange={setShowEditPermissionDialog}>
-        <DialogContent className="sm:max-w-[550px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Grupo de Permissões
-            </DialogTitle>
-            <DialogDescription>
-              Atualize as informações do grupo de permissões
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Grupo de Permissões</DialogTitle></DialogHeader>
           {selectedPermission && (
             <form onSubmit={handleUpdatePermission} className="space-y-4">
-              <div>
-                <Label>Nome do Grupo</Label>
-                <Input 
-                  value={selectedPermission.name}
-                  onChange={(e) => setSelectedPermission({...selectedPermission, name: e.target.value})}
-                  required 
-                />
-              </div>
-              
-              <div>
-                <Label>Descrição</Label>
-                <Textarea 
-                  value={selectedPermission.description}
-                  onChange={(e) => setSelectedPermission({...selectedPermission, description: e.target.value})}
-                  rows={3}
-                  required 
-                />
-              </div>
-
-              <div>
-                <Label className="mb-3 block">Permissões</Label>
-                <div className="border rounded-lg p-4 space-y-2 max-h-48 overflow-y-auto">
-                  {['view_donors', 'register_donations', 'view_schedule', 'manage_stock', 'view_reports', 'manage_users', 'all_hemocentro', 'system_admin'].map((perm) => (
-                    <div key={perm} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`edit-${perm}`}
-                        checked={selectedPermission.permissions.includes(perm)}
-                        onChange={(e) => {
-                          const newPerms = e.target.checked
-                            ? [...selectedPermission.permissions, perm]
-                            : selectedPermission.permissions.filter((p: string) => p !== perm);
-                          setSelectedPermission({...selectedPermission, permissions: newPerms});
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`edit-${perm}`} className="text-sm cursor-pointer">
-                        {perm.replace(/_/g, ' ')}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+              <div><Label>Nome</Label><Input value={selectedPermission.name} onChange={e => setSelectedPermission({ ...selectedPermission, name: e.target.value })} required /></div>
+              <div><Label>Descrição</Label><Textarea value={selectedPermission.description} onChange={e => setSelectedPermission({ ...selectedPermission, description: e.target.value })} /></div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditPermissionDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowEditPermissionDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Permission Dialog */}
+      {/* Excluir Permissão */}
       <Dialog open={showDeletePermissionDialog} onOpenChange={setShowDeletePermissionDialog}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <Trash2 className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Grupo</DialogTitle></DialogHeader>
           {permissionToDelete && (
-            <div className="py-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Tem certeza que deseja excluir o grupo de permissões:
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="font-semibold text-gray-900">{permissionToDelete.name}</p>
-                <p className="text-sm text-gray-600">{permissionToDelete.description}</p>
-                <p className="text-xs text-red-600 font-semibold mt-2">
-                  ⚠️ {permissionToDelete.users} usuários atualmente neste grupo
-                </p>
-              </div>
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-xs text-yellow-800">
-                  <strong>Atenção:</strong> Os usuários deste grupo perderão suas permissões. Reatribua-os a outro grupo antes de excluir.
-                </p>
-              </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="font-semibold">{permissionToDelete.name}</p>
+              <p className="text-sm text-gray-600">{permissionToDelete.description}</p>
+              <p className="text-xs text-red-600 mt-2 font-semibold">⚠️ {permissionToDelete.users} usuários neste grupo</p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeletePermissionDialog(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleConfirmDeletePermission}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir Grupo
-            </Button>
+            <Button variant="outline" onClick={() => setShowDeletePermissionDialog(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmDeletePermission} className="bg-red-600 hover:bg-red-700"><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Stock Details Dialog */}
-      <Dialog open={showStockDetailsDialog} onOpenChange={setShowStockDetailsDialog}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="bg-red-100 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-red-600" />
-              </div>
-              Detalhes do Estoque - Tipo {selectedBloodTypeForDetails}
-            </DialogTitle>
-            <DialogDescription>
-              Informações detalhadas sobre distribuição, histórico e estatísticas
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedBloodTypeForDetails && stockDetailsByType[selectedBloodTypeForDetails] && (
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Consumo Diário</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">{stockDetailsByType[selectedBloodTypeForDetails].stats.avgDailyConsumption}</p>
-                    <p className="text-xs text-gray-600">bolsas/dia</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Dias até Crítico</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className={`text-2xl font-bold ${stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical <= 2 ? 'text-red-600' : 'text-green-600'}`}>
-                      {stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical}
-                    </p>
-                    <p className="text-xs text-gray-600">dias restantes</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Doações/Mês</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-blue-600">{stockDetailsByType[selectedBloodTypeForDetails].stats.totalDonationsMonth}</p>
-                    <p className="text-xs text-gray-600">este mês</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Última Doação</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm font-bold">{stockDetailsByType[selectedBloodTypeForDetails].stats.lastDonation.split(' ')[1]}</p>
-                    <p className="text-xs text-gray-600">{stockDetailsByType[selectedBloodTypeForDetails].stats.lastDonation.split(' ')[0]}</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Distribution by Hemocentro */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-green-600" />
-                  Distribuição por Hemocentro
-                </h3>
-                <div className="space-y-2">
-                  {stockDetailsByType[selectedBloodTypeForDetails].distribution.map((item: any, index: number) => (
-                    <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="font-semibold text-sm">{item.hemocentro}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold">{item.stock} bolsas</span>
-                            <Badge variant="outline" className="text-xs">{item.percentage}%</Badge>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="h-2 rounded-full bg-green-600"
-                            style={{ width: `${item.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* History Chart */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-blue-600" />
-                  Histórico dos Últimos 5 Dias
-                </h3>
-                <Card>
-                  <CardContent className="pt-6">
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={stockDetailsByType[selectedBloodTypeForDetails].history}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="stock" stroke="#16A34A" strokeWidth={2} name="Estoque" />
-                        <Line type="monotone" dataKey="entries" stroke="#2563EB" strokeWidth={2} name="Entradas" />
-                        <Line type="monotone" dataKey="exits" stroke="#DC2626" strokeWidth={2} name="Saídas" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Historical Data Table */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-purple-600" />
-                  Movimentação Detalhada
-                </h3>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Data</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Estoque</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Entradas</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Saídas</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Variação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {stockDetailsByType[selectedBloodTypeForDetails].history.map((item: any, index: number) => {
-                        const variation = item.entries - item.exits;
-                        return (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm">{item.date}</td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold">{item.stock}</td>
-                            <td className="px-4 py-3 text-sm text-right text-green-600">+{item.entries}</td>
-                            <td className="px-4 py-3 text-sm text-right text-red-600">-{item.exits}</td>
-                            <td className={`px-4 py-3 text-sm text-right font-semibold ${variation >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {variation >= 0 ? '+' : ''}{variation}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Alerts */}
-              {stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical <= 2 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-red-900">Alerta de Estoque Crítico</p>
-                      <p className="text-sm text-red-700 mt-1">
-                        Este tipo sanguíneo está próximo do nível crítico. 
-                        Recomenda-se iniciar campanha de doação urgente para o tipo {selectedBloodTypeForDetails}.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowStockDetailsDialog(false)}
-            >
-              Fechar
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setShowStockDetailsDialog(false);
-                handleOpenUpdateStock(selectedBloodTypeForDetails);
-              }}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Activity className="h-4 w-4 mr-2" />
-              Atualizar Estoque
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Export Report Dialog */}
+      {/* Exportar Relatório */}
       <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Exportar Relatório do Sistema</DialogTitle>
-            <DialogDescription>
-              Selecione o tipo e formato do relatório para exportação
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Exportar Relatório</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Tipo de Relatório</Label>
+              <Label>Tipo</Label>
               <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o tipo" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="donations">
-                    <div className="flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Relatório de Doações</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="stock">
-                    <div className="flex items-center gap-2">
-                      <Droplet className="h-4 w-4" />
-                      <span>Relatório de Estoque Global</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="users">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>Relatório de Usuários</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="campaigns">
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      <span>Relatório de Campanhas</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="hemocentros">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      <span>Relatório de Hemocentros</span>
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="donations">Doações</SelectItem>
+                  <SelectItem value="stock">Estoque Global</SelectItem>
+                  <SelectItem value="users">Usuários</SelectItem>
+                  <SelectItem value="campaigns">Campanhas</SelectItem>
+                  <SelectItem value="hemocentros">Hemocentros</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Formato de Exportação</Label>
+              <Label>Formato</Label>
               <Select value={reportFormat} onValueChange={setReportFormat}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pdf">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-red-600" />
-                      <span>PDF</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="excel">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-green-600" />
-                      <span>Excel (.xlsx)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="csv">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-blue-600" />
-                      <span>CSV</span>
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="excel">Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg text-sm text-gray-600">
-              <p>
-                O relatório será gerado com os dados atualizados até o momento e baixado automaticamente.
-              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowReportDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleExportReport}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Exportar Relatório
+            <Button variant="outline" onClick={() => setShowReportDialog(false)}>Cancelar</Button>
+            <Button onClick={handleExportReport} className="bg-green-600 hover:bg-green-700"><Download className="h-4 w-4 mr-2" />Exportar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detalhes Estoque — mantido simples, dados locais */}
+      <Dialog open={showStockDetailsDialog} onOpenChange={setShowStockDetailsDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Droplet className="h-5 w-5 text-red-600" />Detalhes — Tipo {selectedBloodTypeForDetails}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedBloodTypeForDetails && (() => {
+            const stock = globalStock.find(s => s.type === selectedBloodTypeForDetails);
+            if (!stock) return null;
+            const pct = Math.round((stock.current / stock.max) * 100);
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Atual</p><p className="text-2xl font-bold">{stock.current}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Mínimo</p><p className="text-2xl font-bold text-orange-600">{stock.min}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Máximo</p><p className="text-2xl font-bold text-green-600">{stock.max}</p></div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-sm mb-1"><span>Capacidade usada</span><span>{pct}%</span></div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div className={`h-3 rounded-full ${stock.critical ? 'bg-red-600' : pct < 50 ? 'bg-orange-500' : 'bg-green-600'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                {stock.critical && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-red-700 text-sm">
+                    <XCircle className="h-4 w-4" />Estoque abaixo do mínimo — ação urgente necessária!
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStockDetailsDialog(false)}>Fechar</Button>
+            <Button onClick={() => { setShowStockDetailsDialog(false); handleOpenUpdateStock(selectedBloodTypeForDetails); }} className="bg-green-600 hover:bg-green-700">
+              <Activity className="h-4 w-4 mr-2" />Atualizar Estoque
             </Button>
           </DialogFooter>
         </DialogContent>

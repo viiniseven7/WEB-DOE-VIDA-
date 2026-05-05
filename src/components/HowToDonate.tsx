@@ -1,6 +1,6 @@
 import { Calendar, FileCheck, Droplet, Heart } from "lucide-react";
 import { Button } from "./ui/button";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 
 export function HowToDonate() {
   const navigate = useNavigate();

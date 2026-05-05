@@ -1,12 +1,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-
-export type UserRole = 'donor' | 'staff' | 'director' | 'admin';
+import api from '../services/api';
 
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
+<<<<<<< HEAD
   role: UserRole;
   role_id: number;
   tipo_sang?: string;
@@ -18,17 +17,22 @@ export interface User {
   lastDonation?: string;
   hemocenterId?: string;
   hemocentroName?: string;
+=======
+  role_id: number | null;
+  roles: string[];
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<User | null>;
+  signup: (data: any) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
 
+<<<<<<< HEAD
 export interface SignupData {
   email: string;
   password: string;
@@ -42,11 +46,22 @@ export interface SignupData {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_URL = 'http://localhost:8000/api';
+=======
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const roleMap: Record<number, string> = {
+  1: 'doador',
+  2: 'funcionario',
+  3: 'diretor',
+  4: 'admin',
+};
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+<<<<<<< HEAD
   // Normalizador Universal de Usuário (conforme DOC-API.md)
   const normalizeUser = (data: any): User => {
     const userData = data.user || data;
@@ -93,21 +108,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('Erro na sessão:', error);
         }
       }
+=======
+  // 🔄 AUTO LOGIN
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('token');
+
+      if (token) {
+        try {
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+          const response = await api.get('/auth/me');
+
+          const roles =
+            response.data.roles?.length > 0
+              ? response.data.roles
+              : response.data.user.role_id
+              ? [roleMap[response.data.user.role_id]]
+              : ['doador'];
+
+          setUser({
+            ...response.data.user,
+            roles,
+          });
+
+        } catch {
+          localStorage.removeItem('token');
+        }
+      }
+
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
       setIsLoading(false);
     };
     checkSession();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  // 🔐 LOGIN
+  const login = async (email: string, password: string) => {
     try {
+<<<<<<< HEAD
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+=======
+      const res = await api.post('/auth/login', { email, password });
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
 
-      const data = await response.json();
+      localStorage.setItem('token', res.data.token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
 
+      const roles =
+        res.data.roles?.length > 0
+          ? res.data.roles
+          : res.data.user.role_id
+          ? [roleMap[res.data.user.role_id]]
+          : ['doador'];
+
+      const userData = {
+        ...res.data.user,
+        roles,
+      };
+
+      setUser(userData);
+      return userData;
+
+<<<<<<< HEAD
       if (response.ok) {
         setUser(normalizeUser(data));
         localStorage.setItem('access_token', data.token || data.access_token);
@@ -136,17 +203,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: data.message || JSON.stringify(data.errors) };
     } catch (error) {
       return { success: false, error: 'Erro ao conectar com o servidor' };
+=======
+    } catch (error) {
+      console.error(error);
+      return null;
     }
   };
 
+  // 📝 REGISTER
+  const signup = async (data: any): Promise<boolean> => {
+    try {
+      await api.post('/auth/register', data);
+      return true;
+    } catch (error: any) {
+      console.error('ERROS DE VALIDAÇÃO:', JSON.stringify(error.response?.data, null, 2));
+      throw error;
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
+    }
+  };
+
+  // 🚪 LOGOUT
   const logout = () => {
     setUser(null);
+<<<<<<< HEAD
     localStorage.removeItem('access_token');
   };
 
   return (
     <AuthContext.Provider value={{ 
       user, login, signup, logout, 
+=======
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common['Authorization'];
+    window.location.href = '/login';
+  };
+
+  return (
+    <AuthContext.Provider value={{
+      user,
+      login,
+      signup,
+      logout,
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
       isAuthenticated: !!user,
       isLoading,
     }}>
@@ -157,6 +255,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+<<<<<<< HEAD
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
+=======
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
+>>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
   return context;
 }

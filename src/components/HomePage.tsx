@@ -6,7 +6,7 @@ import { FAQ } from "./FAQ";
 import { Footer } from "./Footer";
 import { AppointmentForm } from "./AppointmentForm";
 import { Button } from "./ui/button";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { Droplet, ClipboardCheck, Calendar } from "lucide-react";
 
 export function HomePage() {
