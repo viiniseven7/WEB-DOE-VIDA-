@@ -1,59 +1,87 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Alert, AlertDescription } from './ui/alert';
-import { Droplet, ArrowLeft, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
-import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-f9f63502`;
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Alert, AlertDescription } from "./ui/alert";
+import {
+  Droplet,
+  ArrowLeft,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
+  KeyRound,
+} from "lucide-react";
+import { toast } from "sonner";
+import api from "../services/api";
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const emailFromState = location.state?.email || '';
+  const searchParams = new URLSearchParams(location.search);
+  const emailFromState = location.state?.email || searchParams.get("email") || "";
+  const codeFromState = location.state?.code || searchParams.get("token") || "";
 
   const [formData, setFormData] = useState({
     email: emailFromState,
-    code: '',
-    newPassword: '',
-    confirmPassword: '',
+    code: codeFromState,
+    newPassword: "",
+    confirmPassword: "",
   });
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const getApiErrorMessage = (error: any) => {
+    const data = error?.response?.data;
+    const firstValidationError = data?.errors
+      ? Object.values(data.errors).flat().find(Boolean)
+      : null;
+
+    return (
+      firstValidationError ||
+      data?.error ||
+      data?.message ||
+      "Erro ao redefinir senha."
+    );
+  };
+
   useEffect(() => {
-    // If no email in state, redirect to forgot password page
     if (!emailFromState) {
-      navigate('/forgot-password');
+      navigate("/forgot-password");
     }
   }, [emailFromState, navigate]);
 
   const validateForm = () => {
     if (!formData.email || !formData.code || !formData.newPassword) {
-      setError('Todos os campos são obrigatórios');
+      setError("Todos os campos sao obrigatorios.");
       return false;
     }
 
     if (formData.code.length !== 6 || !/^\d+$/.test(formData.code)) {
-      setError('O código deve ter 6 dígitos');
+      setError("O codigo deve ter 6 digitos.");
       return false;
     }
 
     if (formData.newPassword.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres');
+      setError("A senha deve ter no minimo 6 caracteres.");
       return false;
     }
 
     if (formData.newPassword !== formData.confirmPassword) {
-      setError('As senhas não coincidem');
+      setError("As senhas nao coincidem.");
       return false;
     }
 
@@ -62,7 +90,7 @@ export function ResetPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (!validateForm()) {
       return;
@@ -71,44 +99,32 @@ export function ResetPasswordPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/auth/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          code: formData.code,
-          newPassword: formData.newPassword,
-        }),
+      await api.post("/auth/reset-password", {
+        email: formData.email,
+        token: formData.code,
+        password: formData.newPassword,
+        password_confirmation: formData.confirmPassword,
       });
 
-      const data = await response.json();
+      setSuccess(true);
+      toast.success("Senha alterada com sucesso.");
 
-      if (response.ok) {
-        setSuccess(true);
-        toast.success('Senha alterada com sucesso!');
-        // Redirect to login after 2 seconds
-        setTimeout(() => {
-          navigate('/login');
-        }, 2000);
-      } else {
-        setError(data.error || 'Erro ao redefinir senha');
-        toast.error(data.error || 'Erro ao redefinir senha');
-      }
-    } catch (error) {
-      console.error('Reset password error:', error);
-      setError('Erro ao conectar com o servidor');
-      toast.error('Erro de conexão');
+      setTimeout(() => {
+        navigate("/login");
+      }, 2000);
+    } catch (error: any) {
+      console.error("Reset password error:", error?.response?.data || error);
+      const message = getApiErrorMessage(error);
+      setError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setError('');
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setError("");
   };
 
   if (success) {
@@ -123,14 +139,14 @@ export function ResetPasswordPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    Senha Alterada!
+                    Senha Alterada
                   </h2>
                   <p className="text-gray-600">
                     Sua senha foi redefinida com sucesso. Redirecionando para o login...
                   </p>
                 </div>
                 <Button
-                  onClick={() => navigate('/login')}
+                  onClick={() => navigate("/login")}
                   className="w-full h-11 bg-red-600 hover:bg-red-700"
                 >
                   Ir para Login
@@ -156,7 +172,7 @@ export function ResetPasswordPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/forgot-password')}
+                onClick={() => navigate("/forgot-password", { state: { email: formData.email } })}
                 className="gap-2"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -165,7 +181,7 @@ export function ResetPasswordPage() {
             </div>
             <CardTitle className="text-2xl">Redefinir Senha</CardTitle>
             <CardDescription>
-              Insira o código recebido e sua nova senha
+              Insira o codigo recebido e sua nova senha.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -180,13 +196,13 @@ export function ResetPasswordPage() {
               <Alert className="border-blue-200 bg-blue-50">
                 <AlertCircle className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800 text-sm">
-                  Enviamos um código de 6 dígitos para <strong>{formData.email}</strong>
+                  Vamos redefinir a senha de <strong>{formData.email}</strong>.
                 </AlertDescription>
               </Alert>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="code">
-                  Código de Recuperação <span className="text-red-600">*</span>
+                  Codigo de Recuperacao <span className="text-red-600">*</span>
                 </Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -196,8 +212,8 @@ export function ResetPasswordPage() {
                     placeholder="123456"
                     value={formData.code}
                     onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      handleChange('code', value);
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                      handleChange("code", value);
                     }}
                     required
                     disabled={isLoading}
@@ -206,7 +222,7 @@ export function ResetPasswordPage() {
                   />
                 </div>
                 <p className="text-xs text-gray-500">
-                  Digite o código de 6 dígitos enviado para seu email
+                  Digite o codigo de 6 digitos enviado para seu email.
                 </p>
               </div>
 
@@ -218,10 +234,10 @@ export function ResetPasswordPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
                     id="newPassword"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="********"
                     value={formData.newPassword}
-                    onChange={(e) => handleChange('newPassword', e.target.value)}
+                    onChange={(e) => handleChange("newPassword", e.target.value)}
                     required
                     disabled={isLoading}
                     className="h-11 pl-10 pr-10"
@@ -234,9 +250,7 @@ export function ResetPasswordPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">
-                  Mínimo de 6 caracteres
-                </p>
+                <p className="text-xs text-gray-500">Minimo de 6 caracteres.</p>
               </div>
 
               <div className="space-y-2">
@@ -247,10 +261,10 @@ export function ResetPasswordPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
                     id="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="********"
                     value={formData.confirmPassword}
-                    onChange={(e) => handleChange('confirmPassword', e.target.value)}
+                    onChange={(e) => handleChange("confirmPassword", e.target.value)}
                     required
                     disabled={isLoading}
                     className="h-11 pl-10 pr-10"
@@ -270,21 +284,21 @@ export function ResetPasswordPage() {
                 className="w-full h-11 bg-red-600 hover:bg-red-700"
                 disabled={isLoading}
               >
-                {isLoading ? 'Alterando senha...' : 'Redefinir Senha'}
+                {isLoading ? "Alterando senha..." : "Redefinir Senha"}
               </Button>
 
               <div className="space-y-2 pt-4 border-t">
                 <button
                   type="button"
-                  onClick={() => navigate('/forgot-password', { state: { email: formData.email } })}
+                  onClick={() => navigate("/forgot-password", { state: { email: formData.email } })}
                   className="text-sm text-red-600 hover:text-red-700 font-semibold block mx-auto"
                   disabled={isLoading}
                 >
-                  Não recebeu o código? Reenviar
+                  Nao recebeu o codigo? Reenviar
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/login')}
+                  onClick={() => navigate("/login")}
                   className="text-sm text-gray-600 hover:text-gray-700 block mx-auto"
                   disabled={isLoading}
                 >

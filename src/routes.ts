@@ -24,16 +24,10 @@ export const router = createBrowserRouter([
       { path: "reset-password", Component: ResetPasswordPage },
       { path: "teste-elegibilidade", Component: EligibilityTestPage },
       { path: "cadastro-doacao", Component: RegistrationDonationPage },
-<<<<<<< HEAD
       { path: "agendar", Component: AppointmentPage },
-      { path: "dashboard/donor", Component: DonorDashboard },
-      { path: "dashboard/staff", Component: StaffDashboard },
-      { path: "dashboard/director", Component: DirectorDashboard },
-=======
       { path: "dashboard/doador", Component: DonorDashboard },
       { path: "dashboard/funcionario", Component: StaffDashboard },
       { path: "dashboard/diretor", Component: DirectorDashboard },
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
       { path: "dashboard/admin", Component: AdminDashboard },
       { path: "*", Component: NotFound },
     ],

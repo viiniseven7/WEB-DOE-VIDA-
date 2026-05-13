@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -18,21 +18,31 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
-import { toast } from 'sonner';
-import {
-  projectId,
-  publicAnonKey,
-} from "../utils/supabase/info";
-
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-f9f63502`;
+import { toast } from "sonner";
+import api from "../services/api";
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const location = useLocation();
+  const [email, setEmail] = useState(location.state?.email || "");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [resetCode, setResetCode] = useState("");
+
+  const getApiErrorMessage = (error: any) => {
+    const data = error?.response?.data;
+    const firstValidationError = data?.errors
+      ? Object.values(data.errors).flat().find(Boolean)
+      : null;
+
+    return (
+      firstValidationError ||
+      data?.details ||
+      data?.error ||
+      data?.message ||
+      "Erro ao enviar codigo de recuperacao."
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,73 +50,30 @@ export function ForgotPasswordPage() {
     setSuccess(false);
 
     if (!email) {
-      setError("Por favor, insira seu email");
+      setError("Por favor, insira seu email.");
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      setError("Por favor, insira um email válido");
+      setError("Por favor, insira um email valido.");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_URL}/auth/forgot-password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({ email }),
-        },
-      );
+      const response = await api.post("/auth/forgot-password", { email });
+      const data = response.data;
 
-      const data = await response.json();
+      setSuccess(true);
 
-      if (response.ok) {
-        setSuccess(true);
-        // Check if email was actually sent or if we're in dev mode
-        if (data.emailSent) {
-          toast.success("Código enviado para seu email!");
-        } else {
-          // Email failed, but we're providing the code on screen
-          if (
-            data.emailError &&
-            data.emailError.includes("API key")
-          ) {
-            toast.warning(
-              "Modo desenvolvimento - Configure Resend para envio de emails",
-              {
-                description:
-                  "Veja SOLUÇÃO_RÁPIDA_EMAIL.md para instruções",
-                duration: 5000,
-              },
-            );
-          } else {
-            toast.info(
-              "Modo desenvolvimento - Código gerado localmente",
-            );
-          }
-        }
-
-        // In development, we receive the code in the response
-        if (data.codeForDev) {
-          setResetCode(data.codeForDev);
-        }
-      } else {
-        setError(
-          data.error || "Erro ao enviar código de recuperação",
-        );
-        toast.error("Erro ao processar solicitação");
-      }
-    } catch (error) {
-      console.error("Forgot password error:", error);
-      setError("Erro ao conectar com o servidor");
-      toast.error("Erro de conexão");
+      toast.success(data.message || "Codigo enviado para seu email.");
+    } catch (error: any) {
+      console.error("Forgot password error:", error?.response?.data || error);
+      const message = getApiErrorMessage(error);
+      setError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -138,21 +105,16 @@ export function ForgotPasswordPage() {
                 Voltar
               </Button>
             </div>
-            <CardTitle className="text-2xl">
-              Esqueci a Senha
-            </CardTitle>
+            <CardTitle className="text-2xl">Esqueci a Senha</CardTitle>
             <CardDescription>
               {success
-                ? "Código de recuperação gerado com sucesso"
-                : "Insira seu email para receber um código de recuperação"}
+                ? "Codigo de recuperacao enviado com sucesso."
+                : "Insira seu email para receber um codigo de recuperacao."}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {!success ? (
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-4"
-              >
+              <form onSubmit={handleSubmit} className="space-y-4">
                 {error && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
@@ -176,8 +138,7 @@ export function ForgotPasswordPage() {
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    Enviaremos um código de 6 dígitos para este
-                    email
+                    Enviaremos um codigo de 6 digitos para este email.
                   </p>
                 </div>
 
@@ -186,7 +147,7 @@ export function ForgotPasswordPage() {
                   className="w-full h-11 bg-red-600 hover:bg-red-700"
                   disabled={isLoading}
                 >
-                  {isLoading ? "Enviando..." : "Enviar Código"}
+                  {isLoading ? "Enviando..." : "Enviar Codigo"}
                 </Button>
 
                 <div className="text-center text-sm text-gray-600">
@@ -206,52 +167,13 @@ export function ForgotPasswordPage() {
                 <Alert className="border-green-200 bg-green-50">
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800">
-                    Código de recuperação enviado com sucesso!
+                    Codigo de recuperacao enviado para seu email.
                   </AlertDescription>
                 </Alert>
 
-                {resetCode && (
-                  <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-lg p-6">
-                    <div className="text-center space-y-2">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <AlertCircle className="h-5 w-5 text-orange-600" />
-                        <p className="text-sm font-semibold text-gray-700">
-                          Modo Desenvolvimento
-                        </p>
-                      </div>
-                      <p className="text-xs text-gray-600 mb-4">
-                        Em produção, este código seria enviado
-                        por email.
-                        <br />
-                        <a
-                          href="/CONFIGURAÇÃO_EMAIL.md"
-                          target="_blank"
-                          className="text-red-600 hover:text-red-700 underline"
-                        >
-                          Configure o Resend
-                        </a>{" "}
-                        para enviar emails reais.
-                      </p>
-                      <div className="bg-white border-2 border-red-300 rounded-lg p-4 inline-block">
-                        <p className="text-xs text-gray-600 mb-1">
-                          Seu código de recuperação:
-                        </p>
-                        <p className="text-3xl font-bold text-red-600 tracking-wider font-mono">
-                          {resetCode}
-                        </p>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Válido por 15 minutos
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-3">
                   <p className="text-sm text-gray-600">
-                    {resetCode
-                      ? "Use o código acima para redefinir sua senha."
-                      : "Verifique sua caixa de entrada e use o código recebido para redefinir sua senha."}
+                    Verifique sua caixa de entrada e use o codigo recebido para redefinir sua senha.
                   </p>
 
                   <Button
@@ -265,17 +187,16 @@ export function ForgotPasswordPage() {
                     onClick={() => {
                       setSuccess(false);
                       setEmail("");
-                      setResetCode("");
                     }}
                     variant="outline"
                     className="w-full h-11"
                   >
-                    Reenviar Código
+                    Reenviar Codigo
                   </Button>
                 </div>
 
                 <div className="text-center text-sm text-gray-600 pt-4 border-t">
-                  Não recebeu o código?{" "}
+                  Nao recebeu o codigo?{" "}
                   <button
                     type="button"
                     onClick={() => navigate("/login")}

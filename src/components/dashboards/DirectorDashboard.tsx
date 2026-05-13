@@ -59,6 +59,13 @@ const roleLabels: Record<number, string> = {
   1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
 };
 
+const roleNames: Record<string, string> = {
+  '1': 'doador',
+  '2': 'funcionario',
+  '3': 'diretor',
+  '4': 'admin',
+};
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function DirectorDashboard() {
@@ -95,146 +102,100 @@ export function DirectorDashboard() {
   const [reportFormat, setReportFormat] = useState('pdf');
 
   // ─── Guard ────────────────────────────────────────────────────────────────
-  if (!user) { navigate('/login'); return null; }
-  if (user.role_id !== 3) { navigate('/login'); return null; }
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    } else if (user.role_id !== 3 && !user.roles?.includes('diretor')) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
-  setIsLoading(true);
-  try {
-    const [usersRes, agendRes] = await Promise.all([
-      api.get('/users'),
-      api.get('/agendamentos'),
-    ]);
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const [usersRes, agendRes] = await Promise.all([
+        api.get('/users'),
+        api.get('/agendamentos'),
+      ]);
 
-    const todosUsers = Array.isArray(usersRes.data)
-      ? usersRes.data
-      : usersRes.data.data ?? [];
+      const todosUsers = Array.isArray(usersRes.data)
+        ? usersRes.data
+        : usersRes.data.data ?? [];
 
-    console.log('TODOS USERS:', todosUsers.map((u: any) => ({
-      id: u.id, name: u.name, role_id: u.role_id, hemocentro_id: u.hemocentro_id
-    })));
-    console.log('DIRETOR hemocentro_id:', user.hemocentro_id, typeof user.hemocentro_id);
-
-    // Filtra por role_id 2 ou 3 E mesmo hemocentro — força Number() nos dois lados
-    const staff = todosUsers.filter(
-  (u: any) =>
-    Number(u.hemocentro_id) === Number(user.hemocentro_id) &&
-    (
-      [2, 3].includes(Number(u.role_id)) ||
-      // inclui usuários sem role_id mas vinculados ao hemocentro
-      (u.role_id === null && u.hemocentro_id !== null)
-    )
-);
-
-    console.log('STAFF FILTRADO:', staff);
-    setStaffList(staff);
-
-    // Agendamentos de hoje do hemocentro
-    const hoje = new Date().toISOString().split('T')[0];
-    const agends = Array.isArray(agendRes.data)
-      ? agendRes.data
-      : agendRes.data.data ?? [];
-
-    const agendHoje = agends.filter((a: any) => {
-      const dataAgend = a.data_hora_doacao?.split(' ')[0] || a.data?.split('T')[0];
-      return (
-        dataAgend === hoje &&
-        Number(a.hemocentro_id) === Number(user.hemocentro_id)
+      // Filtra por mesmo hemocentro e papéis de staff/diretor
+      const staff = todosUsers.filter(
+        (u: any) =>
+          Number(u.hemocentro_id) === Number(user.hemocentro_id) &&
+          ([2, 3].includes(Number(u.role_id)) || (u.role_id === null && u.hemocentro_id !== null))
       );
-    });
+      setStaffList(staff);
 
-    setAgendamentosHoje(agendHoje);
-  } catch (err: any) {
-    console.error('Erro ao carregar dados:', err.response?.data);
-    toast.error('Erro ao carregar dados');
-  } finally {
-    setIsLoading(false);
-  }
-}, [user.hemocentro_id]);
+      const hoje = new Date().toISOString().split('T')[0];
+      const agends = Array.isArray(agendRes.data)
+        ? agendRes.data
+        : agendRes.data.data ?? [];
+
+      const agendHoje = agends.filter((a: any) => {
+        const dataAgend = (a.data_hora_doacao || a.data)?.split('T')[0].split(' ')[0];
+        return dataAgend === hoje && Number(a.hemocentro_id) === Number(user.hemocentro_id);
+      });
+
+      setAgendamentosHoje(agendHoje);
+    } catch (err: any) {
+      console.error('Erro ao carregar dados:', err.response?.data);
+      toast.error('Erro ao carregar dados do painel');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  if (!user || (user.role_id !== 3 && !user.roles?.includes('diretor'))) return null;
+
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
-  const handleLogout = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
+  const handleLogoutClick = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
 
-  // Fora do componente, no topo do arquivo
-const roleNames: Record<string, string> = {
-  '1': 'doador',
-  '2': 'funcionario',
-  '3': 'diretor',
-  '4': 'admin',
-};
-
-const handleAddStaff = async () => {
-  if (!newStaff.name || !newStaff.email || !newStaff.cpf || !newStaff.password) {
-    toast.error('Preencha todos os campos obrigatórios');
-    return;
-  }
-
-  // Garante que o hemocentro_id do diretor está disponível
-  if (!user.hemocentro_id) {
-    toast.error('Erro: diretor não está vinculado a um hemocentro');
-    return;
-  }
-
-<<<<<<< HEAD
-  const handleExportReport = () => {
-    setExportDialogOpen(true);
-  };
-
-  // Handle Add Staff
-  const handleAddStaff = () => {
-    if (!newStaff.name || !newStaff.email || !newStaff.cpf || !newStaff.role || !newStaff.phone) {
+  const handleAddStaff = async () => {
+    if (!newStaff.name || !newStaff.email || !newStaff.cpf || !newStaff.password) {
       toast.error('Preencha todos os campos obrigatórios');
       return;
     }
 
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota POST /auth/users
-    // const payload = {
-    //   name: newStaff.name, // Corrigido de nome
-    //   email: newStaff.email,
-    //   cpf: newStaff.cpf,
-    //   role: newStaff.role, // Corrigido de cargo
-    //   phone: newStaff.phone, // Corrigido de telefone
-    //   password: "senha_padrao_ou_gerada" // Senha necessária para criação
-    // };
-    // await fetch('/auth/users', { method: 'POST', body: JSON.stringify(payload) });
-
-    const staffMember = {
-      id: String(staff.length + 1),
-=======
-  try {
-    const payload = {
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
-      name: newStaff.name,
-      email: newStaff.email,
-      cpf: newStaff.cpf.replace(/\D/g, ''),
-      password: newStaff.password,
-      role_id: Number(newStaff.role_id),         // 2 = funcionario, 3 = diretor
-      role: roleNames[newStaff.role_id],          // string que o Laravel exige
-      hemocentro_id: Number(user.hemocentro_id),  // sempre o hemocentro do diretor
-    };
-
-    console.log('PAYLOAD STAFF:', JSON.stringify(payload, null, 2));
-
-    await api.post('/auth/users', payload);
-    toast.success(`Funcionário ${newStaff.name} criado com sucesso!`);
-    setAddStaffDialogOpen(false);
-    setNewStaff({ name: '', email: '', cpf: '', password: '', role_id: '2' });
-    await fetchData();
-  } catch (err: any) {
-    console.log('ERRO STAFF:', JSON.stringify(err.response?.data, null, 2));
-    const erros = err.response?.data?.errors;
-    if (erros) {
-      toast.error(Object.values(erros).flat().join('\n'));
-    } else {
-      toast.error(err.response?.data?.message || 'Erro ao criar funcionário');
+    if (!user.hemocentro_id) {
+      toast.error('Erro: diretor não está vinculado a um hemocentro');
+      return;
     }
-  }
-};
+
+    try {
+      const payload = {
+        name: newStaff.name,
+        email: newStaff.email,
+        cpf: newStaff.cpf.replace(/\D/g, ''),
+        password: newStaff.password,
+        role_id: Number(newStaff.role_id),
+        role: roleNames[newStaff.role_id],
+        hemocentro_id: Number(user.hemocentro_id),
+      };
+
+      await api.post('/auth/users', payload);
+      toast.success(`Funcionário ${newStaff.name} criado com sucesso!`);
+      setAddStaffDialogOpen(false);
+      setNewStaff({ name: '', email: '', cpf: '', password: '', role_id: '2' });
+      await fetchData();
+    } catch (err: any) {
+      const erros = err.response?.data?.errors;
+      if (erros) {
+        toast.error(Object.values(erros).flat().join('\n'));
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao criar funcionário');
+      }
+    }
+  };
+
   const handleDeleteStaff = async () => {
     if (!staffToDelete) return;
     try {
@@ -261,37 +222,6 @@ const handleAddStaff = async () => {
       return;
     }
     const amount = parseInt(stockAmount);
-<<<<<<< HEAD
-    const maxStock = 150; // máximo genérico
-
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
-    // const payload = {
-    //   blood_type: selectedBloodType, // Corrigido de tipo_sanguineo
-    //   amount: amount, // Corrigido de quantidade
-    //   action: stockAction, // 'add' ou 'remove' (Corrigido de acao)
-    // };
-    // await fetch('/estoque/atualizar', { method: 'POST', body: JSON.stringify(payload) });
-
-    setStock(prev =>
-      prev.map(item => {
-        if (item.type === selectedBloodType) {
-          const newCurrent = stockAction === 'add'
-            ? Math.min(item.current + amount, maxStock)
-            : Math.max(item.current - amount, 0);
-          const newPercentage = (newCurrent / maxStock) * 100;
-          return { ...item, current: newCurrent, percentage: newPercentage };
-        }
-        return item;
-      })
-    );
-
-    toast.success(
-      stockAction === 'add'
-        ? `${amount} bolsas adicionadas ao estoque de ${selectedBloodType}`
-        : `${amount} bolsas removidas do estoque de ${selectedBloodType}`
-    );
-=======
     setStock(prev => prev.map(item => {
       if (item.type !== selectedBloodType) return item;
       const newCurrent = stockAction === 'add'
@@ -300,7 +230,6 @@ const handleAddStaff = async () => {
       return { ...item, current: newCurrent };
     }));
     toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
     setUpdateStockDialogOpen(false);
   };
 
@@ -317,11 +246,11 @@ const handleAddStaff = async () => {
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
-  const hemocentroNome = user.hemocentro?.nome || `Hemocentro #${user.hemocentro_id}`;
+  const hemocentroNome = user.hemocentro?.nome || user.hemocentroName || `Hemocentro #${user.hemocentro_id}`;
   const agendConcluidos = agendamentosHoje.filter(
-    (a: any) => ['FIN', 'concluido'].includes(a.status)
+    (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
-  const staffOnline = staffList.filter((s: any) => s.status === 1).length;
+  const staffOnline = staffList.filter((s: any) => s.status === 1 || s.status === 'ativo').length;
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -331,7 +260,7 @@ const handleAddStaff = async () => {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-purple-600 p-2 rounded-lg">
+            <div className="bg-purple-600 p-2 rounded-lg cursor-pointer" onClick={() => navigate('/')}>
               <Droplet className="h-6 w-6 text-white" />
             </div>
             <div>
@@ -342,14 +271,14 @@ const handleAddStaff = async () => {
           <div className="flex items-center gap-4">
             <Avatar>
               <AvatarFallback className="bg-purple-100 text-purple-600">
-                {user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
               </AvatarFallback>
             </Avatar>
             <div className="hidden md:block">
               <p className="text-sm font-semibold">{user.name}</p>
               <p className="text-xs text-gray-600">{hemocentroNome}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleLogoutClick} className="gap-2">
               <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
             </Button>
           </div>
@@ -359,10 +288,10 @@ const handleAddStaff = async () => {
       <main className="container mx-auto px-4 py-8">
 
         {/* Welcome */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              Olá, {user.name.split(' ')[0]}! 👋
+              Olá, {user.name?.split(' ')[0]}! 👋
             </h2>
             <p className="text-gray-600">{hemocentroNome} — Gerenciamento completo</p>
           </div>
@@ -387,13 +316,13 @@ const handleAddStaff = async () => {
 
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3">
-              <CardDescription>Funcionários no Hemocentro</CardDescription>
+              <CardDescription>Equipe no Hemocentro</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : staffList.length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Users className="h-4 w-4 text-blue-600" />
-                <span>{staffOnline} ativos</span>
+                <span>{staffList.length} cadastrados</span>
               </div>
             </CardContent>
           </Card>
@@ -500,10 +429,10 @@ const handleAddStaff = async () => {
           <TabsContent value="staff" className="space-y-6">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
-                    <CardTitle>Funcionários do Hemocentro</CardTitle>
-                    <CardDescription>Equipe vinculada a {hemocentroNome}</CardDescription>
+                    <CardTitle>Equipe do Hemocentro</CardTitle>
+                    <CardDescription>Funcionários e Diretores vinculados a {hemocentroNome}</CardDescription>
                   </div>
                   <Button onClick={() => setAddStaffDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
                     <UserPlus className="h-4 w-4" />Adicionar Funcionário
@@ -512,29 +441,31 @@ const handleAddStaff = async () => {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando funcionários...</div>
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando equipe...</div>
                 ) : staffList.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">Nenhum funcionário cadastrado neste hemocentro.</div>
                 ) : (
                   <div className="space-y-3">
                     {staffList.map((s: any) => (
-                      <div key={s.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                      <div key={s.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                         <div className="flex items-center gap-4">
                           <Avatar>
-                            <AvatarFallback className="bg-blue-100 text-blue-600">
-                              {s.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                            <AvatarFallback className="bg-purple-100 text-purple-600">
+                              {s.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <p className="font-semibold">{s.name}</p>
-                            <p className="text-sm text-gray-600">{roleLabels[s.role_id] || 'Funcionário'}</p>
-                            <p className="text-xs text-gray-400">{s.email}</p>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-[10px] h-5">{roleLabels[s.role_id] || 'Funcionário'}</Badge>
+                              <p className="text-xs text-gray-400">{s.email}</p>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <Badge className={s.status === 1 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}>
-                            <div className={`h-2 w-2 rounded-full mr-2 ${s.status === 1 ? 'bg-green-600' : 'bg-gray-400'}`} />
-                            {s.status === 1 ? 'Ativo' : 'Inativo'}
+                          <Badge className={(s.status === 1 || s.status === 'ativo') ? 'bg-green-100 text-green-600 border-none' : 'bg-gray-100 text-gray-600 border-none'}>
+                            <div className={`h-2 w-2 rounded-full mr-2 ${(s.status === 1 || s.status === 'ativo') ? 'bg-green-600' : 'bg-gray-400'}`} />
+                            {(s.status === 1 || s.status === 'ativo') ? 'Ativo' : 'Inativo'}
                           </Badge>
                           <Button
                             size="sm"
@@ -551,43 +482,6 @@ const handleAddStaff = async () => {
                 )}
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Estatísticas da Equipe</CardTitle>
-                <CardDescription>Resumo do hemocentro</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-3 gap-6">
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm text-gray-600">Total de Funcionários</p>
-                      <Users className="h-5 w-5 text-purple-600" />
-                    </div>
-                    <p className="text-2xl font-bold">{staffList.length}</p>
-                    <p className="text-sm text-gray-600 mt-1">{staffOnline} ativos</p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm text-gray-600">Agendamentos Hoje</p>
-                      <Clock className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <p className="text-2xl font-bold">{agendamentosHoje.length}</p>
-                    <p className="text-sm text-gray-600 mt-1">{agendConcluidos} concluídos</p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm text-gray-600">Estoque Crítico</p>
-                      <Activity className="h-5 w-5 text-red-600" />
-                    </div>
-                    <p className="text-2xl font-bold text-red-600">
-                      {stock.filter(s => s.current < s.min).length}
-                    </p>
-                    <p className="text-sm text-red-600 mt-1">tipos abaixo do mínimo</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* ── Estoque ── */}
@@ -595,43 +489,40 @@ const handleAddStaff = async () => {
             <Card>
               <CardHeader>
                 <CardTitle>Estoque de Sangue</CardTitle>
-                <CardDescription>Status atual por tipo sanguíneo</CardDescription>
+                <CardDescription>Status atual por tipo sanguíneo no {hemocentroNome}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
                   {stock.map(item => {
                     const pct = Math.round((item.current / item.max) * 100);
                     const critico = item.current < item.min;
                     const baixo = !critico && pct < 50;
                     return (
-                      <div key={item.type} className="p-4 border rounded-lg">
+                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-sm transition-all">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-100 p-3 rounded-lg">
+                            <div className="bg-red-50 p-3 rounded-lg">
                               <p className="text-xl font-bold text-red-600">{item.type}</p>
                             </div>
                             <div>
-                              <p className="font-semibold">{item.current} bolsas</p>
-                              <p className="text-sm text-gray-600">Mínimo: {item.min} | Máximo: {item.max}</p>
+                              <p className="font-semibold text-gray-900">{item.current} bolsas</p>
+                              <p className="text-xs text-gray-500">Mín: {item.min} | Máx: {item.max}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge className={critico ? 'bg-red-100 text-red-600' : baixo ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
                               {critico ? 'Crítico' : baixo ? 'Baixo' : 'Normal'}
                             </Badge>
-                            <Button size="sm" variant="outline" onClick={() => handleOpenUpdateStock(item.type)}>
-                              <Activity className="h-4 w-4 mr-1" />Atualizar
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleOpenUpdateStock(item.type)}>
+                              <Activity className="h-4 w-4" />
                             </Button>
                           </div>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className="w-full bg-gray-100 rounded-full h-2.5">
                           <div
-                            className={`h-3 rounded-full ${critico ? 'bg-red-600' : baixo ? 'bg-orange-500' : 'bg-green-600'}`}
+                            className={`h-2.5 rounded-full ${critico ? 'bg-red-600' : baixo ? 'bg-orange-500' : 'bg-green-600'}`}
                             style={{ width: `${Math.min(pct, 100)}%` }}
                           />
-                        </div>
-                        <div className="flex justify-between text-xs text-gray-400 mt-1">
-                          <span>0</span><span>{pct}%</span><span>{item.max}</span>
                         </div>
                       </div>
                     );
@@ -659,27 +550,33 @@ const handleAddStaff = async () => {
                     <Button
                       key={value}
                       variant="outline"
-                      className="h-24 flex-col gap-2"
+                      className="h-auto p-4 flex items-center justify-start gap-4 text-left hover:border-purple-300 hover:bg-purple-50 transition-all"
                       onClick={() => { setReportType(value); setExportDialogOpen(true); }}
                     >
-                      <Icon className="h-6 w-6" />
-                      <div><p className="font-semibold">{title}</p><p className="text-xs text-gray-600">{desc}</p></div>
+                      <div className="bg-purple-100 p-2 rounded-lg text-purple-600">
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">{title}</p>
+                        <p className="text-xs text-gray-500">{desc}</p>
+                      </div>
                     </Button>
                   ))}
                 </div>
 
-                <div className="pt-4 border-t">
-                  <h4 className="font-semibold mb-3">Últimos Relatórios Gerados</h4>
+                <div className="pt-6 border-t">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-purple-600" /> Relatórios Recentes
+                  </h4>
                   <div className="space-y-2">
                     {[
                       { name: 'Relatório Mensal - Fevereiro 2026', date: '01/03/2026', size: '2.4 MB' },
                       { name: 'Relatório de Estoque - Janeiro 2026', date: '25/02/2026', size: '1.8 MB' },
-                      { name: 'Relatório Anual - 2025', date: '15/01/2026', size: '5.2 MB' },
                     ].map((r, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                      <div key={i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
                         <div>
-                          <p className="font-semibold text-sm">{r.name}</p>
-                          <p className="text-xs text-gray-600">{r.date} • {r.size}</p>
+                          <p className="font-semibold text-sm text-gray-900">{r.name}</p>
+                          <p className="text-xs text-gray-500">{r.date} • {r.size}</p>
                         </div>
                         <Button size="sm" variant="ghost"><Download className="h-4 w-4" /></Button>
                       </div>
@@ -701,24 +598,26 @@ const handleAddStaff = async () => {
             <DialogTitle>Adicionar Novo Funcionário</DialogTitle>
             <DialogDescription>O funcionário será vinculado a {hemocentroNome}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div><Label>Nome Completo *</Label>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2"><Label>Nome Completo *</Label>
               <Input placeholder="Nome completo" value={newStaff.name}
                 onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} />
             </div>
-            <div><Label>Email *</Label>
+            <div className="space-y-2"><Label>Email *</Label>
               <Input type="email" placeholder="email@exemplo.com" value={newStaff.email}
                 onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} />
             </div>
-            <div><Label>CPF * (só números)</Label>
-              <Input placeholder="00000000000" maxLength={11} value={newStaff.cpf}
-                onChange={e => setNewStaff({ ...newStaff, cpf: e.target.value.replace(/\D/g, '') })} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>CPF *</Label>
+                <Input placeholder="000.000.000-00" maxLength={11} value={newStaff.cpf}
+                  onChange={e => setNewStaff({ ...newStaff, cpf: e.target.value.replace(/\D/g, '') })} />
+              </div>
+              <div className="space-y-2"><Label>Senha Provisória *</Label>
+                <Input type="password" placeholder="Mín. 6 caracteres" minLength={6} value={newStaff.password}
+                  onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} />
+              </div>
             </div>
-            <div><Label>Senha * (mín. 6 caracteres)</Label>
-              <Input type="password" placeholder="Senha provisória" minLength={6} value={newStaff.password}
-                onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} />
-            </div>
-            <div>
+            <div className="space-y-2">
               <Label>Cargo *</Label>
               <Select value={newStaff.role_id} onValueChange={v => setNewStaff({ ...newStaff, role_id: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -731,7 +630,7 @@ const handleAddStaff = async () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddStaffDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleAddStaff} className="bg-purple-600 hover:bg-purple-700">
+            <Button onClick={handleAddStaff} className="bg-purple-600 hover:bg-purple-700 text-white">
               <UserPlus className="h-4 w-4 mr-2" />Adicionar
             </Button>
           </DialogFooter>
@@ -747,14 +646,14 @@ const handleAddStaff = async () => {
           </DialogHeader>
           {staffToDelete && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="font-semibold">{staffToDelete.name}</p>
+              <p className="font-semibold text-gray-900">{staffToDelete.name}</p>
               <p className="text-sm text-gray-600">{staffToDelete.email}</p>
-              <p className="text-xs text-gray-500">{roleLabels[staffToDelete.role_id]}</p>
+              <Badge variant="outline" className="mt-2">{roleLabels[staffToDelete.role_id]}</Badge>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteStaffDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleDeleteStaff} className="bg-red-600 hover:bg-red-700">Remover</Button>
+            <Button onClick={handleDeleteStaff} className="bg-red-600 hover:bg-red-700 text-white">Remover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -766,8 +665,8 @@ const handleAddStaff = async () => {
             <DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle>
             <DialogDescription>Adicione ou remova bolsas do estoque</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
               <Label>Ação</Label>
               <Select value={stockAction} onValueChange={v => setStockAction(v as 'add' | 'remove')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -777,19 +676,15 @@ const handleAddStaff = async () => {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-2">
               <Label>Quantidade (bolsas)</Label>
               <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
-            </div>
-            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
-              Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
-              <strong>{stock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUpdateStockDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
-              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
+            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
+              {stockAction === 'add' ? 'Adicionar' : 'Remover'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -802,37 +697,34 @@ const handleAddStaff = async () => {
             <DialogTitle>Exportar Relatório</DialogTitle>
             <DialogDescription>Selecione o tipo e formato</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
               <Label>Tipo de Relatório</Label>
               <Select value={reportType} onValueChange={setReportType}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="monthly"><div className="flex items-center gap-2"><BarChart3 className="h-4 w-4" />Relatório Mensal</div></SelectItem>
-                  <SelectItem value="donors"><div className="flex items-center gap-2"><Users className="h-4 w-4" />Relatório de Doadores</div></SelectItem>
-                  <SelectItem value="stock"><div className="flex items-center gap-2"><Droplet className="h-4 w-4" />Relatório de Estoque</div></SelectItem>
-                  <SelectItem value="performance"><div className="flex items-center gap-2"><Activity className="h-4 w-4" />Relatório de Desempenho</div></SelectItem>
+                  <SelectItem value="monthly">Relatório Mensal</SelectItem>
+                  <SelectItem value="donors">Relatório de Doadores</SelectItem>
+                  <SelectItem value="stock">Relatório de Estoque</SelectItem>
+                  <SelectItem value="performance">Relatório de Desempenho</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-2">
               <Label>Formato</Label>
               <Select value={reportFormat} onValueChange={setReportFormat}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pdf"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-red-600" />PDF</div></SelectItem>
-                  <SelectItem value="excel"><div className="flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-green-600" />Excel (.xlsx)</div></SelectItem>
-                  <SelectItem value="csv"><div className="flex items-center gap-2"><FilePieChart className="h-4 w-4 text-blue-600" />CSV</div></SelectItem>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="excel">Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="bg-purple-50 p-3 rounded text-sm text-gray-600">
-              O relatório será gerado com os dados atualizados.
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmExport} className="bg-purple-600 hover:bg-purple-700">
+            <Button onClick={handleConfirmExport} className="bg-purple-600 hover:bg-purple-700 text-white">
               <Download className="h-4 w-4 mr-2" />Exportar
             </Button>
           </DialogFooter>

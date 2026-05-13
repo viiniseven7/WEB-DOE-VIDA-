@@ -12,7 +12,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Switch } from '../ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '../ui/dialog';
 import {
   Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
   Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
@@ -84,11 +84,12 @@ const globalStockMock = [
 ];
 
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
+const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
 export function AdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
 
   // ── Estado: dados da API
@@ -130,7 +131,6 @@ export function AdminDashboard() {
   const [permissionToDelete, setPermissionToDelete] = useState<any>(null);
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
-  const [selectedHemocentroForStock, setSelectedHemocentroForStock] = useState('all');
   const [reportType, setReportType] = useState('');
   const [reportFormat, setReportFormat] = useState('pdf');
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -142,42 +142,42 @@ export function AdminDashboard() {
   // ── Formulário: novo usuário
   const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
 
+  // ─── Guard ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    } else if (user.role_id !== 4 && !user.roles?.includes('admin')) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
+
   // ─── Fetch inicial ──────────────────────────────────────────────────────────
-
   const fetchData = useCallback(async () => {
-  setIsLoading(true);
-  try {
-    const [hcRes, usersRes] = await Promise.all([
-      api.get('/hemocentros'),
-      api.get('/users'),
-    ]);
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const [hcRes, usersRes] = await Promise.all([
+        api.get('/hemocentros'),
+        api.get('/users'),
+      ]);
 
-    // ADICIONE ESSES LOGS TEMPORÁRIOS:
-    console.log('STATUS hemocentros:', hcRes.status);
-    console.log('DATA hemocentros:', hcRes.data);
-    console.log('STATUS users:', usersRes.status);
-    console.log('DATA users:', usersRes.data);
-
-    setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
-    setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
-  } catch (err: any) {
-    console.error('ERRO fetchData:', err.response?.status, err.response?.data);
-    toast.error('Erro ao carregar dados');
-  } finally {
-    setIsLoading(false);
-  }
-}, []);
+      setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+    } catch (err: any) {
+      console.error('Erro ao carregar dados:', err.response?.data);
+      toast.error('Erro ao carregar dados do painel');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ─── Guard ──────────────────────────────────────────────────────────────────
+  if (!user || (user.role_id !== 4 && !user.roles?.includes('admin'))) return null;
 
-  if (!user) { navigate('/login'); return null; }
-
-  const handleLogout = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
+  const handleLogoutClick = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
 
   // ─── Hemocentros ────────────────────────────────────────────────────────────
-
   const handleCreateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -187,7 +187,7 @@ export function AdminDashboard() {
       setHcForm({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
       fetchData();
     } catch (err: any) {
-      toast.error('Erro: ' + (err.response?.data?.message || JSON.stringify(err.response?.data)));
+      toast.error('Erro ao criar hemocentro');
     }
   };
 
@@ -201,7 +201,7 @@ export function AdminDashboard() {
       setSelectedHemocentro(null);
       fetchData();
     } catch (err: any) {
-      toast.error('Erro: ' + (err.response?.data?.message || 'Tente novamente'));
+      toast.error('Erro ao atualizar hemocentro');
     }
   };
 
@@ -217,80 +217,54 @@ export function AdminDashboard() {
   };
 
   // ─── Usuários ───────────────────────────────────────────────────────────────
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const payload: any = {
+        ...newUserForm,
+        cpf: newUserForm.cpf.replace(/\D/g, ''),
+        role: roleNames[newUserForm.role_id],
+        role_id: Number(newUserForm.role_id)
+      };
+      if (newUserForm.hemocentro_id) payload.hemocentro_id = Number(newUserForm.hemocentro_id);
 
-  const roleNames: Record<string, string> = {
-  '1': 'doador',
-  '2': 'funcionario', 
-  '3': 'diretor',
-  '4': 'admin',
-};
-  const roleLabels: Record<number, string> = {
-  1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
-};
-
-const handleCreateUser = async (e: React.FormEvent) => {
-  e.preventDefault();
-  try {
-    const payload: any = {
-      name: newUserForm.name,
-      email: newUserForm.email,
-      password: newUserForm.password,
-      cpf: newUserForm.cpf.replace(/\D/g, ''),
-      role_id: Number(newUserForm.role_id),
-      role: roleNames[newUserForm.role_id], // campo que o Laravel exige
-    };
-    if (newUserForm.hemocentro_id) payload.hemocentro_id = Number(newUserForm.hemocentro_id);
-
-    console.log('PAYLOAD:', JSON.stringify(payload, null, 2));
-
-    await api.post('/auth/users', payload);
-    toast.success('Usuário criado com sucesso!');
-    setShowUserDialog(false);
-    setNewUserForm({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
-    fetchData();
-  } catch (err: any) {
-    console.log('ERRO:', JSON.stringify(err.response?.data, null, 2));
-    const erros = err.response?.data?.errors;
-    if (erros) {
-      toast.error(Object.values(erros).flat().join('\n'));
-    } else {
-      toast.error(err.response?.data?.message || 'Erro ao criar usuário');
+      await api.post('/auth/users', payload);
+      toast.success('Usuário criado com sucesso!');
+      setShowUserDialog(false);
+      setNewUserForm({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
+      fetchData();
+    } catch (err: any) {
+      const erros = err.response?.data?.errors;
+      if (erros) {
+        toast.error(Object.values(erros).flat().join('\n'));
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao criar usuário');
+      }
     }
-  }
-};
+  };
 
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    try {
+      const payload: any = {
+        name: selectedUser.name,
+        email: selectedUser.email,
+        role_id: selectedUser.role_id,
+        role: roleNames[String(selectedUser.role_id)],
+        status: selectedUser.status
+      };
+      if (selectedUser.hemocentro_id) payload.hemocentro_id = selectedUser.hemocentro_id;
 
-const handleUpdateUser = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!selectedUser) return;
-  try {
-    const payload: any = {
-      name: selectedUser.name,
-      email: selectedUser.email,
-      role_id: selectedUser.role_id,
-      role: roleNames[selectedUser.role_id], // campo que o Laravel exige
-    };
-
-    if (selectedUser.hemocentro_id) payload.hemocentro_id = selectedUser.hemocentro_id;
-    if (selectedUser.status !== undefined) payload.status = selectedUser.status;
-
-    console.log('PAYLOAD UPDATE:', JSON.stringify(payload, null, 2));
-
-    await api.put(`/users/${selectedUser.id}`, payload);
-    toast.success('Usuário atualizado!');
-    setShowEditUserDialog(false);
-    setSelectedUser(null);
-    fetchData();
-  } catch (err: any) {
-    console.log('ERRO UPDATE:', JSON.stringify(err.response?.data, null, 2));
-    const erros = err.response?.data?.errors;
-    if (erros) {
-      toast.error(Object.values(erros).flat().join('\n'));
-    } else {
-      toast.error(err.response?.data?.message || 'Erro ao atualizar usuário');
+      await api.put(`/users/${selectedUser.id}`, payload);
+      toast.success('Usuário atualizado!');
+      setShowEditUserDialog(false);
+      setSelectedUser(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar usuário');
     }
-  }
-};
+  };
 
   const handleConfirmDeleteUser = async () => {
     if (!userToDelete) return;
@@ -316,98 +290,17 @@ const handleUpdateUser = async (e: React.FormEvent) => {
     }
   };
 
-<<<<<<< HEAD
-  // Hemocentro handlers
-  const handleCreateHemocentro = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota POST /auth/hemocentros
-    // const payload = {
-    //   name: "...", // Corrigido de nome
-    //   city: "...", // Corrigido de cidade
-    //   state: "...", // Corrigido de estado
-    //   address: "...", // Corrigido de endereco
-    //   phone: "...", // Corrigido de telefone
-    //   email: "...",
-    //   capacity: 0, // Corrigido de capacidade
-    //   status: "active"
-    // };
-    // await fetch('/auth/hemocentros', { method: 'POST', body: JSON.stringify(payload) });
-
-    setShowHemocentroDialog(false);
-    toast.success('Hemocentro criado com sucesso!');
-  };
-=======
   // ─── Estoque (local) ─────────────────────────────────────────────────────────
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
-
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
     setStockAmount('');
-    setSelectedHemocentroForStock('all');
     setShowStockDialog(true);
   };
 
   const handleUpdateStock = () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) { toast.error('Digite uma quantidade válida'); return; }
     const amount = parseInt(stockAmount);
-<<<<<<< HEAD
-
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota POST/PUT de estoque
-    // const payload = {
-    //   blood_type: selectedBloodType, // Corrigido de tipo_sanguineo
-    //   amount: amount, // Corrigido de quantidade
-    //   action: stockAction, // 'add' ou 'remove' (Corrigido de acao)
-    //   hemocenter_id: selectedHemocentroForStock === 'all' ? null : selectedHemocentroForStock
-    // };
-    // await fetch('/estoque/atualizar', { method: 'POST', body: JSON.stringify(payload) });
-
-    setGlobalStock(prev =>
-      prev.map(item => {
-        if (item.type === selectedBloodType) {
-          const newCurrent = stockAction === 'add'
-            ? Math.min(item.current + amount, item.max)
-            : Math.max(item.current - amount, 0);
-          const newCritical = newCurrent < item.min;
-
-          return {
-            ...item,
-            current: newCurrent,
-            critical: newCritical
-          };
-        }
-        return item;
-      })
-    );
-    toast.success(
-      stockAction === 'add'
-        ? `${amount} bolsas adicionadas ao estoque global de ${selectedBloodType}`
-        : `${amount} bolsas removidas do estoque global de ${selectedBloodType}`
-    );
-    setShowStockDialog(false);
-  };
-
-  // User handlers
-  const handleCreateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota POST /auth/users
-    // const payload = {
-    //   name: "...", // Corrigido de nome
-    //   email: "...",
-    //   role: "...", // Corrigido de cargo
-    //   hemocenter_id: "...", // Corrigido de hemocentro
-    //   password: "..." // Corrigido de senha
-    // };
-    // await fetch('/auth/users', { method: 'POST', body: JSON.stringify(payload) });
-
-    setShowUserDialog(false);
-    toast.success('Usuário criado com sucesso!');
-=======
     setGlobalStock(prev => prev.map(item => {
       if (item.type !== selectedBloodType) return item;
       const newCurrent = stockAction === 'add'
@@ -420,7 +313,6 @@ const handleUpdateUser = async (e: React.FormEvent) => {
   };
 
   // ─── Campanhas (local) ──────────────────────────────────────────────────────
-
   const handleCreateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowCampaignDialog(false); toast.success('Campanha criada!'); };
   const handleUpdateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowEditCampaignDialog(false); toast.success('Campanha atualizada!'); };
   const handleConfirmDeleteCampaign = () => {
@@ -429,11 +321,9 @@ const handleUpdateUser = async (e: React.FormEvent) => {
     setShowDeleteCampaignDialog(false);
     setCampaignToDelete(null);
     toast.success('Campanha excluída!');
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
   };
 
   // ─── Permissões (local) ─────────────────────────────────────────────────────
-
   const handleCreatePermissionGroup = (e: React.FormEvent) => { e.preventDefault(); setShowPermissionDialog(false); toast.success('Grupo criado!'); };
   const handleUpdatePermission = (e: React.FormEvent) => { e.preventDefault(); setShowEditPermissionDialog(false); toast.success('Grupo atualizado!'); };
   const handleConfirmDeletePermission = () => {
@@ -444,104 +334,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
     toast.success('Grupo removido!');
   };
 
-<<<<<<< HEAD
-  const handleUpdateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota PUT /users/{id}
-    // const payload = {
-    //   name: selectedUser.name, // Corrigido de nome
-    //   email: selectedUser.email,
-    //   role: selectedUser.role, // Corrigido de cargo
-    //   hemocenter_id: selectedUser.hemocentroId, // Corrigido de hemocentro
-    //   status: selectedUser.status
-    // };
-    // await fetch(`/users/${selectedUser.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-
-    setUsers(prev =>
-      prev.map(u => u.id === selectedUser.id ? selectedUser : u)
-    );
-    setShowEditUserDialog(false);
-    setSelectedUser(null);
-    toast.success('Usuário atualizado com sucesso!');
-  };
-
-  const handleOpenDeleteUser = (user: any) => {
-    setUserToDelete(user);
-    setShowDeleteUserDialog(true);
-  };
-
-  const handleConfirmDeleteUser = () => {
-    if (userToDelete) {
-      setUsers(users.filter(u => u.id !== userToDelete.id));
-      setShowDeleteUserDialog(false);
-      setUserToDelete(null);
-      toast.success('Usuário removido com sucesso!');
-    }
-  };
-
-  const handleToggleUserStatus = (id: string) => {
-    setUsers(prev =>
-      prev.map(u => u.id === id ? { ...u, status: u.status === 'online' ? 'offline' : 'online' } : u)
-    );
-    toast.success('Status do usuário atualizado!');
-  };
-
-  // Hemocentro handlers
-  const handleViewHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowViewHemocentroDialog(true);
-  };
-
-  const handleEditHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowEditHemocentroDialog(true);
-  };
-
-  const handleUpdateHemocentro = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // REQUEST PARA API
-    // Exemplo de payload a ser enviado para a rota PUT /auth/hemocentros/{id}
-    // const payload = {
-    //   name: selectedHemocentro.name, // Corrigido de nome
-    //   city: selectedHemocentro.city, // Corrigido de cidade
-    //   state: selectedHemocentro.state, // Corrigido de estado
-    //   phone: selectedHemocentro.phone, // Corrigido de telefone
-    //   email: selectedHemocentro.email,
-    //   capacity: selectedHemocentro.capacity, // Corrigido de capacidade
-    //   status: selectedHemocentro.status
-    // };
-    // await fetch(`/auth/hemocentros/${selectedHemocentro.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-
-    // Aqui você atualizaria no backend/estado
-    setShowEditHemocentroDialog(false);
-    setSelectedHemocentro(null);
-    toast.success('Hemocentro atualizado com sucesso!');
-  };
-
-  const handleSettingsHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowSettingsHemocentroDialog(true);
-  };
-
-  const handleSaveHemocentroSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowSettingsHemocentroDialog(false);
-    setSelectedHemocentro(null);
-    toast.success('Configurações do hemocentro salvas com sucesso!');
-  };
-
-  const handleSaveSettings = () => {
-    toast.success('Configurações do sistema salvas com sucesso!');
-  };
-
-  // Report handlers
-=======
   // ─── Relatório (simulado) ───────────────────────────────────────────────────
-
->>>>>>> 29a1149df61d2fee727b2e30f1487737c62e9b0b
   const handleExportReport = () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
     const names: Record<string, string> = { donations: 'Doações', stock: 'Estoque Global', users: 'Usuários', campaigns: 'Campanhas', hemocentros: 'Hemocentros' };
@@ -553,14 +346,13 @@ const handleUpdateUser = async (e: React.FormEvent) => {
   };
 
   // ─── Computados ─────────────────────────────────────────────────────────────
-
   const hemocentrosAtivos = hemocentros.filter(h => h.status === 1);
-  const totalDonors = users.filter(u => u.role_id === 1).length;
+  const totalDonors = users.filter(u => Number(u.role_id) === 1).length;
 
   const filteredUsers = users.filter(u => {
     const matchesSearch =
-      u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(userSearchTerm.toLowerCase());
+      u.name?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+      u.email?.toLowerCase().includes(userSearchTerm.toLowerCase());
     const matchesFilter =
       userFilter === 'all' ||
       (userFilter === 'ativo' && u.status === 1) ||
@@ -575,15 +367,15 @@ const handleUpdateUser = async (e: React.FormEvent) => {
     color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A',
   }));
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-green-600 p-2 rounded-lg"><Droplet className="h-6 w-6 text-white" /></div>
+            <div className="bg-green-600 p-2 rounded-lg cursor-pointer" onClick={() => navigate('/')}>
+              <Droplet className="h-6 w-6 text-white" />
+            </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
               <p className="text-xs text-gray-600">Painel do Administrador</p>
@@ -595,14 +387,14 @@ const handleUpdateUser = async (e: React.FormEvent) => {
             </Button>
             <Avatar>
               <AvatarFallback className="bg-green-100 text-green-600">
-                {user.name.split(' ').map(n => n[0]).join('')}
+                {user.name?.split(' ').map((n: string) => n[0]).join('')}
               </AvatarFallback>
             </Avatar>
             <div className="hidden md:block">
               <p className="text-sm font-semibold">{user.name}</p>
               <p className="text-xs text-gray-600">Administrador</p>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleLogoutClick} className="gap-2">
               <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
             </Button>
           </div>
@@ -611,7 +403,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name.split(' ')[0]}! 👋</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! 👋</h2>
           <p className="text-gray-600">Visão global do sistema DoaVida</p>
         </div>
 
@@ -667,9 +459,8 @@ const handleUpdateUser = async (e: React.FormEvent) => {
           </Card>
         </div>
 
-        {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7 lg:w-auto">
+          <TabsList className="grid w-full grid-cols-4 md:grid-cols-7 lg:w-auto h-auto">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="stock">Estoque Global</TabsTrigger>
             <TabsTrigger value="users">Usuários</TabsTrigger>
@@ -836,22 +627,22 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Filtros */}
-                <div className="flex gap-4 mb-4">
+                <div className="flex flex-col md:flex-row gap-4 mb-4">
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input placeholder="Buscar por nome ou email..." value={userSearchTerm}
                       onChange={e => setUserSearchTerm(e.target.value)} className="pl-10" />
                   </div>
                   <Select value={userFilter} onValueChange={setUserFilter}>
-                    <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full md:w-48"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="all">Todos Perfis</SelectItem>
                       <SelectItem value="ativo">Ativos</SelectItem>
                       <SelectItem value="inativo">Inativos</SelectItem>
                       <SelectItem value="1">Doadores</SelectItem>
                       <SelectItem value="2">Funcionários</SelectItem>
                       <SelectItem value="3">Diretores</SelectItem>
+                      <SelectItem value="4">Administradores</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -861,24 +652,25 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                 ) : (
                   <div className="space-y-3">
                     {filteredUsers.map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                      <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 gap-4">
                         <div className="flex items-center gap-4">
                           <Avatar>
                             <AvatarFallback className="bg-purple-100 text-purple-600">
-                              {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                              {u.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold">{u.name}</p>
-                              <Badge className={u.status === 1 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}>
+                              <p className="font-semibold text-gray-900">{u.name}</p>
+                              <Badge className={u.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-gray-100 text-gray-600 border-none'}>
                                 {u.status === 1 ? 'Ativo' : 'Inativo'}
                               </Badge>
                             </div>
                             <p className="text-sm text-gray-600">{u.email}</p>
-                            <p className="text-xs text-gray-500">
-                              {roleLabels[u.role_id] || 'Usuário'}{u.hemocentro ? ` • ${u.hemocentro.nome}` : ''}
-                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-[10px] h-5">{roleLabels[u.role_id] || 'Usuário'}</Badge>
+                              {u.hemocentro && <span className="text-[10px] text-gray-400">• {u.hemocentro.nome}</span>}
+                            </div>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -924,13 +716,13 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                 ) : (
                   <div className="space-y-3">
                     {hemocentros.map(hc => (
-                      <div key={hc.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                      <div key={hc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 gap-4">
                         <div className="flex items-center gap-4">
                           <div className="bg-green-100 p-3 rounded-lg"><Building2 className="h-6 w-6 text-green-600" /></div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold">{hc.nome}</p>
-                              <Badge className={hc.status === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
+                              <p className="font-semibold text-gray-900">{hc.nome}</p>
+                              <Badge className={hc.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-red-100 text-red-600 border-none'}>
                                 {hc.status === 1 ? 'Ativo' : 'Inativo'}
                               </Badge>
                             </div>
@@ -1055,7 +847,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-semibold">{campaign.title}</p>
-                            <Badge className={campaign.status === 'active' ? 'bg-green-100 text-green-600' : campaign.status === 'scheduled' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}>
+                            <Badge className={campaign.status === 'active' ? 'bg-green-100 text-green-600 border-none' : campaign.status === 'scheduled' ? 'bg-blue-100 text-blue-600 border-none' : 'bg-gray-100 text-gray-600 border-none'}>
                               {campaign.status === 'active' ? 'Ativa' : campaign.status === 'scheduled' ? 'Agendada' : 'Concluída'}
                             </Badge>
                           </div>
@@ -1144,7 +936,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowHemocentroDialog(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4 mr-2" />Criar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white"><Plus className="h-4 w-4 mr-2" />Criar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1157,19 +949,20 @@ const handleUpdateUser = async (e: React.FormEvent) => {
           {selectedHemocentro && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div><Label className="text-gray-500">Nome</Label><p className="font-semibold">{selectedHemocentro.nome}</p></div>
-                <div><Label className="text-gray-500">ID</Label><p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">{selectedHemocentro.id}</p></div>
+                <div><Label className="text-gray-500">Nome</Label><p className="font-semibold text-gray-900">{selectedHemocentro.nome}</p></div>
+                <div><Label className="text-gray-500">ID</Label><p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded inline-block">{selectedHemocentro.id}</p></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div><Label className="text-gray-500">Cidade / UF</Label><p>{selectedHemocentro.cidade} {selectedHemocentro.uf}</p></div>
                 <div><Label className="text-gray-500">Status</Label>
-                  <Badge className={selectedHemocentro.status === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
+                  <Badge className={selectedHemocentro.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-red-100 text-red-600 border-none'}>
                     {selectedHemocentro.status === 1 ? 'Ativo' : 'Inativo'}
                   </Badge>
                 </div>
               </div>
               {selectedHemocentro.telefone && <div><Label className="text-gray-500">Telefone</Label><p>{selectedHemocentro.telefone}</p></div>}
               {selectedHemocentro.email && <div><Label className="text-gray-500">Email</Label><p>{selectedHemocentro.email}</p></div>}
+              {selectedHemocentro.endereco && <div><Label className="text-gray-500">Endereço</Label><p>{selectedHemocentro.endereco}, {selectedHemocentro.numero} - {selectedHemocentro.bairro}</p></div>}
             </div>
           )}
           <DialogFooter><Button variant="outline" onClick={() => setShowViewHemocentroDialog(false)}>Fechar</Button></DialogFooter>
@@ -1210,7 +1003,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowEditHemocentroDialog(false)}>Cancelar</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
@@ -1228,8 +1021,13 @@ const handleUpdateUser = async (e: React.FormEvent) => {
             <div><Label>Email *</Label>
               <Input type="email" value={newUserForm.email} onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })} required />
             </div>
-            <div><Label>CPF * (só números)</Label>
-              <Input value={newUserForm.cpf} onChange={e => setNewUserForm({ ...newUserForm, cpf: e.target.value.replace(/\D/g, '') })} maxLength={11} required />
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>CPF *</Label>
+                <Input value={newUserForm.cpf} onChange={e => setNewUserForm({ ...newUserForm, cpf: e.target.value.replace(/\D/g, '') })} maxLength={11} required />
+              </div>
+              <div><Label>Senha *</Label>
+                <Input type="password" value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} minLength={6} required />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1246,21 +1044,18 @@ const handleUpdateUser = async (e: React.FormEvent) => {
               <div>
                 <Label>Hemocentro</Label>
                 <Select value={newUserForm.hemocentro_id} onValueChange={v => setNewUserForm({ ...newUserForm, hemocentro_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
                   <SelectContent>
-                    {hemocentros.filter(h => h.status === 1).map(hc => (
+                    {hemocentros.map(hc => (
                       <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div><Label>Senha * (mín. 6 caracteres)</Label>
-              <Input type="password" value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} minLength={6} required />
-            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowUserDialog(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700"><UserPlus className="h-4 w-4 mr-2" />Criar Usuário</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white"><UserPlus className="h-4 w-4 mr-2" />Criar Usuário</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1284,6 +1079,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                   <Select value={String(selectedUser.role_id)} onValueChange={v => setSelectedUser({ ...selectedUser, role_id: Number(v) })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="1">Doador</SelectItem>
                       <SelectItem value="2">Funcionário</SelectItem>
                       <SelectItem value="3">Diretor</SelectItem>
                       <SelectItem value="4">Admin</SelectItem>
@@ -1292,9 +1088,10 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                 </div>
                 <div>
                   <Label>Hemocentro</Label>
-                  <Select value={selectedUser.hemocentro_id ? String(selectedUser.hemocentro_id) : ''} onValueChange={v => setSelectedUser({ ...selectedUser, hemocentro_id: Number(v) })}>
+                  <Select value={selectedUser.hemocentro_id ? String(selectedUser.hemocentro_id) : ''} onValueChange={v => setSelectedUser({ ...selectedUser, hemocentro_id: v ? Number(v) : undefined })}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">Nenhum</SelectItem>
                       {hemocentros.map(hc => (
                         <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
                       ))}
@@ -1314,7 +1111,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowEditUserDialog(false)}>Cancelar</Button>
-                <Button type="submit" className="bg-green-600 hover:bg-green-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
@@ -1325,19 +1122,19 @@ const handleUpdateUser = async (e: React.FormEvent) => {
       <Dialog open={showDeleteUserDialog} onOpenChange={setShowDeleteUserDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600"><XCircle className="h-5 w-5" />Confirmar Exclusão</DialogTitle>
-            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-red-600"><Trash2 className="h-5 w-5" />Confirmar Exclusão</DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita e removerá permanentemente o usuário do sistema.</DialogDescription>
           </DialogHeader>
           {userToDelete && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="font-semibold">{userToDelete.name}</p>
+              <p className="font-semibold text-gray-900">{userToDelete.name}</p>
               <p className="text-sm text-gray-600">{userToDelete.email}</p>
-              <p className="text-xs text-gray-500">{roleLabels[userToDelete.role_id]}</p>
+              <Badge variant="outline" className="mt-2">{roleLabels[userToDelete.role_id]}</Badge>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteUserDialog(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleConfirmDeleteUser}><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteUser} className="gap-2"><Trash2 className="h-4 w-4" />Excluir Usuário</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1345,8 +1142,8 @@ const handleUpdateUser = async (e: React.FormEvent) => {
       {/* Atualizar Estoque */}
       <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
         <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader><DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+          <DialogHeader><DialogTitle>Atualizar Estoque Global — {selectedBloodType}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
             <div>
               <Label>Ação</Label>
               <Select value={stockAction} onValueChange={(v) => setStockAction(v as 'add' | 'remove')}>
@@ -1367,8 +1164,8 @@ const handleUpdateUser = async (e: React.FormEvent) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowStockDialog(false)}>Cancelar</Button>
-            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
-              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
+            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
+              {stockAction === 'add' ? 'Confirmar Adição' : 'Confirmar Remoção'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1393,10 +1190,9 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Data</Label><Input type="date" value={selectedCampaign.date} onChange={e => setSelectedCampaign({ ...selectedCampaign, date: e.target.value })} required /></div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>Cancelar</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">Salvar Alterações</Button>
               </DialogFooter>
             </form>
           )}
@@ -1409,48 +1205,13 @@ const handleUpdateUser = async (e: React.FormEvent) => {
           <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Campanha</DialogTitle></DialogHeader>
           {campaignToDelete && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="font-semibold">{campaignToDelete.title}</p>
+              <p className="font-semibold text-gray-900">{campaignToDelete.title}</p>
               <p className="text-sm text-gray-600">{campaignToDelete.subtitle}</p>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteCampaignDialog(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmDeleteCampaign} className="bg-red-600 hover:bg-red-700"><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Editar Permissão */}
-      <Dialog open={showEditPermissionDialog} onOpenChange={setShowEditPermissionDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader><DialogTitle>Editar Grupo de Permissões</DialogTitle></DialogHeader>
-          {selectedPermission && (
-            <form onSubmit={handleUpdatePermission} className="space-y-4">
-              <div><Label>Nome</Label><Input value={selectedPermission.name} onChange={e => setSelectedPermission({ ...selectedPermission, name: e.target.value })} required /></div>
-              <div><Label>Descrição</Label><Textarea value={selectedPermission.description} onChange={e => setSelectedPermission({ ...selectedPermission, description: e.target.value })} /></div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditPermissionDialog(false)}>Cancelar</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Excluir Permissão */}
-      <Dialog open={showDeletePermissionDialog} onOpenChange={setShowDeletePermissionDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Grupo</DialogTitle></DialogHeader>
-          {permissionToDelete && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="font-semibold">{permissionToDelete.name}</p>
-              <p className="text-sm text-gray-600">{permissionToDelete.description}</p>
-              <p className="text-xs text-red-600 mt-2 font-semibold">⚠️ {permissionToDelete.users} usuários neste grupo</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeletePermissionDialog(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmDeletePermission} className="bg-red-600 hover:bg-red-700"><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
+            <Button onClick={handleConfirmDeleteCampaign} className="bg-red-600 hover:bg-red-700 text-white">Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1458,36 +1219,36 @@ const handleUpdateUser = async (e: React.FormEvent) => {
       {/* Exportar Relatório */}
       <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle>Exportar Relatório</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+          <DialogHeader><DialogTitle>Gerar Relatório Global</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
             <div>
-              <Label>Tipo</Label>
+              <Label>Tipo de Dados</Label>
               <Select value={reportType} onValueChange={setReportType}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="donations">Doações</SelectItem>
+                  <SelectItem value="donations">Doações Consolidadas</SelectItem>
                   <SelectItem value="stock">Estoque Global</SelectItem>
-                  <SelectItem value="users">Usuários</SelectItem>
-                  <SelectItem value="campaigns">Campanhas</SelectItem>
-                  <SelectItem value="hemocentros">Hemocentros</SelectItem>
+                  <SelectItem value="users">Base de Usuários</SelectItem>
+                  <SelectItem value="campaigns">Estatísticas de Campanhas</SelectItem>
+                  <SelectItem value="hemocentros">Desempenho de Hemocentros</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Formato</Label>
+              <Label>Formato do Arquivo</Label>
               <Select value={reportFormat} onValueChange={setReportFormat}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pdf">PDF</SelectItem>
-                  <SelectItem value="excel">Excel (.xlsx)</SelectItem>
-                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="pdf">Documento PDF</SelectItem>
+                  <SelectItem value="excel">Planilha Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">Valores Separados por Vírgula (.csv)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowReportDialog(false)}>Cancelar</Button>
-            <Button onClick={handleExportReport} className="bg-green-600 hover:bg-green-700"><Download className="h-4 w-4 mr-2" />Exportar</Button>
+            <Button onClick={handleExportReport} className="bg-green-600 hover:bg-green-700 text-white gap-2"><Download className="h-4 w-4" />Gerar e Baixar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1497,7 +1258,7 @@ const handleUpdateUser = async (e: React.FormEvent) => {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Droplet className="h-5 w-5 text-red-600" />Detalhes — Tipo {selectedBloodTypeForDetails}
+              <Droplet className="h-5 w-5 text-red-600" />Detalhes Global — Tipo {selectedBloodTypeForDetails}
             </DialogTitle>
           </DialogHeader>
           {selectedBloodTypeForDetails && (() => {
@@ -1512,14 +1273,14 @@ const handleUpdateUser = async (e: React.FormEvent) => {
                   <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Máximo</p><p className="text-2xl font-bold text-green-600">{stock.max}</p></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm mb-1"><span>Capacidade usada</span><span>{pct}%</span></div>
+                  <div className="flex justify-between text-sm mb-1"><span>Capacidade total usada</span><span>{pct}%</span></div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div className={`h-3 rounded-full ${stock.critical ? 'bg-red-600' : pct < 50 ? 'bg-orange-500' : 'bg-green-600'}`} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
                 {stock.critical && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-red-700 text-sm">
-                    <XCircle className="h-4 w-4" />Estoque abaixo do mínimo — ação urgente necessária!
+                    <XCircle className="h-4 w-4" />Atenção: Estoque global abaixo do nível de segurança!
                   </div>
                 )}
               </div>
@@ -1527,8 +1288,8 @@ const handleUpdateUser = async (e: React.FormEvent) => {
           })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowStockDetailsDialog(false)}>Fechar</Button>
-            <Button onClick={() => { setShowStockDetailsDialog(false); handleOpenUpdateStock(selectedBloodTypeForDetails); }} className="bg-green-600 hover:bg-green-700">
-              <Activity className="h-4 w-4 mr-2" />Atualizar Estoque
+            <Button onClick={() => { setShowStockDetailsDialog(false); handleOpenUpdateStock(selectedBloodTypeForDetails); }} className="bg-green-600 hover:bg-green-700 text-white gap-2">
+              <Activity className="h-4 w-4" />Ajustar Estoque
             </Button>
           </DialogFooter>
         </DialogContent>
