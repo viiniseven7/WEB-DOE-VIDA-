@@ -4,6 +4,7 @@ import { HowToDonate } from "./HowToDonate";
 import { DonationLocations } from "./DonationLocations";
 import { FAQ } from "./FAQ";
 import { Footer } from "./Footer";
+import { AppointmentForm } from "./AppointmentForm";
 import { Button } from "./ui/button";
 import { useNavigate } from "react-router-dom";
 import { Droplet, ClipboardCheck, Calendar } from "lucide-react";
@@ -21,7 +22,7 @@ export function HomePage() {
         <section className="py-20 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-4xl text-gray-900 mb-4">Pronto para Doar Sangue?</h2>
+              <h2 className="text-4xl text-gray-900 font-bold mb-4">Pronto para Doar Sangue?</h2>
               <p className="text-xl text-gray-600 max-w-3xl mx-auto">
                 Siga nosso processo simples e rápido para realizar sua doação de sangue
               </p>
@@ -61,17 +62,26 @@ export function HomePage() {
 
             <div className="text-center">
               <Button 
-                onClick={() => navigate('/teste-elegibilidade')}
+                onClick={() => {
+                  const element = document.getElementById('agendamento');
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth' });
+                  } else {
+                    navigate('/teste-elegibilidade');
+                  }
+                }}
                 size="lg" 
                 className="bg-red-600 hover:bg-red-700 text-lg px-12 py-6"
               >
-                Iniciar Teste de Elegibilidade
+                Iniciar Agora
               </Button>
-              <p className="text-sm text-gray-500 mt-4">
-                Leva apenas 2-3 minutos para completar
-              </p>
             </div>
           </div>
+        </section>
+
+        {/* AGORA O COMPONENTE EXISTE NA HOME PARA A ÂNCORA FUNCIONAR */}
+        <section id="agendamento">
+          <AppointmentForm />
         </section>
 
         <HowToDonate />

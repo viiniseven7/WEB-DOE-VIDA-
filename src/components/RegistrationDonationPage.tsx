@@ -73,6 +73,25 @@ function validarEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 }
 
+function formatDateInputToApi(value: string): string {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function requiresGuardian(age: number): boolean {
+  return age >= 16 && age < 18;
+}
+
+function isGuardianAgeValid(age: number): boolean {
+  return age >= 18 && age <= 100;
+}
+
+function firstError(errors: Record<string, string[]>, key: string): string | undefined {
+  const value = errors[key];
+  return Array.isArray(value) && value.length > 0 ? value[0] : undefined;
+}
+
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   if (!password) return { score: 0, label: "", color: "" };
   let score = 0;
@@ -91,19 +110,35 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 
 export function RegistrationDonationPage() {
   const navigate = useNavigate();
-  const { signup, isAuthenticated, user } = useAuth() as any;
+  const { signup, login, isAuthenticated, user } = useAuth() as any;
 
   const [step, setStep] = useState<"personal" | "appointment" | "success">("personal");
   const [date, setDate] = useState<Date>();
   const [showGuardianModal, setShowGuardianModal] = useState(false);
   const [showUnderageModal, setShowUnderageModal] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [bloodCenters, setBloodCenters] = useState<{id: string, label: string}[]>([]);
 
   useEffect(() => {
-    if (isAuthenticated) setStep("appointment");
-  }, [isAuthenticated]);
+    if (isAuthenticated && step === "personal") setStep("appointment");
+  }, [isAuthenticated, step]);
+
+  useEffect(() => {
+    const fetchHemocentros = async () => {
+      try {
+        const response = await api.get('/hemocentros');
+        const data = response.data;
+        const list = data.data || data;
+        setBloodCenters(list.map((h: any) => ({ id: h.id.toString(), label: h.nome })));
+      } catch (err) {
+        console.error("Erro ao carregar hemocentros:", err);
+      }
+    };
+    fetchHemocentros();
+  }, []);
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -113,14 +148,14 @@ export function RegistrationDonationPage() {
     bloodType: "",
     email: "",
     telefone: "",
-    numero: "",
     zipCode: "",
     address: "",
+    numero: "",
     city: "",
     state: "",
     password: "",
     confirmPassword: "",
-    location: "",
+    hemocentro_id: "",
     appointmentDate: "",
     appointmentTime: "",
     notes: "",
@@ -132,13 +167,6 @@ export function RegistrationDonationPage() {
     guardianBirthDate: "",
     guardianPhone: "",
   });
-
-  const bloodCenters = [
-    { value: "1", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
-    { value: "2", label: "Hospital Erasto Gaertner - Banco de Sangue" },
-    { value: "3", label: "Hospital de Clínicas - UFPR" },
-    { value: "4", label: "Hospital do Trabalhador - Banco de Sangue" },
-  ];
 
   const timeSlots = [
     "08:00","08:30","09:00","09:30","10:00","10:30",
@@ -161,27 +189,64 @@ export function RegistrationDonationPage() {
   const clearError = (field: string) =>
     setErrors((prev) => { const e = { ...prev }; delete e[field]; return e; });
 
+  const applyBackendErrors = (backendErrors?: Record<string, string[]>) => {
+    if (!backendErrors) return;
+
+    const mappedErrors: Record<string, string> = {};
+
+    const emailError = firstError(backendErrors, "email");
+    if (emailError) mappedErrors.email = emailError;
+
+    const cpfError = firstError(backendErrors, "cpf");
+    if (cpfError) mappedErrors.cpf = cpfError;
+
+    const phoneError = firstError(backendErrors, "telefone");
+    if (phoneError) mappedErrors.telefone = phoneError;
+
+    const birthDateError = firstError(backendErrors, "data_nasc");
+    if (birthDateError) mappedErrors.birthDate = birthDateError;
+
+    const guardianMessages = [
+      firstError(backendErrors, "responsavel_nome"),
+      firstError(backendErrors, "responsavel_cpf"),
+      firstError(backendErrors, "responsavel_data_nasc"),
+      firstError(backendErrors, "responsavel_telefone"),
+    ].filter(Boolean) as string[];
+
+    if (guardianMessages.length > 0) {
+      mappedErrors.guardian = guardianMessages[0];
+      setShowGuardianModal(true);
+    }
+
+    if (Object.keys(mappedErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...mappedErrors }));
+    }
+  };
+
   const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    let finalValue = value;
+    if (field === 'telefone') finalValue = formatTelefone(value);
+    if (field === 'cpf') finalValue = formatCPF(value);
+    if (field === 'zipCode') {
+      finalValue = formatCEP(value);
+      const clean = value.replace(/\D/g, "");
+      if (clean.length === 8) fetchCEP(clean);
+    }
+
+    setFormData((prev) => ({ ...prev, [field]: finalValue }));
     clearError(field);
 
     if (field === "birthDate") {
       const age = calculateAge(value);
-      if (age < 16) {
+      if (age > 0 && age < 16) {
         setShowUnderageModal(true);
         setFormData((prev) => ({ ...prev, birthDate: "" }));
-      } else if (age === 16 || age === 17) {
+      } else if (requiresGuardian(age)) {
         setShowGuardianModal(true);
       }
     }
-
-    if (field === "zipCode") {
-      const clean = value.replace(/\D/g, "");
-      if (clean.length === 8) fetchCEP(clean);
-    }
   };
 
-  // Busca automática de CEP
   const fetchCEP = async (cep: string) => {
     try {
       const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
@@ -197,8 +262,13 @@ export function RegistrationDonationPage() {
     } catch {}
   };
 
-  const handleGuardianInputChange = (field: string, value: string) =>
-    setGuardianData((prev) => ({ ...prev, [field]: value }));
+  const handleGuardianInputChange = (field: string, value: string) => {
+    let finalValue = value;
+    if (field === 'guardianPhone') finalValue = formatTelefone(value);
+    if (field === 'guardianCpf') finalValue = formatCPF(value);
+    setGuardianData((prev) => ({ ...prev, [field]: finalValue }));
+    clearError("guardian");
+  };
 
   const handleGuardianModalConfirm = () => {
     if (!guardianData.guardianName || !guardianData.guardianCpf ||
@@ -210,12 +280,21 @@ export function RegistrationDonationPage() {
       alert("CPF do responsável inválido.");
       return;
     }
+    const guardianAge = calculateAge(guardianData.guardianBirthDate);
+    if (!isGuardianAgeValid(guardianAge)) {
+      alert("O responsável deve ter entre 18 e 100 anos.");
+      return;
+    }
+    if (![10, 11].includes(guardianData.guardianPhone.replace(/\D/g, "").length)) {
+      alert("Telefone do responsável inválido.");
+      return;
+    }
     setShowGuardianModal(false);
   };
 
-  // ── Validação do Step 1 ──────────────────────────────────────────────────────
   const validatePersonal = (): boolean => {
     const newErrors: Record<string, string> = {};
+    const age = calculateAge(formData.birthDate);
 
     if (!formData.fullName.trim() || formData.fullName.trim().split(" ").length < 2)
       newErrors.fullName = "Informe nome e sobrenome.";
@@ -226,6 +305,7 @@ export function RegistrationDonationPage() {
     else if (!validarCPF(cpfClean)) newErrors.cpf = "CPF inválido.";
 
     if (!formData.birthDate) newErrors.birthDate = "Data de nascimento obrigatória.";
+    else if (age < 16) newErrors.birthDate = "É necessário ter no mínimo 16 anos.";
 
     if (!formData.gender) newErrors.gender = "Selecione o sexo.";
 
@@ -242,6 +322,20 @@ export function RegistrationDonationPage() {
     if (!formData.address.trim()) newErrors.address = "Endereço obrigatório.";
     if (!formData.city.trim()) newErrors.city = "Cidade obrigatória.";
     if (!formData.state) newErrors.state = "Estado obrigatório.";
+
+    if (requiresGuardian(age)) {
+      const guardianPhone = guardianData.guardianPhone.replace(/\D/g, "");
+
+      if (!guardianData.guardianName || !guardianData.guardianCpf || !guardianData.guardianBirthDate || !guardianPhone) {
+        newErrors.guardian = "Preencha os dados do responsável legal.";
+      } else if (!validarCPF(guardianData.guardianCpf)) {
+        newErrors.guardian = "CPF do responsável inválido.";
+      } else if (![10, 11].includes(guardianPhone.length)) {
+        newErrors.guardian = "Telefone do responsável inválido.";
+      } else if (!isGuardianAgeValid(calculateAge(guardianData.guardianBirthDate))) {
+        newErrors.guardian = "O responsável deve ter entre 18 e 100 anos.";
+      }
+    }
 
     const pwd = formData.password;
     if (pwd.length < 8) newErrors.password = "Senha deve ter no mínimo 8 caracteres.";
@@ -262,61 +356,116 @@ export function RegistrationDonationPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const buildRegistrationData = () => ({
+    name: formData.fullName.trim(),
+    email: formData.email.trim(),
+    password: formData.password,
+    password_confirmation: formData.confirmPassword,
+    cpf: formData.cpf.replace(/\D/g, ""),
+    sexo: formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
+    data_nasc: formatDateInputToApi(formData.birthDate),
+    telefone: formData.telefone.replace(/\D/g, ""),
+    tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
+      ? formData.bloodType.toUpperCase() : undefined,
+    cep: formData.zipCode.replace(/\D/g, ""),
+    rua: formData.address,
+    numero: formData.numero,
+    cidade: formData.city,
+    uf: formData.state.substring(0, 2).toUpperCase(),
+    responsavel_nome: guardianData.guardianName || undefined,
+    responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
+    responsavel_data_nasc: guardianData.guardianBirthDate
+      ? formatDateInputToApi(guardianData.guardianBirthDate) : undefined,
+    responsavel_telefone: guardianData.guardianPhone?.replace(/\D/g, "") || undefined,
+  });
+
+  const handleSkipAppointment = async () => {
+    if (isAuthenticated) {
+      navigate("/dashboard/doador");
+      return;
+    }
+
+    if (!validatePersonal()) {
+      setStep("personal");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    setIsRegistering(true);
+    try {
+      const success = await signup(buildRegistrationData());
+
+      if (success) {
+        const loggedUser = await login(formData.email, formData.password);
+        navigate(loggedUser ? "/dashboard/doador" : "/login", { replace: true });
+      }
+    } catch (error: any) {
+      console.error("ERRO:", error.response?.data);
+      const backendErrors = error.response?.data?.errors;
+      if (backendErrors) {
+        applyBackendErrors(backendErrors);
+        const msgs = Object.values(backendErrors).flat().join("\n");
+        alert(msgs);
+        setStep("personal");
+      } else {
+        alert(error.response?.data?.message || "Erro ao cadastrar. Tente novamente.");
+      }
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   const handleAppointmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!date) { alert("Selecione uma data"); return; }
-    if (!formData.location) { alert("Selecione um posto de coleta"); return; }
+    if (!formData.hemocentro_id) { alert("Selecione um posto de coleta"); return; }
     if (!formData.appointmentTime) { alert("Selecione um horário"); return; }
 
+    setIsRegistering(true);
     try {
       if (isAuthenticated) {
-        await api.post("/agendamentos", {
-          data: format(date, "yyyy-MM-dd"),
-          horario: formData.appointmentTime,
-          hemocentro_id: formData.location,
-          observacoes: formData.notes,
+        await api.post("/auth/agendamentos", {
+          hemocentro_id: Number(formData.hemocentro_id),
+          data_hora_doacao: `${format(date, "yyyy-MM-dd")} ${formData.appointmentTime}:00`,
         });
         setStep("success");
         return;
       }
 
-      const success = await signup({
-        name: formData.fullName.trim(),
-        email: formData.email.trim(),
-        password: formData.password,
-        password_confirmation: formData.confirmPassword,
-        cpf: formData.cpf.replace(/\D/g, ""),
-        sexo: formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
-        data_nasc: format(new Date(formData.birthDate), "dd/MM/yyyy"),
-        telefone: formData.telefone.replace(/\D/g, ""),
-        tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
-          ? formData.bloodType.toUpperCase() : undefined,
-        cep: formData.zipCode.replace(/\D/g, ""),
-        rua: formData.address,
-        numero: formData.numero,
-        cidade: formData.city,
-        uf: formData.state.substring(0, 2).toUpperCase(),
-        responsavel_nome: guardianData.guardianName || undefined,
-        responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
-        responsavel_data_nasc: guardianData.guardianBirthDate
-          ? format(new Date(guardianData.guardianBirthDate), "dd/MM/yyyy") : undefined,
-      });
+      const success = await signup(buildRegistrationData());
 
       if (success) {
-        setStep("success");
-      } else {
-        alert("Erro ao cadastrar. Verifique os dados e tente novamente.");
+        // Tenta fazer login automático
+        const loggedUser = await login(formData.email, formData.password);
+        if (loggedUser) {
+          // Cria agendamento após login
+          await api.post("/auth/agendamentos", {
+            hemocentro_id: Number(formData.hemocentro_id),
+            data_hora_doacao: `${format(date, "yyyy-MM-dd")} ${formData.appointmentTime}:00`,
+          });
+          setStep("success");
+        } else {
+          // Se falhar login automático, vai para sucesso mas avisa para logar
+          setStep("success");
+        }
       }
     } catch (error: any) {
       console.error("ERRO:", error.response?.data);
-      const msg = error.response?.data?.message || "Erro ao processar. Tente novamente.";
-      alert(msg);
+      const backendErrors = error.response?.data?.errors;
+      if (backendErrors) {
+        applyBackendErrors(backendErrors);
+        const msgs = Object.values(backendErrors).flat().join("\n");
+        alert(msgs);
+      } else {
+        alert(error.response?.data?.message || "Erro ao processar. Tente novamente.");
+      }
+    } finally {
+      setIsRegistering(false);
     }
   };
 
   const pwdStrength = getPasswordStrength(formData.password);
 
-  // ── Tela de sucesso ──────────────────────────────────────────────────────────
   if (step === "success") {
     return (
       <div className="min-h-screen flex flex-col">
@@ -358,9 +507,8 @@ export function RegistrationDonationPage() {
     );
   }
 
-  // ── Render principal ─────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
       <div className="flex-1 bg-gradient-to-br from-red-50 to-rose-50 py-12">
         <div className="max-w-2xl mx-auto px-4">
@@ -439,7 +587,7 @@ export function RegistrationDonationPage() {
                           placeholder="000.000.000-00"
                           value={formData.cpf}
                           maxLength={14}
-                          onChange={(e) => handleInputChange("cpf", formatCPF(e.target.value))}
+                          onChange={(e) => handleInputChange("cpf", e.target.value)}
                           className={errors.cpf ? "border-red-500" : ""}
                         />
                         {errors.cpf && <p className="text-red-500 text-xs mt-1">{errors.cpf}</p>}
@@ -517,7 +665,7 @@ export function RegistrationDonationPage() {
                           placeholder="(00) 00000-0000"
                           value={formData.telefone}
                           maxLength={15}
-                          onChange={(e) => handleInputChange("telefone", formatTelefone(e.target.value))}
+                          onChange={(e) => handleInputChange("telefone", e.target.value)}
                           className={errors.telefone ? "border-red-500" : ""}
                         />
                         {errors.telefone && <p className="text-red-500 text-xs mt-1">{errors.telefone}</p>}
@@ -536,7 +684,7 @@ export function RegistrationDonationPage() {
                           placeholder="00000-000"
                           value={formData.zipCode}
                           maxLength={9}
-                          onChange={(e) => handleInputChange("zipCode", formatCEP(e.target.value))}
+                          onChange={(e) => handleInputChange("zipCode", e.target.value)}
                           className={errors.zipCode ? "border-red-500" : ""}
                         />
                         {errors.zipCode && <p className="text-red-500 text-xs mt-1">{errors.zipCode}</p>}
@@ -565,31 +713,33 @@ export function RegistrationDonationPage() {
                         />
                         {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
                       </div>
-                      <div>
-                        <Label htmlFor="city">Cidade *</Label>
-                        <Input
-                          id="city"
-                          placeholder="Preenchido pelo CEP"
-                          value={formData.city}
-                          onChange={(e) => handleInputChange("city", e.target.value)}
-                          className={errors.city ? "border-red-500" : ""}
-                        />
-                        {errors.city && <p className="text-red-500 text-xs mt-1">{errors.city}</p>}
-                      </div>
-                      <div>
-                        <Label htmlFor="state">Estado *</Label>
-                        <Select value={formData.state} onValueChange={(v) => handleInputChange("state", v)}>
-                          <SelectTrigger className={errors.state ? "border-red-500" : ""}>
-                            <SelectValue placeholder="Selecione" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
-                              "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].map((uf) => (
-                              <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {errors.state && <p className="text-red-500 text-xs mt-1">{errors.state}</p>}
+                      <div className="grid grid-cols-2 gap-4 sm:col-span-2">
+                        <div>
+                          <Label htmlFor="city">Cidade *</Label>
+                          <Input
+                            id="city"
+                            placeholder="Preenchido pelo CEP"
+                            value={formData.city}
+                            onChange={(e) => handleInputChange("city", e.target.value)}
+                            className={errors.city ? "border-red-500" : ""}
+                          />
+                          {errors.city && <p className="text-red-500 text-xs mt-1">{errors.city}</p>}
+                        </div>
+                        <div>
+                          <Label htmlFor="state">Estado *</Label>
+                          <Select value={formData.state} onValueChange={(v) => handleInputChange("state", v)}>
+                            <SelectTrigger className={errors.state ? "border-red-500" : ""}>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+                                "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].map((uf) => (
+                                <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {errors.state && <p className="text-red-500 text-xs mt-1">{errors.state}</p>}
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -653,6 +803,12 @@ export function RegistrationDonationPage() {
                     </div>
                   </section>
 
+                  {errors.guardian && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      {errors.guardian}
+                    </div>
+                  )}
+
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-lg py-6">
                     Continuar para Agendamento →
                   </Button>
@@ -685,13 +841,13 @@ export function RegistrationDonationPage() {
                     <Label className="flex items-center gap-2 text-base mb-2">
                       <MapPin className="w-4 h-4 text-red-600" /> Posto de Coleta *
                     </Label>
-                    <Select value={formData.location} onValueChange={(v) => handleInputChange("location", v)}>
+                    <Select value={formData.hemocentro_id} onValueChange={(v) => handleInputChange("hemocentro_id", v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione um posto de coleta" />
                       </SelectTrigger>
                       <SelectContent>
                         {bloodCenters.map((c) => (
-                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                          <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -769,17 +925,18 @@ export function RegistrationDonationPage() {
                       <Button type="button" variant="outline" onClick={() => isAuthenticated ? navigate(-1) : setStep("personal")} className="flex-1">
                         ← Voltar
                       </Button>
-                      <Button type="submit" className="flex-1 bg-red-600 hover:bg-red-700 text-lg py-6">
-                        Confirmar Agendamento
+                      <Button type="submit" disabled={isRegistering} className="flex-1 bg-red-600 hover:bg-red-700 text-lg py-6">
+                        {isRegistering ? "Processando..." : "Confirmar Agendamento"}
                       </Button>
                     </div>
                     <Button
                       type="button"
                       variant="outline"
                       className="w-full border-red-200 text-red-600 hover:bg-red-50"
-                      onClick={() => navigate('/dashboard/doador')}
+                      onClick={handleSkipAppointment}
+                      disabled={isRegistering}
                     >
-                      Ir para Meu Painel →
+                      {isRegistering ? "Processando..." : "Não agendar agora"}
                     </Button>
                   </div>
                 </form>
@@ -810,17 +967,21 @@ export function RegistrationDonationPage() {
             <div>
               <Label>CPF do Responsável *</Label>
               <Input placeholder="000.000.000-00" maxLength={14} value={guardianData.guardianCpf}
-                onChange={(e) => handleGuardianInputChange("guardianCpf", formatCPF(e.target.value))} />
+                onChange={(e) => handleGuardianInputChange("guardianCpf", e.target.value)} />
             </div>
             <div>
               <Label>Data de Nascimento do Responsável *</Label>
-              <Input type="date" value={guardianData.guardianBirthDate}
+              <Input
+                type="date"
+                value={guardianData.guardianBirthDate}
+                min={format(new Date(new Date().setFullYear(new Date().getFullYear() - 100)), "yyyy-MM-dd")}
+                max={format(new Date(new Date().setFullYear(new Date().getFullYear() - 18)), "yyyy-MM-dd")}
                 onChange={(e) => handleGuardianInputChange("guardianBirthDate", e.target.value)} />
             </div>
             <div>
               <Label className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /> Telefone *</Label>
               <Input placeholder="(00) 00000-0000" maxLength={15} value={guardianData.guardianPhone}
-                onChange={(e) => handleGuardianInputChange("guardianPhone", formatTelefone(e.target.value))} />
+                onChange={(e) => handleGuardianInputChange("guardianPhone", e.target.value)} />
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
               <strong>Importante:</strong> O responsável deverá estar presente no dia da doação com documento de identificação.
@@ -861,7 +1022,6 @@ export function RegistrationDonationPage() {
             </p>
           </div>
           <DialogFooter>
-            {/* ✅ Apenas fecha o modal, NÃO navega */}
             <Button className="w-full bg-red-600 hover:bg-red-700" onClick={() => setShowUnderageModal(false)}>
               Entendi
             </Button>

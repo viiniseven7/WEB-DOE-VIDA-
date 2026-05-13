@@ -18,15 +18,9 @@ export function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [resetEmail, setResetEmail] = useState('');         // ✅ estado separado
-  const [resetPassword, setResetPassword] = useState('');   // ✅ estado separado
-  const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
-  const [resetMode, setResetMode] = useState(false);
 
   // ✅ Redirecionamento sem loop
   useEffect(() => {
@@ -63,57 +57,6 @@ const role = typeof rawRole === 'string'
     }
   };
 
-  // 📩 Esqueci senha
-  const handleForgot = async () => {
-    if (!resetEmail) {
-      toast.error('Digite o e-mail');
-      return;
-    }
-    try {
-      await api.post('/auth/forgot-password', { email: resetEmail });
-      toast.success('E-mail enviado! Verifique sua caixa de entrada.');
-      setResetMode(true);
-    } catch {
-      toast.error('E-mail não encontrado.');
-    }
-  };
-
-  // 🔁 Reset senha
-  const handleReset = async () => {
-    if (!token || !resetPassword) {
-      toast.error('Preencha todos os campos');
-      return;
-    }
-    if (resetPassword.length < 6) {
-      toast.error('A senha deve ter no mínimo 6 caracteres');
-      return;
-    }
-    try {
-      await api.post('/auth/reset-password', {
-        email: resetEmail,
-        password: resetPassword,
-        password_confirmation: resetPassword,
-        token,
-      });
-      toast.success('Senha redefinida com sucesso!');
-      setShowForgot(false);
-      setResetMode(false);
-      setToken('');
-      setResetPassword('');
-      setResetEmail('');
-    } catch {
-      toast.error('Token inválido ou expirado.');
-    }
-  };
-
-  const handleCloseForgot = () => {
-    setShowForgot(false);
-    setResetMode(false);
-    setResetEmail('');
-    setResetPassword('');
-    setToken('');
-  };
-
   // ⚡ Auto preencher
   const fillCredentials = (userEmail: string, userPassword: string) => {
     setEmail(userEmail);
@@ -122,78 +65,6 @@ const role = typeof rawRole === 'string'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center p-4">
-
-      {/* Modal Esqueci/Reset Senha */}
-      {showForgot && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl w-96 space-y-4 shadow-xl">
-            {!resetMode ? (
-              <>
-                <div>
-                  <h2 className="text-lg font-bold">Recuperar senha</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Informe seu e-mail e enviaremos um link de recuperação.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label>E-mail</Label>
-                  <Input
-                    type="email"
-                    placeholder="seu@email.com"
-                    value={resetEmail}                          // ✅ resetEmail
-                    onChange={(e) => setResetEmail(e.target.value)}
-                  />
-                </div>
-                <Button onClick={handleForgot} className="w-full bg-red-600 hover:bg-red-700">
-                  Enviar e-mail
-                </Button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <h2 className="text-lg font-bold">Redefinir senha</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Cole o token recebido no e-mail e defina uma nova senha.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label>Token do e-mail</Label>
-                  <Input
-                    placeholder="Cole o token aqui"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Nova senha</Label>
-                  <div className="relative">
-                    <Input
-                      type={showResetPassword ? 'text' : 'password'}
-                      placeholder="Mínimo 6 caracteres"
-                      value={resetPassword}                     // ✅ resetPassword
-                      onChange={(e) => setResetPassword(e.target.value)}
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowResetPassword(!showResetPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    >
-                      {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-                <Button onClick={handleReset} className="w-full bg-red-600 hover:bg-red-700">
-                  Redefinir senha
-                </Button>
-              </>
-            )}
-            <Button variant="ghost" onClick={handleCloseForgot} className="w-full">
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
 
       <div className="w-full max-w-5xl">
         <div className="grid md:grid-cols-2 gap-8 items-center">
@@ -292,7 +163,7 @@ const role = typeof rawRole === 'string'
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => setShowForgot(true)}
+                        onClick={() => navigate('/forgot-password')}
                         className="text-sm text-red-600 hover:text-red-700 font-semibold"
                         disabled={isLoading}
                       >
@@ -317,48 +188,6 @@ const role = typeof rawRole === 'string'
                     </button>
                   </p>
                 </form>
-
-                {/* Credenciais de teste */}
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm text-gray-600 font-semibold">Credenciais de teste:</p>
-                    <SeedButton />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-xs">
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('doador@example.com', 'doador123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-red-600">Doador</p>
-                        <p className="text-gray-600">doador@example.com / doador123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('funcionario@hemocentro.com', 'funcionario123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-blue-600">Funcionário</p>
-                        <p className="text-gray-600">funcionario@hemocentro.com / funcionario123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('diretor@hemocentro.com', 'diretor123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-purple-600">Diretor</p>
-                        <p className="text-gray-600">diretor@hemocentro.com / diretor123</p>
-                      </div>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillCredentials('admin@doavida.com', 'admin123')}
-                      className="justify-start text-left h-auto py-2">
-                      <div>
-                        <p className="font-semibold text-green-600">Administrador</p>
-                        <p className="text-gray-600">admin@doavida.com / admin123</p>
-                      </div>
-                    </Button>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
