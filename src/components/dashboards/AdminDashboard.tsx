@@ -72,17 +72,6 @@ const systemStats = [
   { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176 },
 ];
 
-const globalStockMock = [
-  { type: 'A+', current: 245, min: 150, max: 500, critical: false },
-  { type: 'A-', current: 78, min: 100, max: 300, critical: true },
-  { type: 'B+', current: 156, min: 125, max: 400, critical: false },
-  { type: 'B-', current: 42, min: 75, max: 250, critical: true },
-  { type: 'AB+', current: 89, min: 75, max: 200, critical: false },
-  { type: 'AB-', current: 28, min: 50, max: 150, critical: true },
-  { type: 'O+', current: 324, min: 200, max: 600, critical: false },
-  { type: 'O-', current: 91, min: 125, max: 350, critical: true },
-];
-
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
 
@@ -99,7 +88,7 @@ export function AdminDashboard() {
 
   // ── Estado: mocks locais
   const [campaigns, setCampaigns] = useState(campaignsMock);
-  const [globalStock, setGlobalStock] = useState(globalStockMock);
+  const [globalStock, setGlobalStock] = useState<any[]>([]);
   const [permissions, setPermissions] = useState(permissionGroups);
 
   // ── Estado: dialogs
@@ -156,13 +145,39 @@ export function AdminDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [hcRes, usersRes] = await Promise.all([
+      const [hcRes, usersRes, stockRes] = await Promise.all([
         api.get('/hemocentros'),
         api.get('/users'),
+        api.get('/estoque'),
       ]);
 
       setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
       setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+
+      // Agrega estoque globalmente
+      const allStock = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
+      const aggregated = allStock.reduce((acc: any[], curr: any) => {
+        const existing = acc.find((item: any) => item.tipo_sangue === curr.tipo_sangue);
+        if (existing) {
+          existing.quantidade += Number(curr.quantidade);
+          existing.quantidade_minima += Number(curr.quantidade_minima || 0);
+        } else {
+          acc.push({
+            tipo_sangue: curr.tipo_sangue,
+            quantidade: Number(curr.quantidade),
+            quantidade_minima: Number(curr.quantidade_minima || 0)
+          });
+        }
+        return acc;
+      }, []);
+
+      setGlobalStock(aggregated.map((s: any) => ({
+        type: s.tipo_sangue,
+        current: s.quantidade,
+        min: s.quantidade_minima,
+        critical: s.quantidade < s.quantidade_minima
+      })));
+
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
       toast.error('Erro ao carregar dados do painel');
@@ -290,7 +305,7 @@ export function AdminDashboard() {
     }
   };
 
-  // ─── Estoque (local) ─────────────────────────────────────────────────────────
+  // ─── Estoque (API) ──────────────────────────────────────────────────────────
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
@@ -298,19 +313,34 @@ export function AdminDashboard() {
     setShowStockDialog(true);
   };
 
-  const handleUpdateStock = () => {
+  const handleUpdateStock = async () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) { toast.error('Digite uma quantidade válida'); return; }
     const amount = parseInt(stockAmount);
-    setGlobalStock(prev => prev.map(item => {
-      if (item.type !== selectedBloodType) return item;
-      const newCurrent = stockAction === 'add'
-        ? Math.min(item.current + amount, item.max)
-        : Math.max(item.current - amount, 0);
-      return { ...item, current: newCurrent, critical: newCurrent < item.min };
-    }));
-    toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
-    setShowStockDialog(false);
+    const valueToSend = stockAction === 'add' ? amount : -amount;
+
+    // Admin usa o primeiro hemocentro se não houver um vinculado
+    const targetHemocentroId = user.hemocentro_id || (hemocentros.length > 0 ? hemocentros[0].id : null);
+
+    if (!targetHemocentroId) {
+      toast.error('Nenhum hemocentro disponível para atualizar estoque');
+      return;
+    }
+
+    try {
+      await api.post('/auth/estoque', {
+        hemocentro_id: targetHemocentroId,
+        tipo_sangue: selectedBloodType,
+        quantidade: valueToSend,
+      });
+
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      setShowStockDialog(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar estoque: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
   };
+
 
   // ─── Campanhas (local) ──────────────────────────────────────────────────────
   const handleCreateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowCampaignDialog(false); toast.success('Campanha criada!'); };
@@ -567,14 +597,6 @@ export function AdminDashboard() {
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {globalStock.map((stock) => {
-                    const pct = (stock.current / stock.max) * 100;
-                    const status = stock.critical
-                      ? { label: 'Crítico', color: 'bg-red-600', textColor: 'text-red-600', bgColor: 'bg-red-100' }
-                      : pct < 50
-                      ? { label: 'Baixo', color: 'bg-orange-600', textColor: 'text-orange-600', bgColor: 'bg-orange-100' }
-                      : pct < 80
-                      ? { label: 'Normal', color: 'bg-blue-600', textColor: 'text-blue-600', bgColor: 'bg-blue-100' }
-                      : { label: 'Ótimo', color: 'bg-green-600', textColor: 'text-green-600', bgColor: 'bg-green-100' };
                     return (
                       <div key={stock.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
@@ -582,15 +604,18 @@ export function AdminDashboard() {
                             <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
                             <div><p className="text-2xl font-bold">{stock.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <Badge className={`${status.bgColor} ${status.textColor}`}>{status.label}</Badge>
+                          <Badge className={stock.critical ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}>
+                            {stock.critical ? 'Crítico' : 'Normal'}
+                          </Badge>
                         </div>
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Estoque atual</span>
+                            <span className="text-gray-600">Total em rede</span>
                             <span className="font-semibold">{stock.current} bolsas</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div className={`h-2 rounded-full ${status.color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                          <div className="w-full bg-gray-100 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${stock.critical ? 'bg-red-600' : stock.current < stock.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min((stock.current / stock.max) * 100, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
                             <span>Mín: {stock.min}</span><span>Máx: {stock.max}</span>
@@ -1264,7 +1289,6 @@ export function AdminDashboard() {
           {selectedBloodTypeForDetails && (() => {
             const stock = globalStock.find(s => s.type === selectedBloodTypeForDetails);
             if (!stock) return null;
-            const pct = Math.round((stock.current / stock.max) * 100);
             return (
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-4 text-center">
@@ -1273,9 +1297,13 @@ export function AdminDashboard() {
                   <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Máximo</p><p className="text-2xl font-bold text-green-600">{stock.max}</p></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm mb-1"><span>Capacidade total usada</span><span>{pct}%</span></div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">Nível de preenchimento</span>
+                    <span>{Math.round((stock.current / stock.max) * 100)}%</span>
+                  </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div className={`h-3 rounded-full ${stock.critical ? 'bg-red-600' : pct < 50 ? 'bg-orange-500' : 'bg-green-600'}`} style={{ width: `${pct}%` }} />
+                    <div className={`h-3 rounded-full ${stock.critical ? 'bg-red-600' : stock.current < stock.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                      style={{ width: `${Math.min((stock.current / stock.max) * 100, 100)}%` }} />
                   </div>
                 </div>
                 {stock.critical && (
