@@ -38,18 +38,6 @@ import { toast } from 'sonner';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// ─── Mocks (sem API equivalente) ─────────────────────────────────────────────
-const bloodStockMock = [
-  { type: 'A+', current: 45, min: 30, max: 100 },
-  { type: 'A-', current: 12, min: 20, max: 60  },
-  { type: 'B+', current: 28, min: 25, max: 80  },
-  { type: 'B-', current: 8,  min: 15, max: 50  },
-  { type: 'AB+', current: 15, min: 15, max: 40 },
-  { type: 'AB-', current: 5,  min: 10, max: 30 },
-  { type: 'O+', current: 62, min: 40, max: 120 },
-  { type: 'O-', current: 18, min: 25, max: 70  },
-];
-
 const tiposSanguineos = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -63,8 +51,8 @@ export function StaffDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  // ── Estado: mock local
-  const [stock, setStock] = useState(bloodStockMock);
+  // ── Estado: API de Estoque
+  const [stock, setStock] = useState<any[]>([]);
 
   // ── Busca
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,9 +102,10 @@ export function StaffDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [agendRes, usersRes] = await Promise.all([
+      const [agendRes, usersRes, stockRes] = await Promise.all([
         api.get('/agendamentos'),
         api.get('/users'),
+        api.get('/estoque'),
       ]);
 
       const agends = Array.isArray(agendRes.data)
@@ -133,6 +122,16 @@ export function StaffDashboard() {
 
       // Apenas doadores (role_id = 1)
       setDoadores(users.filter((u: any) => u.role_id === 1));
+
+      // Mapeia estoque da API
+      const stockData = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
+      setStock(stockData.map((s: any) => ({
+        id: s.id,
+        type: s.tipo_sangue,
+        current: Number(s.quantidade),
+        min: Number(s.quantidade_minima || 0),
+        max: 100 // Valor padrão se não vier da API
+      })));
     } catch (err: any) {
       console.error('Erro ao carregar:', err.response?.data);
       toast.error('Erro ao carregar dados');
@@ -345,21 +344,27 @@ export function StaffDashboard() {
     setUpdateStockDialogOpen(true);
   };
 
-  const handleUpdateStock = () => {
+  const handleUpdateStock = async () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) {
       toast.error('Digite uma quantidade válida');
       return;
     }
     const amount = parseInt(stockAmount);
-    setStock(prev => prev.map(item => {
-      if (item.type !== selectedBloodType) return item;
-      const newCurrent = stockAction === 'add'
-        ? Math.min(item.current + amount, item.max)
-        : Math.max(item.current - amount, 0);
-      return { ...item, current: newCurrent };
-    }));
-    toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
-    setUpdateStockDialogOpen(false);
+    const valueToSend = stockAction === 'add' ? amount : -amount;
+
+    try {
+      await api.post('/auth/estoque', {
+        hemocentro_id: user.hemocentro_id,
+        tipo_sangue: selectedBloodType,
+        quantidade: valueToSend,
+      });
+
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      setUpdateStockDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar estoque: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
   };
 
   const handleLogoutClick = () => { logout(); navigate('/'); };
@@ -569,9 +574,7 @@ export function StaffDashboard() {
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {stock.map(item => {
-                    const pct = Math.round((item.current / item.max) * 100);
                     const critico = item.current < item.min;
-                    const baixo   = !critico && pct < 50;
                     return (
                       <div key={item.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
@@ -579,8 +582,8 @@ export function StaffDashboard() {
                             <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
                             <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <Badge className={critico ? 'bg-red-100 text-red-600' : baixo ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                            {critico ? 'Crítico' : baixo ? 'Baixo' : 'Normal'}
+                          <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
+                            {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
                           </Badge>
                         </div>
                         <div className="space-y-2">
@@ -589,8 +592,8 @@ export function StaffDashboard() {
                             <span className="font-semibold">{item.current} bolsas</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div className={`h-2 rounded-full ${critico ? 'bg-red-600' : baixo ? 'bg-orange-500' : 'bg-green-600'}`}
-                              style={{ width: `${Math.min(pct, 100)}%` }} />
+                            <div className={`h-2 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
                             <span>Mín: {item.min}</span><span>Máx: {item.max}</span>

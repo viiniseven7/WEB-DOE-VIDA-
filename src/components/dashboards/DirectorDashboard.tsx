@@ -44,17 +44,6 @@ const bloodTypeDistribution = [
   { name: 'AB-', value: 1, color: '#0891B2' },
 ];
 
-const bloodStockMock = [
-  { type: 'A+', current: 45, min: 30, max: 150 },
-  { type: 'A-', current: 12, min: 20, max: 100 },
-  { type: 'B+', current: 28, min: 25, max: 120 },
-  { type: 'B-', current: 8,  min: 15, max: 80  },
-  { type: 'AB+', current: 15, min: 15, max: 80 },
-  { type: 'AB-', current: 5,  min: 10, max: 50 },
-  { type: 'O+', current: 62, min: 40, max: 200 },
-  { type: 'O-', current: 18, min: 25, max: 120 },
-];
-
 const roleLabels: Record<number, string> = {
   1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
 };
@@ -77,8 +66,8 @@ export function DirectorDashboard() {
   const [agendamentosHoje, setAgendamentosHoje] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ── Estado: mock local
-  const [stock, setStock] = useState(bloodStockMock);
+  // ── Estado: API de Estoque
+  const [stock, setStock] = useState<any[]>([]);
 
   // ── Dialogs
   const [addStaffDialogOpen, setAddStaffDialogOpen] = useState(false);
@@ -115,9 +104,10 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [usersRes, agendRes] = await Promise.all([
+      const [usersRes, agendRes, stockRes] = await Promise.all([
         api.get('/users'),
         api.get('/agendamentos'),
+        api.get('/estoque'),
       ]);
 
       const todosUsers = Array.isArray(usersRes.data)
@@ -143,6 +133,18 @@ export function DirectorDashboard() {
       });
 
       setAgendamentosHoje(agendHoje);
+
+      // Mapeia estoque da API
+      const stockDataRaw = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
+      const myStock = stockDataRaw.filter((s: any) => Number(s.hemocentro_id) === Number(user.hemocentro_id));
+      setStock(myStock.map((s: any) => ({
+        id: s.id,
+        type: s.tipo_sangue,
+        current: Number(s.quantidade),
+        min: Number(s.quantidade_minima || 0),
+        max: 150
+      })));
+
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
       toast.error('Erro ao carregar dados do painel');
@@ -216,22 +218,29 @@ export function DirectorDashboard() {
     setUpdateStockDialogOpen(true);
   };
 
-  const handleUpdateStock = () => {
+  const handleUpdateStock = async () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) {
       toast.error('Digite uma quantidade válida');
       return;
     }
     const amount = parseInt(stockAmount);
-    setStock(prev => prev.map(item => {
-      if (item.type !== selectedBloodType) return item;
-      const newCurrent = stockAction === 'add'
-        ? Math.min(item.current + amount, item.max)
-        : Math.max(item.current - amount, 0);
-      return { ...item, current: newCurrent };
-    }));
-    toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
-    setUpdateStockDialogOpen(false);
+    const valueToSend = stockAction === 'add' ? amount : -amount;
+
+    try {
+      await api.post('/auth/estoque', {
+        hemocentro_id: user.hemocentro_id,
+        tipo_sangue: selectedBloodType,
+        quantidade: valueToSend,
+      });
+
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      setUpdateStockDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar estoque: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
   };
+
 
   const handleConfirmExport = () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
@@ -494,9 +503,7 @@ export function DirectorDashboard() {
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {stock.map(item => {
-                    const pct = Math.round((item.current / item.max) * 100);
                     const critico = item.current < item.min;
-                    const baixo = !critico && pct < 50;
                     return (
                       <div key={item.type} className="p-4 border rounded-lg hover:shadow-sm transition-all">
                         <div className="flex items-center justify-between mb-3">
@@ -510,8 +517,8 @@ export function DirectorDashboard() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge className={critico ? 'bg-red-100 text-red-600' : baixo ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                              {critico ? 'Crítico' : baixo ? 'Baixo' : 'Normal'}
+                            <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
+                              {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
                             </Badge>
                             <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleOpenUpdateStock(item.type)}>
                               <Activity className="h-4 w-4" />
@@ -520,8 +527,8 @@ export function DirectorDashboard() {
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-2.5">
                           <div
-                            className={`h-2.5 rounded-full ${critico ? 'bg-red-600' : baixo ? 'bg-orange-500' : 'bg-green-600'}`}
-                            style={{ width: `${Math.min(pct, 100)}%` }}
+                            className={`h-2.5 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                            style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }}
                           />
                         </div>
                       </div>
