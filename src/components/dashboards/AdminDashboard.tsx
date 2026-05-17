@@ -72,6 +72,15 @@ const systemStats = [
   { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176 },
 ];
 
+const emptyAdminStats = {
+  total_hemocentros: 0,
+  total_usuarios: 0,
+  doacoes_por_hemocentro: [] as Array<{ hemocentro_id: number; hemocentro: string; total: number }>,
+  estoque_global: {} as Record<string, number>,
+  doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
+  doacoes_por_tipo: {} as Record<string, number>,
+};
+
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
 
@@ -84,6 +93,7 @@ export function AdminDashboard() {
   // ── Estado: dados da API
   const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [stats, setStats] = useState(emptyAdminStats);
   const [isLoading, setIsLoading] = useState(true);
 
   // ── Estado: mocks locais
@@ -145,10 +155,11 @@ export function AdminDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [hcRes, usersRes, stockRes] = await Promise.all([
+      const [hcRes, usersRes, stockRes, statsRes] = await Promise.all([
         api.get('/hemocentros'),
         api.get('/users'),
         api.get('/estoque'),
+        api.get('/estatisticas/admin'),
       ]);
 
       setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
@@ -177,6 +188,7 @@ export function AdminDashboard() {
         min: s.quantidade_minima,
         critical: s.quantidade < s.quantidade_minima
       })));
+      setStats({ ...emptyAdminStats, ...statsRes.data });
 
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
@@ -396,6 +408,15 @@ export function AdminDashboard() {
     value: item.current,
     color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A',
   }));
+  const donationsByHemocentro = stats.doacoes_por_hemocentro.length
+    ? stats.doacoes_por_hemocentro.map(item => ({ hemocentro: item.hemocentro, total: item.total }))
+    : systemStats;
+  const monthlySystemStats = stats.doacoes_por_mes.length
+    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, total: item.total }))
+    : systemStats;
+  const doacoesMesAtual = stats.doacoes_por_mes.length
+    ? stats.doacoes_por_mes[stats.doacoes_por_mes.length - 1].total
+    : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
@@ -442,7 +463,7 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Total de Hemocentros</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : hemocentros.length}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.total_hemocentros || hemocentros.length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -455,7 +476,7 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">944</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : doacoesMesAtual}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
@@ -510,14 +531,11 @@ export function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={systemStats}>
+                    <BarChart data={donationsByHemocentro}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" /><YAxis />
+                      <XAxis dataKey="hemocentro" /><YAxis />
                       <Tooltip /><Legend />
-                      <Bar dataKey="hc1" fill="#16A34A" name="HC 1" />
-                      <Bar dataKey="hc2" fill="#2563EB" name="HC 2" />
-                      <Bar dataKey="hc3" fill="#9333EA" name="HC 3" />
-                      <Bar dataKey="hc4" fill="#EA580C" name="HC 4" />
+                      <Bar dataKey="total" fill="#16A34A" name="Doações" />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -551,7 +569,7 @@ export function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={systemStats}>
+                  <LineChart data={monthlySystemStats}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" /><YAxis />
                     <Tooltip /><Legend />

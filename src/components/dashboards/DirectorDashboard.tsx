@@ -44,6 +44,17 @@ const bloodTypeDistribution = [
   { name: 'AB-', value: 1, color: '#0891B2' },
 ];
 
+const emptyDirectorStats = {
+  agendamentos_hoje: 0,
+  confirmados_hoje: 0,
+  doacoes_mes: 0,
+  estoque_critico: [] as string[],
+  agendamentos_semana: {} as Record<string, number>,
+  doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
+  doacoes_por_tipo: {} as Record<string, number>,
+  total_doadores_ativos: 0,
+};
+
 const roleLabels: Record<number, string> = {
   1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
 };
@@ -64,6 +75,7 @@ export function DirectorDashboard() {
   // ── Estado: dados da API
   const [staffList, setStaffList] = useState<any[]>([]);
   const [agendamentosHoje, setAgendamentosHoje] = useState<any[]>([]);
+  const [stats, setStats] = useState(emptyDirectorStats);
   const [isLoading, setIsLoading] = useState(true);
 
   // ── Estado: API de Estoque
@@ -104,10 +116,11 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [usersRes, agendRes, stockRes] = await Promise.all([
+      const [usersRes, agendRes, stockRes, statsRes] = await Promise.all([
         api.get('/users'),
         api.get('/agendamentos'),
         api.get('/estoque'),
+        api.get('/estatisticas/diretor'),
       ]);
 
       const todosUsers = Array.isArray(usersRes.data)
@@ -144,6 +157,7 @@ export function DirectorDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 150
       })));
+      setStats({ ...emptyDirectorStats, ...statsRes.data });
 
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
@@ -260,6 +274,16 @@ export function DirectorDashboard() {
     (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
   const staffOnline = staffList.filter((s: any) => s.status === 1 || s.status === 'ativo').length;
+  const monthlyStats = stats.doacoes_por_mes.length
+    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, donations: item.total }))
+    : monthlyDonations;
+  const bloodTypeStats = Object.keys(stats.doacoes_por_tipo || {}).length
+    ? Object.entries(stats.doacoes_por_tipo).map(([name, value]) => ({
+        name,
+        value: Number(value),
+        color: bloodTypeDistribution.find(d => d.name === name)?.color || '#DC2626',
+      }))
+    : bloodTypeDistribution;
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -314,7 +338,7 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">325</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
@@ -339,7 +363,7 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : agendamentosHoje.length}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -353,7 +377,7 @@ export function DirectorDashboard() {
             <CardHeader className="pb-3">
               <CardDescription>Estoque Crítico</CardDescription>
               <CardTitle className="text-3xl text-red-600">
-                {stock.filter(s => s.current < s.min).length}
+                {stats.estoque_critico.length}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -384,7 +408,7 @@ export function DirectorDashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={monthlyDonations}>
+                    <LineChart data={monthlyStats}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" /><YAxis />
                       <Tooltip /><Legend />
@@ -400,17 +424,31 @@ export function DirectorDashboard() {
                   <CardDescription>Doações do mês atual</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie data={bloodTypeDistribution} cx="50%" cy="50%" outerRadius={100}
-                        label={({ name, value }) => `${name}: ${value}%`} dataKey="value">
-                        {bloodTypeDistribution.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={bloodTypeStats}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          innerRadius={40}
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {bloodTypeStats.map((entry, i) => (
+                            <Cell key={`cell-${i}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: any, name: string) => [`${value} bolsas`, name]}
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Legend verticalAlign="bottom" height={36} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -505,31 +543,33 @@ export function DirectorDashboard() {
                   {stock.map(item => {
                     const critico = item.current < item.min;
                     return (
-                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-sm transition-all">
+                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-50 p-3 rounded-lg">
-                              <p className="text-xl font-bold text-red-600">{item.type}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-900">{item.current} bolsas</p>
-                              <p className="text-xs text-gray-500">Mín: {item.min} | Máx: {item.max}</p>
-                            </div>
+                            <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
+                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                              {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
-                            </Badge>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleOpenUpdateStock(item.type)}>
-                              <Activity className="h-4 w-4" />
-                            </Button>
+                          <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
+                            {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
+                          </Badge>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Estoque atual</span>
+                            <span className="font-semibold">{item.current} bolsas</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }} />
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500">
+                            <span>Mín: {item.min}</span><span>Máx: {item.max}</span>
                           </div>
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2.5">
-                          <div
-                            className={`h-2.5 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
-                            style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }}
-                          />
+                        <div className="mt-3 pt-3 border-t">
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenUpdateStock(item.type)}>
+                            <Activity className="h-4 w-4 mr-2" />Atualizar Estoque
+                          </Button>
                         </div>
                       </div>
                     );
@@ -687,11 +727,15 @@ export function DirectorDashboard() {
               <Label>Quantidade (bolsas)</Label>
               <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
             </div>
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+              Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
+              <strong>{stock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUpdateStockDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
-              {stockAction === 'add' ? 'Adicionar' : 'Remover'}
+              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -40,6 +40,14 @@ import { ptBR } from 'date-fns/locale';
 
 const tiposSanguineos = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 
+const emptyStaffStats = {
+  agendamentos_hoje: 0,
+  confirmados_hoje: 0,
+  doacoes_mes: 0,
+  estoque_critico: [] as string[],
+  agendamentos_semana: {} as Record<string, number>,
+};
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 export function StaffDashboard() {
   const { user, logout } = useAuth() as any;
@@ -48,6 +56,7 @@ export function StaffDashboard() {
   // ── Estado: dados da API
   const [agendamentos, setAgendamentos] = useState<any[]>([]);
   const [doadores, setDoadores] = useState<any[]>([]);
+  const [stats, setStats] = useState(emptyStaffStats);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
@@ -102,10 +111,11 @@ export function StaffDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [agendRes, usersRes, stockRes] = await Promise.all([
+      const [agendRes, usersRes, stockRes, statsRes] = await Promise.all([
         api.get('/agendamentos'),
         api.get('/users'),
         api.get('/estoque'),
+        api.get('/estatisticas/funcionario'),
       ]);
 
       const agends = Array.isArray(agendRes.data)
@@ -132,6 +142,7 @@ export function StaffDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 100 // Valor padrão se não vier da API
       })));
+      setStats({ ...emptyStaffStats, ...statsRes.data });
     } catch (err: any) {
       console.error('Erro ao carregar:', err.response?.data);
       toast.error('Erro ao carregar dados');
@@ -192,8 +203,8 @@ export function StaffDashboard() {
     return data === format(new Date(), 'yyyy-MM-dd');
   });
 
-  const concluidos = agendamentosHoje.filter((a: any) => a.status === 'FIN').length;
-  const pendentes  = agendamentosHoje.filter((a: any) => ['AGE','CON'].includes(a.status)).length;
+  const concluidos = stats.confirmados_hoje;
+  const pendentes = Math.max(stats.agendamentos_hoje - stats.confirmados_hoje, 0);
 
   // ─── Handlers: Agendamentos ───────────────────────────────────────────────
 
@@ -417,7 +428,7 @@ export function StaffDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3"><CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : agendamentosHoje.length}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
             </CardHeader>
             <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Calendar className="h-4 w-4 text-blue-600" /><span>Do seu hemocentro</span></div></CardContent>
           </Card>
@@ -437,10 +448,10 @@ export function StaffDashboard() {
           </Card>
 
           <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3"><CardDescription>Total de Doadores</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : doadores.length}</CardTitle>
+            <CardHeader className="pb-3"><CardDescription>Doações do Mês</CardDescription>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
             </CardHeader>
-            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Users className="h-4 w-4 text-purple-600" /><span>Cadastrados no sistema</span></div></CardContent>
+            <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Users className="h-4 w-4 text-purple-600" /><span>Registradas no hemocentro</span></div></CardContent>
           </Card>
         </div>
 
