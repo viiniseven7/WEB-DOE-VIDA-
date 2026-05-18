@@ -32,13 +32,44 @@ import {
   Edit,
   AlertCircle,
   Stethoscope,
-  CalendarDays
+  CalendarDays,
+  RotateCcw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const tiposSanguineos = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+
+const extractApiObject = (payload: any, keys: string[] = []) => {
+  const candidates = [
+    ...keys.map((key) => payload?.[key]),
+    ...keys.map((key) => payload?.data?.[key]),
+    payload?.data,
+    payload,
+  ];
+
+  return candidates.find((item) => item && typeof item === 'object' && !Array.isArray(item)) || {};
+};
+
+const getStatus = (agendamento: any) => String(agendamento?.status_agendamento || agendamento?.status || '').toUpperCase();
+
+const getDateKey = (value: any) => {
+  const raw = String(value || '');
+  const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) return isoMatch[0];
+  const brMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return brMatch ? `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}` : '';
+};
+
+const getAppointmentDonor = (agendamento: any) =>
+  agendamento?.doador || agendamento?.user || agendamento?.usuario || agendamento?.donor || null;
+
+const getAppointmentUserId = (agendamento: any) =>
+  agendamento?.user_id || agendamento?.doador_id || getAppointmentDonor(agendamento)?.id;
+
+const getHemocentroId = (source: any) =>
+  source?.hemocentro_id || source?.hemocentro?.id || source?.hemocenterId;
 
 const emptyStaffStats = {
   agendamentos_hoje: 0,
@@ -176,9 +207,29 @@ export function StaffDashboard() {
       CON: { label: 'Confirmado', color: 'bg-green-100 text-green-600' },
       CAN: { label: 'Cancelado',  color: 'bg-red-100 text-red-600'     },
       FIN: { label: 'Finalizado', color: 'bg-gray-100 text-gray-600'   },
+      DOA: { label: 'Doação realizada', color: 'bg-green-600 text-white' },
       E:   { label: 'Reagendado', color: 'bg-yellow-100 text-yellow-600'},
     };
     return map[status] || { label: status, color: 'bg-gray-100 text-gray-600' };
+  };
+
+  const isDoacaoRealizada = (agendamento: any) => {
+    const status = getStatus(agendamento);
+    return status === 'FIN' || status === 'DOA' || status === 'REALIZADA' || !!agendamento.doacao_id || !!agendamento.doacao || !!agendamento.doacao_realizada;
+  };
+
+  const getAgendaCardClass = (agendamento: any) => {
+    const status = getStatus(agendamento);
+    if (isDoacaoRealizada(agendamento)) return 'bg-green-50 border-green-500 ring-1 ring-green-100';
+    if (status === 'CAN') return 'bg-gray-50 border-gray-200';
+    return 'bg-white border-gray-200 hover:border-blue-300 shadow-sm';
+  };
+
+  const canReabrirAgendamento = (agendamento: any) => {
+    if (getStatus(agendamento) !== 'CAN') return false;
+    const dataKey = getDateKey(agendamento.data_hora_doacao || agendamento.data);
+    if (!dataKey) return true;
+    return new Date(`${dataKey}T23:59:59`).getTime() >= Date.now();
   };
 
   // Filtragem por data e busca
@@ -187,8 +238,10 @@ export function StaffDashboard() {
     if (!dataCampo) return false;
     const aptDate = parseISO(dataCampo.includes('T') ? dataCampo : dataCampo.replace(' ', 'T'));
     const matchesDate = isSameDay(aptDate, selectedDate);
-    const matchesSearch = (a.user?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (a.user?.tipo_sang || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const doador = getAppointmentDonor(a);
+    const matchesSearch = (doador?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (doador?.tipo_sang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (doador?.cpf || '').includes(searchTerm.replace(/\D/g, ''));
     return matchesDate && matchesSearch;
   }).sort((a, b) => {
     const dA = new Date(a.data_hora_doacao || a.data).getTime();
@@ -210,7 +263,7 @@ export function StaffDashboard() {
 
   const handleConfirmar = async (agend: any) => {
     try {
-      await api.put(`/auth/agendamentos/${agend.id}`, { status: 'CON' });
+      await api.post(`/auth/agendamentos/${agend.id}/confirmar`);
       toast.success('Check-in realizado!');
       fetchData();
     } catch { toast.error('Erro ao confirmar agendamento'); }
@@ -225,15 +278,26 @@ export function StaffDashboard() {
   const handleConfirmarCancelamento = async () => {
     if (!cancelMotivo) { toast.error('Selecione o motivo do cancelamento'); return; }
     try {
-      await api.put(`/auth/agendamentos/${selectedAgendamento.id}`, {
-        status: 'CAN',
-        motivo_cancelamento: cancelMotivo,
-      });
+      await api.post(`/auth/agendamentos/${selectedAgendamento.id}/cancelar`, { motivo_cancelamento: cancelMotivo });
       toast.success('Agendamento cancelado!');
       setCancelDialogOpen(false);
       setSelectedAgendamento(null);
       fetchData();
     } catch { toast.error('Erro ao cancelar agendamento'); }
+  };
+
+  const handleReabrirAgendamento = async (agend: any) => {
+    try {
+      await api.post(`/auth/agendamentos/${agend.id}/reabrir`);
+      setAgendamentos((prev) =>
+        prev.map((item) =>
+          item.id === agend.id ? { ...item, status: 'AGE', status_agendamento: 'AGE' } : item
+        )
+      );
+      toast.success('Agendamento reaberto!');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao reabrir agendamento.');
+    }
   };
 
   const handleAbrirTriagem = (agend: any) => {
@@ -245,43 +309,53 @@ export function StaffDashboard() {
   const handleRegistrarTriagem = async () => {
     if (!selectedAgendamento) return;
     try {
-      // Cria triagem
-      await api.post('/auth/triagens', {
-        user_id:       selectedAgendamento.user_id,
-        funcionario_id: user.id,
-        hemocentro_id: user.hemocentro_id,
+      const doador = getAppointmentDonor(selectedAgendamento);
+      const agendamentoId = selectedAgendamento.id;
+      const userId = getAppointmentUserId(selectedAgendamento);
+      const hemocentroId = getHemocentroId(selectedAgendamento) || getHemocentroId(user);
+
+      const triagemRes = await api.post('/auth/triagens', {
+        agendamento_id: agendamentoId,
+        user_id:       userId,
+        hemocentro_id: hemocentroId,
         data_triagem:  new Date().toISOString().split('T')[0],
         apto:          triagemData.apto,
         motivo_inaptidao: !triagemData.apto ? triagemData.motivo_inaptidao : null,
         observacoes:   triagemData.observacoes || null,
       });
 
-      // Se apto, cria doação também? Ou a API de triagens já cuida disso?
-      // O requisito pedia manter funcionalidades. Vou seguir o fluxo do Incoming que simplificou.
-      // Se precisar de coleta separada, HEAD tinha handleRegisterDonation.
-      // Vamos assumir que Triagem Apta = Doação Realizada neste fluxo simplificado.
-
       if (triagemData.apto) {
+        const triagem = extractApiObject(triagemRes.data, ['triagem']);
+        const triagemId = triagem.id || triagem.triagem_id;
+
+        if (!triagemId) {
+          throw new Error('A API não retornou o ID da triagem criada.');
+        }
+
         await api.post('/auth/doacoes', {
-          agendamento_id: selectedAgendamento.id,
-          user_id: selectedAgendamento.user_id,
-          hemocentro_id: user.hemocentro_id,
-          data_hora_doacao: format(new Date(), 'yyyy-MM-dd HH:mm:ss'),
-          tipo_sangue: selectedAgendamento.user?.tipo_sang,
-          quantidade: parseInt(triagemData.ml_coletados),
+          agendamento_id: agendamentoId,
+          triagem_id: triagemId,
+          user_id: userId,
+          hemocentro_id: hemocentroId,
+          data_hora_doacao: new Date().toISOString().replace('T', ' ').split('.')[0],
+          tipo_sangue: doador?.tipo_sang || 'O+',
+          quantidade: Number(triagemData.ml_coletados),
           data_validade_sangue: format(new Date(Date.now() + 35 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
         });
       }
 
-      // Finaliza agendamento
-      await api.put(`/auth/agendamentos/${selectedAgendamento.id}`, {
-        status: 'FIN',
-      });
+      await api.post(`/auth/agendamentos/${selectedAgendamento.id}/confirmar`);
 
       toast.success(triagemData.apto ? 'Doação registrada com sucesso!' : 'Triagem registrada — doador inapto');
       setTriagemDialogOpen(false);
       setSelectedAgendamento(null);
-      fetchData();
+      setAgendamentos((prev) =>
+        prev.map((agendamento) =>
+          agendamento.id === selectedAgendamento.id
+            ? { ...agendamento, status: 'FIN', status_agendamento: 'FIN', doacao_realizada: triagemData.apto }
+            : agendamento
+        )
+      );
     } catch (err: any) {
       toast.error('Erro ao registrar triagem: ' + (err.response?.data?.message || 'Tente novamente'));
     }
@@ -509,36 +583,42 @@ export function StaffDashboard() {
                   <div className="space-y-3">
                     {filteredAgendamentos.map((agend: any) => {
                       const { hora } = formatDataHora(agend);
-                      const statusInfo = getStatusLabel(agend.status);
-                      const ativo = ['AGE', 'CON'].includes(agend.status);
+                      const statusAgend = getStatus(agend);
+                      const doador = getAppointmentDonor(agend);
+                      const doacaoRealizada = isDoacaoRealizada(agend);
+                      const statusInfo = doacaoRealizada
+                        ? { label: 'Doação realizada', color: 'bg-green-600 text-white' }
+                        : getStatusLabel(statusAgend);
+                      const ativo = !doacaoRealizada && ['AGE', 'CON'].includes(statusAgend);
+                      const podeReabrir = canReabrirAgendamento(agend);
                       return (
-                        <div key={agend.id} className={`p-4 border rounded-lg transition-all ${agend.status === 'FIN' ? 'bg-green-50 border-green-200' : agend.status === 'CAN' ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200 hover:border-blue-300 shadow-sm'}`}>
+                        <div key={agend.id} className={`p-4 border rounded-lg transition-all ${getAgendaCardClass(agend)}`}>
                           <div className="flex items-center justify-between flex-wrap gap-4">
                             <div className="flex items-center gap-4">
-                              <div className="bg-blue-600 text-white p-3 rounded-lg shadow-lg text-center min-w-[60px]">
-                                <p className="text-lg font-bold">{hora}</p>
+                              <div className={`${doacaoRealizada ? 'bg-white border-2 border-green-600' : 'bg-blue-600 text-white'} p-3 rounded-lg shadow-lg text-center min-w-[60px]`}>
+                                <p className={`text-lg font-bold ${doacaoRealizada ? 'text-green-700' : ''}`}>{hora}</p>
                               </div>
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-bold text-lg text-gray-900">{agend.user?.name || `Doador #${agend.user_id}`}</p>
-                                  {agend.user?.tipo_sang && (
+                                  <p className="font-bold text-lg text-gray-900">{doador?.name || `Doador #${agend.user_id}`}</p>
+                                  {doador?.tipo_sang && (
                                     <Badge variant="outline" className="bg-red-50 border-red-600 text-red-600">
-                                      {agend.user.tipo_sang}
+                                      {doador.tipo_sang}
                                     </Badge>
                                   )}
                                   <Badge className={statusInfo.color + " border-none"}>{statusInfo.label}</Badge>
                                 </div>
-                                {agend.user?.telefone && (
+                                {doador?.telefone && (
                                   <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                                    <Phone className="h-3 w-3" />{agend.user.telefone}
+                                    <Phone className="h-3 w-3" />{doador.telefone}
                                   </p>
                                 )}
-                                {agend.status === 'FIN' && (
+                                {doacaoRealizada && (
                                   <p className="text-sm text-green-600 font-semibold mt-1 flex items-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> Doação finalizada
+                                    <CheckCircle2 className="h-3 w-3" /> Doação realizada
                                   </p>
                                 )}
-                                {agend.status === 'CAN' && (
+                                {statusAgend === 'CAN' && (
                                   <p className="text-sm text-gray-500 font-semibold mt-1 flex items-center gap-1">
                                     <XCircle className="h-3 w-3" /> Cancelada
                                   </p>
@@ -547,13 +627,13 @@ export function StaffDashboard() {
                             </div>
                             {ativo && (
                               <div className="flex gap-2 flex-wrap">
-                                {agend.status === 'AGE' && (
+                                {statusAgend === 'AGE' && (
                                   <Button size="sm" className="bg-blue-600 hover:bg-blue-700"
                                     onClick={() => handleConfirmar(agend)}>
                                     Check-in
                                   </Button>
                                 )}
-                                {agend.status === 'CON' && (
+                                {statusAgend === 'CON' && (
                                   <Button size="sm" className="bg-orange-500 hover:bg-orange-600 gap-2"
                                     onClick={() => handleAbrirTriagem(agend)}>
                                     <Stethoscope className="h-4 w-4" /> Triagem
@@ -562,6 +642,13 @@ export function StaffDashboard() {
                                 <Button size="sm" variant="ghost" className="text-gray-400 hover:text-red-600"
                                   onClick={() => handleAbrirCancelar(agend)}>
                                   <XCircle className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+                            {!ativo && podeReabrir && (
+                              <div className="flex gap-2 flex-wrap">
+                                <Button size="sm" variant="outline" className="border-blue-600 text-blue-600" onClick={() => handleReabrirAgendamento(agend)}>
+                                  <RotateCcw className="h-4 w-4 mr-1" />Reabrir
                                 </Button>
                               </div>
                             )}

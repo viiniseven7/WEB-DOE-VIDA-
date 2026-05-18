@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
@@ -13,8 +13,7 @@ import { format, isAfter, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
-
-const API_URL = 'http://localhost:8000/api';
+import api from "../services/api";
 
 export function AppointmentForm() {
   const { user } = useAuth();
@@ -32,11 +31,9 @@ export function AppointmentForm() {
   useEffect(() => {
     const fetchHemocentros = async () => {
       try {
-        const response = await fetch(`${API_URL}/hemocentros`);
-        if (response.ok) {
-          const data = await response.json();
-          setHemocentros(data.data || data);
-        }
+        const response = await api.get('/hemocentros');
+        const data = response.data;
+        setHemocentros(data.data || data);
       } catch (err) {
         console.error("Erro ao carregar hemocentros:", err);
       }
@@ -87,32 +84,16 @@ export function AppointmentForm() {
 
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
       const payload = {
-        hemocentro_id: formData.hemocentro_id,
+        hemocentro_id: Number(formData.hemocentro_id),
         data_hora_doacao: `${format(date, 'yyyy-MM-dd')} ${formData.time}:00`
       };
 
-      const response = await fetch(`${API_URL}/auth/agendamentos`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setIsSubmitted(true);
-        toast.success("Agendamento realizado!");
-      } else {
-        toast.error(data.message || "Falha no agendamento.");
-      }
-    } catch (error) {
-      toast.error("Erro de conexão.");
+      await api.post('/auth/agendamentos', payload);
+      setIsSubmitted(true);
+      toast.success("Agendamento realizado!");
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Falha no agendamento.");
     } finally {
       setIsLoading(false);
     }
@@ -124,7 +105,7 @@ export function AppointmentForm() {
         <CardContent className="p-12 text-center space-y-4">
           <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto" />
           <h3 className="text-2xl font-bold">Agendamento Realizado!</h3>
-          <Button onClick={() => navigate('/dashboard/doador')} className="bg-green-600">Ver no Painel</Button>
+          <Button onClick={() => navigate('/dashboard/donor')} className="bg-green-600">Ver no Painel</Button>
         </CardContent>
       </Card>
     );
