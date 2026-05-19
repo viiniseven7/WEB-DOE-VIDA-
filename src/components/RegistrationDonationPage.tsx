@@ -808,7 +808,16 @@ export function RegistrationDonationPage() {
                       {errors.guardian}
                     </div>
                   )}
-
+                  <div className="flex items-center gap-2">
+                   <input type="checkbox" id="lgpd" required />
+                    <label htmlFor="lgpd" className="text-sm text-gray-600">
+                        Li e concordo com a{' '}
+                    <a href="/privacidade" className="text-red-600 underline">
+                    Política de Privacidade
+                    </a>{' '}
+                    e autorizo o uso dos meus dados para fins de doação de sangue, conforme a LGPD (Lei 13.709/2018).
+                    </label>
+                  </div>
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-lg py-6">
                     Continuar para Agendamento →
                   </Button>
