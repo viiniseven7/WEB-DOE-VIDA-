@@ -377,14 +377,36 @@ export function AdminDashboard() {
   };
 
   // ─── Relatório (simulado) ───────────────────────────────────────────────────
-  const handleExportReport = () => {
+  const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
-    const names: Record<string, string> = { donations: 'Doações', stock: 'Estoque Global', users: 'Usuários', campaigns: 'Campanhas', hemocentros: 'Hemocentros' };
-    const ext = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
-    toast.success(`Relatório de ${names[reportType]} exportado em ${ext}!`);
-    setShowReportDialog(false);
-    setReportType('');
-    setReportFormat('pdf');
+
+    const endpoints: Record<string, string> = {
+      donations: '/relatorios/doacoes',
+      stock:     '/relatorios/estoque',
+      donors:    '/relatorios/doadores',
+    };
+
+    const endpoint = endpoints[reportType];
+    if (!endpoint) { toast.error('Tipo de relatório não disponível'); return; }
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:8000/api${endpoint}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Erro ao gerar relatório');
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Relatório gerado com sucesso!');
+      setShowReportDialog(false);
+    } catch {
+      toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    }
   };
 
   // ─── Computados ─────────────────────────────────────────────────────────────

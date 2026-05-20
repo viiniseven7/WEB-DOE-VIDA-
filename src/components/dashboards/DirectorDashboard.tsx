@@ -256,16 +256,36 @@ export function DirectorDashboard() {
   };
 
 
-  const handleConfirmExport = () => {
+  const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
-    const names: Record<string, string> = {
-      monthly: 'Mensal', donors: 'Doadores', stock: 'Estoque', performance: 'Desempenho',
+
+    const endpoints: Record<string, string> = {
+      donations: '/relatorios/doacoes',
+      stock:     '/relatorios/estoque',
+      donors:    '/relatorios/doadores',
     };
-    const ext = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
-    toast.success(`Relatório ${names[reportType]} exportado em ${ext}!`);
-    setExportDialogOpen(false);
-    setReportType('');
-    setReportFormat('pdf');
+
+    const endpoint = endpoints[reportType];
+    if (!endpoint) { toast.error('Tipo de relatório não disponível'); return; }
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:8000/api${endpoint}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Erro ao gerar relatório');
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Relatório gerado com sucesso!');
+      setExportDialogOpen(false);
+    } catch {
+      toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    }
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
@@ -775,7 +795,7 @@ export function DirectorDashboard() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmExport} className="bg-purple-600 hover:bg-purple-700 text-white">
+            <Button onClick={handleExportReport} className="bg-purple-600 hover:bg-purple-700 text-white">
               <Download className="h-4 w-4 mr-2" />Exportar
             </Button>
           </DialogFooter>
