@@ -113,6 +113,24 @@ export function StaffDashboard() {
     observacoes: '',
     ml_coletados: '450',
   });
+  // Estados para triagem clínica dinâmica
+  const [perguntas, setPerguntas] = useState<any[]>([]);
+  const [respostasTriagem, setRespostasTriagem] = useState<Record<number, number>>({});
+  const [sinaisVitais, setSinaisVitais] = useState({
+    peso: '',
+    pressao_sistolica: '',
+    pressao_diastolica: '',
+    temperatura: '',
+    frequencia_cardiaca: '',
+    hemoglobina: '',
+    hematocrito: '',
+  });
+  const [aptidaoFormal, setAptidaoFormal] = useState({
+    resultado: 'apto' as 'apto' | 'inapto_temporario' | 'inapto_definitivo',
+    categoria_inaptidao: '',
+    observacoes_internas: '',
+    valido_ate: '',
+  });
 
   const [editDonorDialogOpen, setEditDonorDialogOpen] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState<any>(null);
@@ -128,6 +146,23 @@ export function StaffDashboard() {
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
 
+  // Alerta médico
+  const [alertaDialogOpen, setAlertaDialogOpen]     = useState(false);
+  const [alertaDoador, setAlertaDoador]             = useState<any>(null);
+  const [alertaForm, setAlertaForm]                 = useState({
+    tipo_alerta: 'resultado_sorologico' as 'resultado_sorologico' | 'convocacao_retorno' | 'outro',
+    notificacao_doador: '',
+  });
+
+  // Histórico tipo sanguíneo
+  const [tipoSangDialogOpen, setTipoSangDialogOpen] = useState(false);
+  const [tipoSangDoador, setTipoSangDoador]         = useState<any>(null);
+  const [tipoSangHistorico, setTipoSangHistorico]   = useState<any[]>([]);
+  const [tipoSangForm, setTipoSangForm]             = useState({
+    tipo_sangue_novo: '',
+    categoria_motivo: '',
+  });
+
   // ─── Guard ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
@@ -142,12 +177,24 @@ export function StaffDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [agendRes, usersRes, stockRes, statsRes] = await Promise.all([
+      const [agendRes, usersRes, stockRes, statsRes, bloco1Res, bloco3Res, bloco4Res] = await Promise.all([
         api.get('/agendamentos'),
         api.get('/users'),
         api.get('/estoque'),
         api.get('/estatisticas/funcionario'),
+        api.get('/triagens/perguntas?bloco=1'),
+        api.get('/triagens/perguntas?bloco=3'),
+        api.get('/triagens/perguntas?bloco=4'),
       ]);
+
+      // Combinar perguntas dos 3 blocos clínicos em ordem
+      const extract = (res: any) => Array.isArray(res.data?.data) ? res.data.data : [];
+      const todasPerguntas = [
+        ...extract(bloco1Res),
+        ...extract(bloco3Res),
+        ...extract(bloco4Res),
+      ];
+      setPerguntas(todasPerguntas);
 
       const agends = Array.isArray(agendRes.data)
         ? agendRes.data : agendRes.data.data ?? [];
@@ -303,10 +350,15 @@ export function StaffDashboard() {
   const handleAbrirTriagem = (agend: any) => {
     setSelectedAgendamento(agend);
     setTriagemData({ apto: true, motivo_inaptidao: '', observacoes: '', ml_coletados: '450' });
+    setRespostasTriagem({});
+    setSinaisVitais({ peso:'', pressao_sistolica:'', pressao_diastolica:'',
+      temperatura:'', frequencia_cardiaca:'', hemoglobina:'', hematocrito:'' });
+    setAptidaoFormal({ resultado:'apto', categoria_inaptidao:'',
+      observacoes_internas:'', valido_ate:'' });
     setTriagemDialogOpen(true);
   };
 
-  const handleRegistrarTriagem = async () => {
+  const handleRegistrarTriagemLegacy = async () => {
     if (!selectedAgendamento) return;
     try {
       const doador = getAppointmentDonor(selectedAgendamento);
@@ -362,6 +414,114 @@ export function StaffDashboard() {
   };
 
   // ─── Handlers: Doadores ───────────────────────────────────────────────────
+
+  const handleRegistrarTriagem = async () => {
+    if (!selectedAgendamento) return;
+    const agendamentoId = selectedAgendamento.id;
+
+    // Validar que todas as perguntas obrigatórias foram respondidas
+    const naoRespondidas = perguntas.filter(
+      p => p.obrigatoria && !respostasTriagem[p.id]
+    );
+    if (naoRespondidas.length > 0) {
+      toast.error(`Responda todas as perguntas obrigatórias (${naoRespondidas.length} pendentes)`);
+      return;
+    }
+
+    // Validar aptidão
+    if (!aptidaoFormal.resultado) {
+      toast.error('Selecione o resultado da aptidão');
+      return;
+    }
+    if (aptidaoFormal.resultado !== 'apto' && !aptidaoFormal.categoria_inaptidao) {
+      toast.error('Selecione a categoria de inaptidão');
+      return;
+    }
+    if (aptidaoFormal.resultado === 'inapto_temporario' && !aptidaoFormal.valido_ate) {
+      toast.error('Informe até quando dura a inaptidão temporária');
+      return;
+    }
+
+    try {
+      // Montar payload de sinais vitais (apenas campos preenchidos)
+      const sinaisPayload: Record<string, number> = {};
+      Object.entries(sinaisVitais).forEach(([k, v]) => {
+        if (v !== '') sinaisPayload[k] = Number(v);
+      });
+
+      // Montar payload de respostas
+      const respostasPayload = Object.entries(respostasTriagem).map(([pergunta_id, opcao_id]) => ({
+        pergunta_id: Number(pergunta_id),
+        opcao_id:    Number(opcao_id),
+      }));
+
+      // Montar aptidão
+      const aptidaoPayload: Record<string, any> = {
+        resultado:            aptidaoFormal.resultado,
+        observacoes_internas: aptidaoFormal.observacoes_internas || null,
+      };
+      if (aptidaoFormal.resultado !== 'apto') {
+        aptidaoPayload.categoria_inaptidao = aptidaoFormal.categoria_inaptidao;
+      }
+      if (aptidaoFormal.resultado === 'inapto_temporario') {
+        aptidaoPayload.valido_ate = aptidaoFormal.valido_ate;
+      }
+
+      const triagemRes = await api.post('/auth/triagens', {
+        agendamento_id: agendamentoId,
+        user_id:        selectedAgendamento.user_id,
+        hemocentro_id:  user.hemocentro_id,
+        data_triagem:   new Date().toISOString().split('T')[0],
+        sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
+        respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
+        aptidao:        aptidaoPayload,
+      });
+
+      const apto = triagemRes.data?.apto === true;
+      const triagemId = triagemRes.data?.data?.id;
+
+      if (!triagemId) throw new Error('A API não retornou o ID da triagem.');
+
+      if (apto) {
+        // Registrar doação
+        await api.post('/auth/doacoes', {
+          agendamento_id:    agendamentoId,
+          triagem_id:        triagemId,
+          user_id:           selectedAgendamento.user_id,
+          hemocentro_id:     user.hemocentro_id,
+          tipo_sangue:       selectedAgendamento.doador?.tipo_sang,
+          quantidade:        Number(triagemData.ml_coletados) || 450,
+          data_hora_doacao:  new Date().toISOString().replace('T', ' ').split('.')[0],
+          data_validade_sangue: new Date(Date.now() + 42 * 24 * 60 * 60 * 1000)
+            .toISOString().split('T')[0],
+        });
+        toast.success('Triagem aprovada e doação registrada com sucesso!');
+      } else {
+        toast.info('Triagem registrada — doador inapto para doação nesta data.');
+      }
+
+      // Confirmar agendamento após triagem
+      await api.post(`/auth/agendamentos/${agendamentoId}/confirmar`);
+
+      // Resetar estados do dialog
+      setTriagemDialogOpen(false);
+      setRespostasTriagem({});
+      setSinaisVitais({ peso:'', pressao_sistolica:'', pressao_diastolica:'',
+        temperatura:'', frequencia_cardiaca:'', hemoglobina:'', hematocrito:'' });
+      setAptidaoFormal({ resultado:'apto', categoria_inaptidao:'',
+        observacoes_internas:'', valido_ate:'' });
+      fetchData();
+
+    } catch (err: any) {
+      const msg = err.response?.data?.message
+        || (typeof err.response?.data === 'object'
+          ? Object.values(err.response.data).flat().join(', ')
+          : null)
+        || err.message
+        || 'Tente novamente';
+      toast.error('Erro ao registrar triagem: ' + msg);
+    }
+  };
 
   const handleSearchDonor = () => {
     if (!donorSearchTerm.trim() && !donorBloodTypeFilter) {
@@ -449,6 +609,57 @@ export function StaffDashboard() {
       fetchData();
     } catch (err: any) {
       toast.error('Erro ao atualizar estoque: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
+  };
+
+  const handleAbrirAlerta = (doador: any) => {
+    setAlertaDoador(doador);
+    setAlertaForm({ tipo_alerta: 'resultado_sorologico', notificacao_doador: '' });
+    setAlertaDialogOpen(true);
+  };
+
+  const handleCriarAlerta = async () => {
+    if (!alertaForm.notificacao_doador.trim()) {
+      toast.error('Informe a mensagem para o doador');
+      return;
+    }
+    try {
+      await api.post('/auth/alertas-medicos', {
+        user_id:            alertaDoador.id,
+        tipo_alerta:        alertaForm.tipo_alerta,
+        notificacao_doador: alertaForm.notificacao_doador,
+      });
+      toast.success('Alerta médico criado com sucesso.');
+      setAlertaDialogOpen(false);
+    } catch (err: any) {
+      toast.error('Erro ao criar alerta: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
+  };
+
+  const handleAbrirTipoSang = async (doador: any) => {
+    setTipoSangDoador(doador);
+    setTipoSangForm({ tipo_sangue_novo: '', categoria_motivo: '' });
+    try {
+      const res = await api.get(`/auth/doadores/${doador.id}/tipo-sangue-historico`);
+      setTipoSangHistorico(res.data?.historico ?? []);
+    } catch {
+      setTipoSangHistorico([]);
+    }
+    setTipoSangDialogOpen(true);
+  };
+
+  const handleSalvarTipoSang = async () => {
+    if (!tipoSangForm.tipo_sangue_novo || !tipoSangForm.categoria_motivo) {
+      toast.error('Preencha todos os campos');
+      return;
+    }
+    try {
+      await api.post(`/auth/doadores/${tipoSangDoador.id}/tipo-sangue-historico`, tipoSangForm);
+      toast.success('Tipo sanguíneo atualizado com sucesso.');
+      setTipoSangDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao atualizar tipo sanguíneo');
     }
   };
 
@@ -798,9 +1009,27 @@ export function StaffDashboard() {
                                   </div>
                                 </div>
                               </div>
-                              <Button size="sm" variant="outline" onClick={() => handleAbrirEditDonor(donor)}>
-                                <Edit className="h-4 w-4 mr-1" />Editar
-                              </Button>
+                              <div className="flex gap-2 flex-wrap">
+                                <Button size="sm" variant="outline" onClick={() => handleAbrirEditDonor(donor)}>
+                                  <Edit className="h-4 w-4 mr-1" />Editar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-amber-600 border-amber-300"
+                                  onClick={() => handleAbrirAlerta(donor)}
+                                >
+                                  Criar Alerta Médico
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-blue-600 border-blue-300"
+                                  onClick={() => handleAbrirTipoSang(donor)}
+                                >
+                                  Histórico Tipo Sanguíneo
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -852,6 +1081,192 @@ export function StaffDashboard() {
 
       {/* Registrar Doação / Triagem */}
       <Dialog open={triagemDialogOpen} onOpenChange={setTriagemDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Triagem Clínica</DialogTitle>
+            <DialogDescription>
+              Doador: <strong>{selectedAgendamento?.doador?.name}</strong>
+              {selectedAgendamento?.doador?.tipo_sang && (
+                <span className="ml-2 text-red-600 font-bold">
+                  {selectedAgendamento.doador.tipo_sang}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-2">
+            <div className="space-y-3">
+              <h4 className="font-semibold text-sm uppercase tracking-wide text-gray-500 border-b pb-1">
+                Sinais Vitais
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'peso',               label: 'Peso (kg)',         placeholder: 'Ex: 70' },
+                  { key: 'pressao_sistolica',   label: 'Pressão sistólica', placeholder: 'Ex: 120' },
+                  { key: 'pressao_diastolica',  label: 'Pressão diastólica',placeholder: 'Ex: 80' },
+                  { key: 'temperatura',         label: 'Temperatura (°C)',  placeholder: 'Ex: 36.5' },
+                  { key: 'frequencia_cardiaca', label: 'Freq. cardíaca (bpm)', placeholder: 'Ex: 72' },
+                  { key: 'hemoglobina',         label: 'Hemoglobina (g/dL)',placeholder: 'Ex: 14.2' },
+                  { key: 'hematocrito',         label: 'Hematócrito (%)',   placeholder: 'Ex: 42' },
+                ].map(({ key, label, placeholder }) => (
+                  <div key={key}>
+                    <Label className="text-xs">{label}</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder={placeholder}
+                      value={sinaisVitais[key as keyof typeof sinaisVitais]}
+                      onChange={e => setSinaisVitais(prev => ({ ...prev, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {[
+              { bloco: 1, titulo: 'Estado Geral no Dia' },
+              { bloco: 3, titulo: 'Histórico de Saúde Recente' },
+              { bloco: 4, titulo: 'Histórico Comportamental' },
+            ].map(({ bloco, titulo }) => {
+              const perguntasBloco = perguntas.filter(p => p.bloco === bloco);
+              if (perguntasBloco.length === 0) return null;
+              return (
+                <div key={bloco} className="space-y-3">
+                  <h4 className="font-semibold text-sm uppercase tracking-wide text-gray-500 border-b pb-1">
+                    {titulo}
+                  </h4>
+                  {perguntasBloco.map(pergunta => (
+                    <div key={pergunta.id} className="space-y-2">
+                      <Label className="text-sm font-medium">
+                        {pergunta.pergunta}
+                        {pergunta.obrigatoria && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      <div className="space-y-1">
+                        {pergunta.opcoes?.map((opcao: any) => (
+                          <label
+                            key={opcao.id}
+                            className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer text-sm transition-colors ${
+                              respostasTriagem[pergunta.id] === opcao.id
+                                ? 'border-red-400 bg-red-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`pergunta-${pergunta.id}`}
+                              value={opcao.id}
+                              checked={respostasTriagem[pergunta.id] === opcao.id}
+                              onChange={() => setRespostasTriagem(prev => ({
+                                ...prev,
+                                [pergunta.id]: opcao.id,
+                              }))}
+                              className="text-red-600"
+                            />
+                            {opcao.texto_opcao}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+
+            {aptidaoFormal.resultado === 'apto' && (
+              <div>
+                <Label className="text-xs">Volume coletado (mL)</Label>
+                <Input
+                  type="number"
+                  min="100"
+                  max="600"
+                  placeholder="450"
+                  value={triagemData.ml_coletados}
+                  onChange={e => setTriagemData({ ...triagemData, ml_coletados: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="space-y-3 border-t pt-4">
+              <h4 className="font-semibold text-sm uppercase tracking-wide text-gray-500">
+                Conclusão da Triagem *
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'apto',              label: 'Apto',           color: 'border-green-400 bg-green-50 text-green-700' },
+                  { value: 'inapto_temporario', label: 'Inapto Temporário', color: 'border-amber-400 bg-amber-50 text-amber-700' },
+                  { value: 'inapto_definitivo', label: 'Inapto Definitivo', color: 'border-red-400 bg-red-50 text-red-700' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setAptidaoFormal(prev => ({ ...prev, resultado: opt.value as any }))}
+                    className={`p-2 rounded-md border-2 text-xs font-semibold transition-all ${
+                      aptidaoFormal.resultado === opt.value ? opt.color : 'border-gray-200 text-gray-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {aptidaoFormal.resultado !== 'apto' && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs">Categoria da inaptidão *</Label>
+                    <select
+                      className="w-full border rounded-md p-2 text-sm mt-1"
+                      value={aptidaoFormal.categoria_inaptidao}
+                      onChange={e => setAptidaoFormal(prev => ({ ...prev, categoria_inaptidao: e.target.value }))}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="sinais_vitais_fora_do_padrao">Sinais vitais fora do padrão</option>
+                      <option value="intervalo_minimo_nao_cumprido">Intervalo mínimo não cumprido</option>
+                      <option value="medicamento_incompativel">Medicamento incompatível</option>
+                      <option value="cirurgia_recente">Cirurgia recente</option>
+                      <option value="viagem_area_de_risco">Viagem para área de risco</option>
+                      <option value="comportamento_de_risco">Comportamento de risco</option>
+                      <option value="condicao_clinica_na_triagem">Condição clínica na triagem</option>
+                      <option value="resultado_sorologico_alterado">Resultado sorológico alterado</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+                  {aptidaoFormal.resultado === 'inapto_temporario' && (
+                    <div>
+                      <Label className="text-xs">Inapto até *</Label>
+                      <Input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={aptidaoFormal.valido_ate}
+                        onChange={e => setAptidaoFormal(prev => ({ ...prev, valido_ate: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <Label className="text-xs">Observações internas (visível só para funcionários)</Label>
+                <textarea
+                  className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
+                  rows={2}
+                  placeholder="Observações clínicas relevantes..."
+                  value={aptidaoFormal.observacoes_internas}
+                  onChange={e => setAptidaoFormal(prev => ({ ...prev, observacoes_internas: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTriagemDialogOpen(false)}>Cancelar</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleRegistrarTriagem}>
+              Registrar Triagem
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={false} onOpenChange={setTriagemDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Triagem Médica e Coleta</DialogTitle>
@@ -983,6 +1398,116 @@ export function StaffDashboard() {
             <Button variant="outline" onClick={() => setEditDonorDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSalvarDonor} className="bg-blue-600 hover:bg-blue-700">
               <CheckCircle2 className="h-4 w-4 mr-2" />Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog — Alerta Médico */}
+      <Dialog open={alertaDialogOpen} onOpenChange={setAlertaDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Criar Alerta Médico</DialogTitle>
+            <DialogDescription>
+              Doador: <strong>{alertaDoador?.name}</strong> — a mensagem será exibida ao doador sem diagnóstico exposto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Tipo de alerta</Label>
+              <select
+                className="w-full border rounded-md p-2 text-sm mt-1"
+                value={alertaForm.tipo_alerta}
+                onChange={e => setAlertaForm(prev => ({ ...prev, tipo_alerta: e.target.value as any }))}
+              >
+                <option value="resultado_sorologico">Resultado sorológico</option>
+                <option value="convocacao_retorno">Convocação para retorno</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div>
+              <Label>Mensagem para o doador *</Label>
+              <textarea
+                className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
+                rows={4}
+                placeholder="Ex: Identificamos uma alteração nos exames realizados após sua doação. Por favor, compareça ao hemocentro para uma reavaliação..."
+                value={alertaForm.notificacao_doador}
+                onChange={e => setAlertaForm(prev => ({ ...prev, notificacao_doador: e.target.value }))}
+              />
+              <p className="text-xs text-gray-400 mt-1">Não inclua diagnósticos ou informações clínicas específicas.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAlertaDialogOpen(false)}>Cancelar</Button>
+            <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleCriarAlerta}>
+              Criar Alerta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog — Histórico Tipo Sanguíneo */}
+      <Dialog open={tipoSangDialogOpen} onOpenChange={setTipoSangDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Tipo Sanguíneo</DialogTitle>
+            <DialogDescription>
+              Doador: <strong>{tipoSangDoador?.name}</strong> — Tipo atual: <strong className="text-red-600">{tipoSangDoador?.tipo_sang || 'Não informado'}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {tipoSangHistorico.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wide text-gray-500">Histórico de alterações</Label>
+                <div className="divide-y border rounded-md max-h-40 overflow-y-auto">
+                  {tipoSangHistorico.map((h, i) => (
+                    <div key={i} className="p-2 text-xs flex justify-between items-center">
+                      <span>{h.tipo_sangue_anterior || '—'} → <strong>{h.tipo_sangue_novo}</strong></span>
+                      <span className="text-gray-400">{h.alterado_por} · {new Date(h.alterado_em).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="space-y-3 border-t pt-3">
+              <Label className="text-xs uppercase tracking-wide text-gray-500">Registrar alteração</Label>
+              <div>
+                <Label className="text-xs">Novo tipo sanguíneo *</Label>
+                <select
+                  className="w-full border rounded-md p-2 text-sm mt-1"
+                  value={tipoSangForm.tipo_sangue_novo}
+                  onChange={e => setTipoSangForm(prev => ({ ...prev, tipo_sangue_novo: e.target.value }))}
+                >
+                  <option value="">Selecione</option>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Motivo da alteração *</Label>
+                <select
+                  className="w-full border rounded-md p-2 text-sm mt-1"
+                  value={tipoSangForm.categoria_motivo}
+                  onChange={e => setTipoSangForm(prev => ({ ...prev, categoria_motivo: e.target.value }))}
+                >
+                  <option value="">Selecione</option>
+                  <option value="erro_cadastro">Erro de cadastro</option>
+                  <option value="confirmacao_laboratorial">Confirmação laboratorial</option>
+                  <option value="retificacao_com_laudo">Retificação com laudo</option>
+                  <option value="retificacao_profissional">Retificação pelo profissional</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTipoSangDialogOpen(false)}>Fechar</Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleSalvarTipoSang}
+              disabled={!tipoSangForm.tipo_sangue_novo || !tipoSangForm.categoria_motivo}
+            >
+              Salvar Alteração
             </Button>
           </DialogFooter>
         </DialogContent>

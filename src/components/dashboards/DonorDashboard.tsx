@@ -119,8 +119,9 @@ export function DonorDashboard() {
     (a: any) => ['AGE', 'CON', 'pendente', 'confirmado'].includes(a.status || a.status_agendamento)
   );
 
+  // Histórico = agendamentos cancelados ou substituídos + doações já realizadas
   const history = appointments.filter(
-    (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
+    (a: any) => ['CAN', 'EXC'].includes(a.status_agendamento || a.status)
   );
 
   const daysUntilNextDonation = (() => {
@@ -152,7 +153,7 @@ export function DonorDashboard() {
     if (!upcomingAppointment) return;
     if (!window.confirm('Deseja realmente cancelar este agendamento?')) return;
     try {
-      await api.put(`/auth/agendamentos/${upcomingAppointment.id}`, { status: 'CAN' });
+      await api.post(`/auth/agendamentos/${upcomingAppointment.id}/cancelar`);
       toast.success('Agendamento cancelado!');
       fetchData();
     } catch {
@@ -166,17 +167,23 @@ export function DonorDashboard() {
       return;
     }
     try {
-      const dataHora = `${rescheduleDate} ${rescheduleTime}:00`;
-      await api.put(`/auth/agendamentos/${upcomingAppointment.id}`, {
-        hemocentro_id: Number(rescheduleLocation),
-        data_hora_doacao: dataHora,
+      // Passo 1: cancelar o agendamento atual
+      await api.post(`/auth/agendamentos/${upcomingAppointment.id}/cancelar`);
+
+      // Passo 2: criar novo agendamento
+      await api.post('/auth/agendamentos', {
+        hemocentro_id:    Number(rescheduleLocation),
+        data_hora_doacao: `${rescheduleDate} ${rescheduleTime}:00`,
       });
 
       toast.success('Reagendado com sucesso!');
       setRescheduleDialogOpen(false);
+      setRescheduleDate('');
+      setRescheduleTime('');
+      setRescheduleLocation('');
       fetchData();
     } catch (err: any) {
-      toast.error('Erro ao reagendar: ' + (err.response?.data?.message || 'Tente novamente'));
+      toast.error('Erro ao reagendar: ' + (err.response?.data?.message || err.response?.data?.mensagem || 'Tente novamente'));
     }
   };
 
@@ -352,7 +359,13 @@ export function DonorDashboard() {
                                 </p>
                               </div>
                             </div>
-                            <Badge className="bg-green-100 text-green-700 border-none">Concluído</Badge>
+                            <Badge className={
+                              (h.status_agendamento || h.status) === 'CAN'
+                                ? "bg-red-100 text-red-700 border-none"
+                                : "bg-gray-100 text-gray-600 border-none"
+                            }>
+                              {(h.status_agendamento || h.status) === 'CAN' ? 'Cancelado' : 'Substituído'}
+                            </Badge>
                           </div>
                         ))
                       ) : (

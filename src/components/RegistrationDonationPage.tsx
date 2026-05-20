@@ -121,6 +121,7 @@ export function RegistrationDonationPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bloodCenters, setBloodCenters] = useState<{id: string, label: string}[]>([]);
+  const [lgpdAceite, setLgpdAceite] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && step === "personal") setStep("appointment");
@@ -345,6 +346,10 @@ export function RegistrationDonationPage() {
     if (formData.confirmPassword !== formData.password)
       newErrors.confirmPassword = "As senhas não coincidem.";
 
+    if (!lgpdAceite) {
+      newErrors.lgpd = "Você precisa aceitar a Política de Privacidade para continuar.";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -356,28 +361,46 @@ export function RegistrationDonationPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const buildRegistrationData = () => ({
-    name: formData.fullName.trim(),
-    email: formData.email.trim(),
-    password: formData.password,
-    password_confirmation: formData.confirmPassword,
-    cpf: formData.cpf.replace(/\D/g, ""),
-    sexo: formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
-    data_nasc: formatDateInputToApi(formData.birthDate),
-    telefone: formData.telefone.replace(/\D/g, ""),
-    tipo_sang: formData.bloodType && formData.bloodType !== "unknown"
-      ? formData.bloodType.toUpperCase() : undefined,
-    cep: formData.zipCode.replace(/\D/g, ""),
-    rua: formData.address,
-    numero: formData.numero,
-    cidade: formData.city,
-    uf: formData.state.substring(0, 2).toUpperCase(),
-    responsavel_nome: guardianData.guardianName || undefined,
-    responsavel_cpf: guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
-    responsavel_data_nasc: guardianData.guardianBirthDate
-      ? formatDateInputToApi(guardianData.guardianBirthDate) : undefined,
-    responsavel_telefone: guardianData.guardianPhone?.replace(/\D/g, "") || undefined,
-  });
+  const buildRegistrationData = () => {
+    // Ler respostas da pré-triagem do sessionStorage (salvas pelo EligibilityTestPage)
+    let respostasPreTriagem: any[] = [];
+    try {
+      const raw = sessionStorage.getItem('pre_triagem');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        respostasPreTriagem = parsed.respostas ?? [];
+      }
+    } catch {
+      respostasPreTriagem = [];
+    }
+
+    return {
+      name:                 formData.fullName.trim(),
+      email:                formData.email.trim(),
+      password:             formData.password,
+      password_confirmation:formData.confirmPassword,
+      cpf:                  formData.cpf.replace(/\D/g, ""),
+      sexo:                 formData.gender === "male" ? "M" : formData.gender === "female" ? "F" : "Outro",
+      data_nasc:            formatDateInputToApi(formData.birthDate),
+      telefone:             formData.telefone.replace(/\D/g, ""),
+      tipo_sang:            formData.bloodType && formData.bloodType !== "unknown"
+                              ? formData.bloodType.toUpperCase() : undefined,
+      cep:                  formData.zipCode.replace(/\D/g, ""),
+      rua:                  formData.address,
+      numero:               formData.numero,
+      cidade:               formData.city,
+      uf:                   formData.state.substring(0, 2).toUpperCase(),
+      responsavel_nome:     guardianData.guardianName || undefined,
+      responsavel_cpf:      guardianData.guardianCpf?.replace(/\D/g, "") || undefined,
+      responsavel_data_nasc:guardianData.guardianBirthDate
+                              ? formatDateInputToApi(guardianData.guardianBirthDate) : undefined,
+      responsavel_telefone: guardianData.guardianPhone?.replace(/\D/g, "") || undefined,
+      // LGPD
+      lgpd_aceite:          true,
+      // Pré-triagem (vazio se o usuário veio direto sem fazer o teste)
+      respostas_pre_triagem: respostasPreTriagem,
+    };
+  };
 
   const handleSkipAppointment = async () => {
     if (isAuthenticated) {
@@ -397,6 +420,7 @@ export function RegistrationDonationPage() {
 
       if (success) {
         const loggedUser = await login(formData.email, formData.password);
+        sessionStorage.removeItem('pre_triagem');
         navigate(loggedUser ? "/dashboard/doador" : "/login", { replace: true });
       }
     } catch (error: any) {
@@ -429,6 +453,7 @@ export function RegistrationDonationPage() {
           data_hora_doacao: `${format(date, "yyyy-MM-dd")} ${formData.appointmentTime}:00`,
         });
         setStep("success");
+        sessionStorage.removeItem('pre_triagem');
         return;
       }
 
@@ -444,9 +469,11 @@ export function RegistrationDonationPage() {
             data_hora_doacao: `${format(date, "yyyy-MM-dd")} ${formData.appointmentTime}:00`,
           });
           setStep("success");
+          sessionStorage.removeItem('pre_triagem');
         } else {
           // Se falhar login automático, vai para sucesso mas avisa para logar
           setStep("success");
+          sessionStorage.removeItem('pre_triagem');
         }
       }
     } catch (error: any) {
@@ -808,15 +835,27 @@ export function RegistrationDonationPage() {
                       {errors.guardian}
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
-                   <input type="checkbox" id="lgpd" required />
-                    <label htmlFor="lgpd" className="text-sm text-gray-600">
+                  {/* LGPD */}
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50">
+                      <input
+                        type="checkbox"
+                        id="lgpd"
+                        checked={lgpdAceite}
+                        onChange={e => setLgpdAceite(e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-red-600 cursor-pointer"
+                      />
+                      <label htmlFor="lgpd" className="text-sm text-gray-600 cursor-pointer leading-relaxed">
                         Li e concordo com a{' '}
-                    <a href="/privacidade" className="text-red-600 underline">
+                        <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="text-red-600 underline font-medium">
                     Política de Privacidade
-                    </a>{' '}
-                    e autorizo o uso dos meus dados para fins de doação de sangue, conforme a LGPD (Lei 13.709/2018).
-                    </label>
+                        </a>{' '}
+                        e autorizo o uso dos meus dados para fins de doação de sangue, conforme a LGPD (Lei nº 13.709/2018).
+                      </label>
+                    </div>
+                    {errors.lgpd && (
+                      <p className="text-red-500 text-xs">{errors.lgpd}</p>
+                    )}
                   </div>
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-lg py-6">
                     Continuar para Agendamento →
