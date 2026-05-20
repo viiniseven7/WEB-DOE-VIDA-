@@ -121,10 +121,17 @@ export function RegistrationDonationPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bloodCenters, setBloodCenters] = useState<{id: string, label: string}[]>([]);
+  const hasEligibilityApproval = sessionStorage.getItem('doevida_eligibility_result') === 'eligible';
 
   useEffect(() => {
     if (isAuthenticated && step === "personal") setStep("appointment");
   }, [isAuthenticated, step]);
+
+  useEffect(() => {
+    if (!isAuthenticated && !hasEligibilityApproval) {
+      navigate('/teste-elegibilidade', { replace: true });
+    }
+  }, [hasEligibilityApproval, isAuthenticated, navigate]);
 
   useEffect(() => {
     const fetchHemocentros = async () => {
@@ -381,7 +388,7 @@ export function RegistrationDonationPage() {
 
   const handleSkipAppointment = async () => {
     if (isAuthenticated) {
-      navigate("/dashboard/doador");
+      navigate("/dashboard/donor");
       return;
     }
 
@@ -397,7 +404,17 @@ export function RegistrationDonationPage() {
 
       if (success) {
         const loggedUser = await login(formData.email, formData.password);
-        navigate(loggedUser ? "/dashboard/doador" : "/login", { replace: true });
+        
+        if (loggedUser) {
+          // Salva elegibilidade do teste recem-feito na API
+          const hasSessionEligible = sessionStorage.getItem('doevida_eligibility_result') === 'eligible';
+          if (hasSessionEligible) {
+            await api.post("/auth/elegibilidade", { apto: true }).catch(() => {});
+            sessionStorage.removeItem('doevida_eligibility_result');
+          }
+        }
+        
+        navigate(loggedUser ? "/dashboard/donor" : "/login", { replace: true });
       }
     } catch (error: any) {
       console.error("ERRO:", error.response?.data);
@@ -438,6 +455,13 @@ export function RegistrationDonationPage() {
         // Tenta fazer login automático
         const loggedUser = await login(formData.email, formData.password);
         if (loggedUser) {
+          // Salva elegibilidade do teste recem-feito na API antes de agendar
+          const hasSessionEligible = sessionStorage.getItem('doevida_eligibility_result') === 'eligible';
+          if (hasSessionEligible) {
+            await api.post("/auth/elegibilidade", { apto: true }).catch(() => {});
+            sessionStorage.removeItem('doevida_eligibility_result');
+          }
+
           // Cria agendamento após login
           await api.post("/auth/agendamentos", {
             hemocentro_id: Number(formData.hemocentro_id),
@@ -451,6 +475,11 @@ export function RegistrationDonationPage() {
       }
     } catch (error: any) {
       console.error("ERRO:", error.response?.data);
+      if (error.response?.status === 403 && (error.response?.data?.code === 'REQUIRES_ELIGIBILITY' || error.response?.data?.error === 'REQUIRES_ELIGIBILITY')) {
+        alert("Você precisa realizar o teste de elegibilidade antes de agendar.");
+        navigate('/teste-elegibilidade');
+        return;
+      }
       const backendErrors = error.response?.data?.errors;
       if (backendErrors) {
         applyBackendErrors(backendErrors);
@@ -489,7 +518,7 @@ export function RegistrationDonationPage() {
                 </p>
                 <div className="flex flex-col gap-3 pt-4">
                   <Button
-                    onClick={() => navigate(isAuthenticated ? "/dashboard/doador" : "/login")}
+                    onClick={() => navigate(isAuthenticated ? "/dashboard/donor" : "/login")}
                     className="w-full bg-red-600 hover:bg-red-700 text-lg py-6"
                   >
                     {isAuthenticated ? "Ir para Meu Dashboard" : "Fazer Login"}

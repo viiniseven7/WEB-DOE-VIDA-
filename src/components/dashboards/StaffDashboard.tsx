@@ -141,30 +141,40 @@ export function StaffDashboard() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
-    try {
-      const [agendRes, usersRes, stockRes, statsRes] = await Promise.all([
-        api.get('/agendamentos'),
-        api.get('/users'),
-        api.get('/estoque'),
-        api.get('/estatisticas/funcionario'),
-      ]);
+    const [agendResult, usersResult, stockResult, statsResult] = await Promise.allSettled([
+      api.get('/agendamentos'),
+      api.get('/users'),
+      api.get('/estoque'),
+      api.get('/estatisticas/funcionario'),
+    ]);
 
+    if (agendResult.status === 'fulfilled') {
+      const agendRes = agendResult.value;
       const agends = Array.isArray(agendRes.data)
-        ? agendRes.data : agendRes.data.data ?? [];
+        ? agendRes.data : agendRes.data.data ?? agendRes.data.agendamentos ?? [];
 
-      // Filtra agendamentos do hemocentro do funcionário
-      const agendsFiltrados = agends.filter(
-        (a: any) => Number(a.hemocentro_id) === Number(user.hemocentro_id)
-      );
+      const agendsFiltrados = agends.filter((a: any) => {
+        const hemocentroId = getHemocentroId(a);
+        return !hemocentroId || !getHemocentroId(user) || Number(hemocentroId) === Number(getHemocentroId(user));
+      });
       setAgendamentos(agendsFiltrados);
+    } else {
+      console.error('Erro ao carregar agendamentos:', agendResult.reason?.response?.data || agendResult.reason);
+      toast.error('Erro ao carregar agendamentos');
+    }
 
+    if (usersResult.status === 'fulfilled') {
+      const usersRes = usersResult.value;
       const users = Array.isArray(usersRes.data)
-        ? usersRes.data : usersRes.data.data ?? [];
+        ? usersRes.data : usersRes.data.data ?? usersRes.data.users ?? [];
+      setDoadores(users.filter((u: any) => Number(u.role_id) === 1));
+    } else {
+      console.warn('Erro ao carregar doadores:', usersResult.reason?.response?.data || usersResult.reason);
+      setDoadores([]);
+    }
 
-      // Apenas doadores (role_id = 1)
-      setDoadores(users.filter((u: any) => u.role_id === 1));
-
-      // Mapeia estoque da API
+    if (stockResult.status === 'fulfilled') {
+      const stockRes = stockResult.value;
       const stockData = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
       setStock(stockData.map((s: any) => ({
         id: s.id,
@@ -173,13 +183,19 @@ export function StaffDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 100 // Valor padrão se não vier da API
       })));
-      setStats({ ...emptyStaffStats, ...statsRes.data });
-    } catch (err: any) {
-      console.error('Erro ao carregar:', err.response?.data);
-      toast.error('Erro ao carregar dados');
-    } finally {
-      setIsLoading(false);
+    } else {
+      console.warn('Erro ao carregar estoque:', stockResult.reason?.response?.data || stockResult.reason);
     }
+
+    if (statsResult.status === 'fulfilled') {
+      const statsRes = statsResult.value;
+      setStats({ ...emptyStaffStats, ...statsRes.data });
+    } else {
+      console.warn('Erro ao carregar estatísticas:', statsResult.reason?.response?.data || statsResult.reason);
+      setStats(emptyStaffStats);
+    }
+
+    setIsLoading(false);
   }, [user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -281,8 +297,14 @@ export function StaffDashboard() {
       await api.post(`/auth/agendamentos/${selectedAgendamento.id}/cancelar`, { motivo_cancelamento: cancelMotivo });
       toast.success('Agendamento cancelado!');
       setCancelDialogOpen(false);
+      setAgendamentos((prev) =>
+        prev.map((agendamento) =>
+          agendamento.id === selectedAgendamento.id
+            ? { ...agendamento, status: 'CAN', status_agendamento: 'CAN' }
+            : agendamento
+        )
+      );
       setSelectedAgendamento(null);
-      fetchData();
     } catch { toast.error('Erro ao cancelar agendamento'); }
   };
 

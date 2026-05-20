@@ -150,6 +150,21 @@ export function EligibilityTestPage() {
     setResult(null);
   };
 
+  const handleContinueToRegistration = async () => {
+    sessionStorage.setItem('doevida_eligibility_result', 'eligible');
+    sessionStorage.setItem('doevida_eligibility_checked_at', new Date().toISOString());
+    
+    if (isAuthenticated) {
+      try {
+        await api.post('/auth/elegibilidade', { apto: true });
+      } catch (err) {
+        console.error("Erro ao salvar elegibilidade na API:", err);
+      }
+    }
+    
+    navigate('/cadastro-doacao');
+  };
+
   if (result === 'eligible') {
     return (
       <div className="min-h-screen flex flex-col">
@@ -197,7 +212,7 @@ export function EligibilityTestPage() {
                 <div className="flex flex-col sm:flex-row gap-4">
                   <Button 
                     className="flex-1 bg-green-600 hover:bg-green-700 text-lg py-6" 
-                    onClick={() => navigate('/cadastro-doacao')}
+                    onClick={handleContinueToRegistration}
                   >
                     Continuar para Cadastro e Agendamento
                   </Button>

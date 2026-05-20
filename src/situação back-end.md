@@ -1,87 +1,54 @@
-# SITUAÇÃO BACKEND - Doe Vida API
 
-Este documento detalha o progresso atual do desenvolvimento do backend, seguindo o roteiro do `TAREFAS.md`.
+# Atualizações Recentes do Backend (para Integração do Front)
 
----
-
-## 🔐 **MÓDULO: AUTENTICAÇÃO E USUÁRIOS**
-*Estado: **95% Concluído***
-
-- [x] **Registro de Doador**: Ajustado para não exigir hemocentro (Doador Livre).
-- [x] **Gestão de Usuários (Admin)**: Validação condicional implementada (Hemocentro obrigatório para Staff, proibido para Doador).
-- [x] **Login/Sessão**: Implementado com Sanctum e integrado à lógica de Roles.
-- [x] **Roles**: Implementado via `role_id` no banco com filtragem nos controllers.
+As seguintes funcionalidades foram implementadas e já estão prontas para consumo pelo front-end:
 
 ---
 
-## 📅 **MÓDULO: AGENDAMENTOS**
-*Estado: **100% Concluído***
+## 1. Persistência de Elegibilidade (Autoexame)
 
-- [x] **Criação**: Fluxo com validação de restrição biológica (90/120 dias).
-- [x] **Gestão Doador**: Histórico completo e cancelamento próprio.
-- [x] **Gestão Funcionário**: Confirmação de presença e cancelamento por horário.
-- [x] **Rotas**: Implementado endpoints explícitos `/confirmar` e `/cancelar`.
+Agora o backend não apenas aceita, mas **exige** a elegibilidade para permitir agendamentos.
 
----
-
-## 🩺 **MÓDULO: TRIAGEM MÉDICA**
-*Estado: **80% Concluído***
-
-- [x] **Migrations**: Tabelas de perguntas, opções, respostas e triagem criadas.
-- [x] **Efetivação**: Controller agora permite concluir a triagem definindo aptidão e observações.
-- [x] **Filtros de Segurança**: Doador vê apenas suas triagens; Funcionário vê as do seu hemocentro.
-- [ ] **Falta**: Integrar a inaptidão automática baseada no sistema de perguntas/respostas (atualmente manual via Controller).
+* **Endpoints:**
+  * `POST /api/auth/elegibilidade`: Salva o resultado do teste. Enviar `{"apto": true/false}`.
+  * `GET /api/auth/elegibilidade/atual`: Retorna se o usuário está apto e a validade do teste.
+* **Regra de Negócio:** Se o usuário tentar `POST /api/agendamentos` sem estar apto no autoexame, receberá erro `403` com o código `REQUIRES_ELIGIBILITY`.
 
 ---
 
-## 🩸 **MÓDULO: DOAÇÃO**
-*Estado: **100% Concluído***
+## 2. Ciclo de Vida do Agendamento e Doação
 
-- [x] **Model & Controller**: Criados com relacionamentos (Doador, Funcionário, Hemocentro).
-- [x] **Registro de Coleta**: Implementado registro de tipo sanguíneo, quantidade (ml) e validade.
-- [x] **Histórico**: Listagem filtrada por papel de usuário (Doador/Staff).
+O fluxo de status foi padronizado para refletir a realidade da coleta.
 
----
-
-## 📦 **MÓDULO: ESTOQUE**
-*Estado: **0% Concluído***
-
-- [ ] **Migration**: Pendente.
-- [ ] **Integração**: Lógica de somar ML ao estoque automaticamente após o registro de uma doação.
+* **Status de Conclusão:** Ao registrar uma doação (`POST /api/doacoes`), o agendamento muda automaticamente para o status **`FIN`** (Finalizado).
+* **Visibilidade na Agenda (Staff):** A rota `GET /api/agendamentos` agora retorna agendamentos com status **`CAN`** (Cancelado) para funcionários, permitindo que a função de "Reabrir" do front-end funcione.
+* **Histórico do Doador:** A rota `GET /api/agendamentos/historico` agora inclui todos os status, permitindo ver agendamentos concluídos (`FIN`) e cancelados.
 
 ---
 
-## 📊 **MÓDULO: DASHBOARDS E ESTATÍSTICAS**
-*Estado: **0% Concluído***
+## 3. Emissão de Certificados Reais
 
-- [ ] **Controllers**: Pendente.
-- [ ] **Queries**: Necessário consolidar dados de doações e estoque para gráficos.
+O placeholder de certificados agora é uma funcionalidade completa.
 
----
-
-## 📧 **MÓDULO: NOTIFICAÇÕES E MAIL**
-*Estado: **20% Concluído***
-
-- [x] **Password Reset**: Estrutura inicial existente.
-- [ ] **Lembretes**: Pendente (Lembrete de agendamento e fim de restrição).
+* **Endpoints:**
+  * `GET /api/certificados`: Lista as doações concluídas do usuário logado.
+  * `GET /api/certificados/{id}/pdf`: Gera e retorna o arquivo PDF oficial do certificado.
+* **Segurança:** O certificado só pode ser baixado se a doação pertencer ao usuário logado e estiver devidamente registrada no sistema.
 
 ---
 
-## 🎯 **MÓDULO: CAMPANHAS**
-*Estado: **20% Concluído***
+## 4. Resumo de Novas Rotas
 
-- [x] **Migration**: Tabela `campanhas` criada.
-- [ ] **Gestão**: Controller para gerenciar campanhas ativas nos hemocentros.
+```http
+// Elegibilidade
+POST /api/auth/elegibilidade
+GET  /api/auth/elegibilidade/atual
+
+// Certificados
+GET  /api/certificados
+GET  /api/certificados/{id}/pdf
+```
 
 ---
 
-## ⚙️ **MODIFICAÇÕES RECENTES (CRÍTICAS)**
-1. **Hierarquia de Fluxo**: Implementada a lógica Agendamento -> Triagem -> Doação.
-2. **Endpoints Semânticos**: Criado POSTs específicos para ações de status (confirmar/cancelar) para facilitar o Front.
-3. **Documentação**: `DOC-API.md` totalmente atualizado com os novos módulos.
-
----
-
-## 🚀 **PRÓXIMOS PASSOS IMEDIATOS**
-1. Implementar o módulo de **Estoque** (atualização automática ao registrar doação).
-2. Criar as queries de Dashboard para o Diretor/Admin.
+**Status da Integração:** O backend agora valida e persiste todas as regras que antes eram apenas visuais no front-end.

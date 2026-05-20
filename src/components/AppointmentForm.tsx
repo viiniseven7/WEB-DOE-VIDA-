@@ -93,6 +93,11 @@ export function AppointmentForm() {
       setIsSubmitted(true);
       toast.success("Agendamento realizado!");
     } catch (error: any) {
+      if (error.response?.status === 403 && (error.response?.data?.code === 'REQUIRES_ELIGIBILITY' || error.response?.data?.error === 'REQUIRES_ELIGIBILITY' || error.response?.data?.message?.includes('elegibilidade'))) {
+        toast.error("Você precisa realizar o teste de elegibilidade antes de agendar.");
+        navigate('/teste-elegibilidade');
+        return;
+      }
       toast.error(error.response?.data?.message || "Falha no agendamento.");
     } finally {
       setIsLoading(false);
