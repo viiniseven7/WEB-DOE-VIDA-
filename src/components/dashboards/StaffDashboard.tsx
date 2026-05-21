@@ -502,20 +502,39 @@ export function StaffDashboard() {
         aptidaoPayload.valido_ate = aptidaoFormal.valido_ate;
       }
 
-      const triagemRes = await api.post('/auth/triagens', {
-        agendamento_id: agendamentoId,
-        user_id:        selectedAgendamento.user_id,
-        hemocentro_id:  user.hemocentro_id,
-        data_triagem:   new Date().toISOString().split('T')[0],
-        sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
-        respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
-        aptidao:        aptidaoPayload,
-      });
+      let triagemId: number | null = null;
+      let apto = false;
 
-      const apto = triagemRes.data?.apto === true;
-      const triagemId = triagemRes.data?.data?.id;
+      try {
+        const triagemRes = await api.post('/auth/triagens', {
+          agendamento_id: agendamentoId,
+          user_id:        selectedAgendamento.user_id,
+          hemocentro_id:  user.hemocentro_id,
+          data_triagem:   new Date().toISOString().split('T')[0],
+          sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
+          respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
+          aptidao:        aptidaoPayload,
+        });
+        
+        apto = triagemRes.data?.apto === true;
+        triagemId = triagemRes.data?.data?.id;
+      } catch (err: any) {
+        // RECUPERAÇÃO DE TRIAGEM: se já existe, o backend envia a existente no data do erro
+        if (err.response?.data?.message?.includes('Ja existe uma triagem') || err.response?.status === 422) {
+          const existing = err.response?.data?.data;
+          if (existing && existing.id) {
+            console.log('Recuperando triagem existente:', existing.id);
+            triagemId = existing.id;
+            apto = existing.apto === true || existing.status_triagem === 'P'; // Se status for P (apto/passou)
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
 
-      if (!triagemId) throw new Error('A API não retornou o ID da triagem.');
+      if (!triagemId) throw new Error('Não foi possível identificar o ID da triagem.');
 
       if (apto) {
         // Registrar doação
@@ -524,13 +543,13 @@ export function StaffDashboard() {
           triagem_id:        triagemId,
           user_id:           selectedAgendamento.user_id,
           hemocentro_id:     user.hemocentro_id,
-          tipo_sangue:       selectedAgendamento.doador?.tipo_sang,
+          tipo_sangue:       selectedAgendamento.doador?.tipo_sang || 'O+',
           quantidade:        Number(triagemData.ml_coletados) || 450,
           data_hora_doacao:  new Date().toISOString().replace('T', ' ').split('.')[0],
           data_validade_sangue: new Date(Date.now() + 42 * 24 * 60 * 60 * 1000)
             .toISOString().split('T')[0],
         });
-        toast.success('Triagem aprovada e doação registrada com sucesso!');
+        toast.success('Doação registrada com sucesso!');
       } else {
         toast.info('Triagem registrada — doador inapto para doação nesta data.');
       }

@@ -51,8 +51,13 @@ const isCompletedAppointment = (item: any) =>
   !!item?.doacao_id ||
   !!item?.doacao;
 
-const isActiveAppointment = (item: any) =>
-  ['AGE', 'CON', 'PENDENTE', 'CONFIRMADO'].includes(getStatus(item));
+const isActiveAppointment = (item: any) => {
+  const status = getStatus(item);
+  const isConcluded = isCompletedAppointment(item);
+  const isCancelled = ['CAN', 'EXC', 'CANCELADO', 'EXCLUIDO'].includes(status);
+  
+  return ['AGE', 'CON', 'PENDENTE', 'CONFIRMADO'].includes(status) && !isConcluded && !isCancelled;
+};
 
 export function DonorDashboard() {
   const { user, logout } = useAuth() as any;
@@ -174,9 +179,9 @@ export function DonorDashboard() {
 
   const upcomingAppointment = appointments.find(isActiveAppointment);
 
-  // Histórico = agendamentos cancelados, substituídos ou doações já realizadas
+  // Histórico = agendamentos concluídos, finalizados, cancelados ou excluídos
   const history = appointmentHistory.filter(
-    (a: any) => isCompletedAppointment(a) || ['CAN', 'EXC'].includes(getStatus(a))
+    (a: any) => isCompletedAppointment(a) || ['CAN', 'EXC', 'CANCELADO', 'EXCLUIDO'].includes(getStatus(a))
   );
 
   const daysUntilNextDonation = (() => {
@@ -320,28 +325,28 @@ export function DonorDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-md border-none">
+          <Card className="shadow-md border border-red-100 bg-red-50/50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Resumo do Doador</CardTitle>
+              <CardTitle className="text-sm font-medium text-red-800 uppercase tracking-wider">Resumo do Doador</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-gray-600">Tipo Sanguíneo</span>
-                <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-lg px-3">{user.tipo_sang || '?'}</Badge>
+                <span className="text-red-700">Tipo Sanguíneo</span>
+                <Badge className="bg-red-200 text-red-800 hover:bg-red-200 text-lg px-3 border-none">{user.tipo_sang || '?'}</Badge>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-600">Doações Realizadas</span>
-                <span className="font-bold text-xl">{donations.length}</span>
+                <span className="text-red-700">Doações Realizadas</span>
+                <span className="font-bold text-xl text-red-900">{donations.length}</span>
               </div>
-              <div className="pt-4 border-t">
-                <p className="text-xs text-gray-400 mb-1">Próxima doação disponível em:</p>
-                <p className={`font-semibold flex items-center gap-1 ${!isRestricted ? 'text-green-600' : 'text-amber-600'}`}>
+              <div className="pt-4 border-t border-red-200">
+                <p className="text-xs text-red-500 mb-1">Próxima doação disponível em:</p>
+                <p className={`font-semibold flex items-center gap-1 ${!isRestricted ? 'text-green-700' : 'text-amber-700'}`}>
                   <CheckCircle2 className="w-4 h-4" />
                   {!isRestricted ? 'Já disponível!' : `${daysUntilNextDonation} dias`}
                 </p>
               </div>
               {isRestricted && (
-                <div className="pt-2 border-t text-xs text-orange-600 flex gap-1 items-center">
+                <div className="pt-2 border-t border-red-200 text-xs text-orange-700 flex gap-1 items-center">
                   <AlertCircle className="w-3 h-3" /> Em período de carência
                 </div>
               )}
@@ -468,37 +473,37 @@ export function DonorDashboard() {
           </div>
 
           <div className="space-y-6">
-            <Card className="shadow-md border-none bg-gradient-to-br from-gray-900 to-gray-800 text-white">
+            <Card className="shadow-md border border-blue-100 bg-blue-50/50">
               <CardHeader>
-                <CardTitle className="text-lg">Dicas Pré-Doação</CardTitle>
+                <CardTitle className="text-lg text-blue-900">Dicas Pré-Doação</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-3 text-sm">
-                  <div className="w-6 h-6 bg-blue-500/20 rounded flex items-center justify-center text-blue-300 shrink-0">1</div>
-                  <p className="text-gray-100">Beba bastante água nas 24h anteriores.</p>
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-blue-200 rounded flex items-center justify-center text-blue-700 shrink-0 font-bold">1</div>
+                  <p className="text-blue-800">Beba bastante água nas 24h anteriores.</p>
                 </div>
-                <div className="flex gap-3 text-sm">
-                  <div className="w-6 h-6 bg-orange-500/20 rounded flex items-center justify-center text-orange-300 shrink-0">2</div>
-                  <p className="text-gray-100">Evite alimentos gordurosos 3h antes da doação.</p>
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-orange-200 rounded flex items-center justify-center text-orange-700 shrink-0 font-bold">2</div>
+                  <p className="text-blue-800">Evite alimentos gordurosos 3h antes da doação.</p>
                 </div>
-                <div className="flex gap-3 text-sm">
-                  <div className="w-6 h-6 bg-purple-500/20 rounded flex items-center justify-center text-purple-300 shrink-0">3</div>
-                  <p className="text-gray-100">Durma pelo menos 6h na noite anterior.</p>
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-purple-200 rounded flex items-center justify-center text-purple-700 shrink-0 font-bold">3</div>
+                  <p className="text-blue-800">Durma pelo menos 6h na noite anterior.</p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="shadow-md border-none">
+            <Card className="shadow-md border border-gray-200 bg-gray-50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-lg font-bold">Meu Perfil</CardTitle>
-                <Button variant="ghost" size="icon" onClick={() => setEditProfileDialogOpen(true)} className="text-red-600">
+                <CardTitle className="text-lg font-bold text-gray-900">Meu Perfil</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setEditProfileDialogOpen(true)} className="text-red-600 hover:bg-red-50">
                   <Edit className="w-4 h-4" />
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-3 text-sm"><Mail className="w-4 h-4 text-gray-400" /> {user.email}</div>
-                <div className="flex items-center gap-3 text-sm"><Phone className="w-4 h-4 text-gray-400" /> {user.telefone || 'Não informado'}</div>
-                <div className="flex items-center gap-3 text-sm"><UserIcon className="w-4 h-4 text-gray-400" /> CPF: {user.cpf || 'Não informado'}</div>
+                <div className="flex items-center gap-3 text-sm text-gray-700"><Mail className="w-4 h-4 text-gray-400" /> {user.email}</div>
+                <div className="flex items-center gap-3 text-sm text-gray-700"><Phone className="w-4 h-4 text-gray-400" /> {user.telefone || 'Não informado'}</div>
+                <div className="flex items-center gap-3 text-sm text-gray-700"><UserIcon className="w-4 h-4 text-gray-400" /> CPF: {user.cpf || 'Não informado'}</div>
               </CardContent>
             </Card>
           </div>

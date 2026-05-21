@@ -32,39 +32,6 @@ interface RespostaParaSalvar {
   dias_inaptidao: number | null;
 }
 
-const fallbackPerguntas: Pergunta[] = [
-  {
-    id: 1,
-    pergunta: "Você tem entre 16 e 69 anos?",
-    bloco: 0,
-    obrigatoria: true,
-    opcoes: [
-      { id: 1, texto_opcao: "Sim", gera_inaptidao: false, dias_inaptidao: null },
-      { id: 2, texto_opcao: "Não", gera_inaptidao: true, dias_inaptidao: null },
-    ],
-  },
-  {
-    id: 2,
-    pergunta: "Você pesa pelo menos 50kg?",
-    bloco: 0,
-    obrigatoria: true,
-    opcoes: [
-      { id: 3, texto_opcao: "Sim", gera_inaptidao: false, dias_inaptidao: null },
-      { id: 4, texto_opcao: "Não", gera_inaptidao: true, dias_inaptidao: null },
-    ],
-  },
-  {
-    id: 3,
-    pergunta: "Você está se sentindo bem hoje?",
-    bloco: 0,
-    obrigatoria: true,
-    opcoes: [
-      { id: 5, texto_opcao: "Sim", gera_inaptidao: false, dias_inaptidao: null },
-      { id: 6, texto_opcao: "Não", gera_inaptidao: true, dias_inaptidao: null },
-    ],
-  },
-];
-
 export function EligibilityTestPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth() as any;
@@ -82,13 +49,11 @@ export function EligibilityTestPage() {
         const res = await api.get('/triagens/perguntas?bloco=0');
         const data = res.data?.data ?? res.data ?? [];
 
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setPerguntas(data);
-        } else {
-          setPerguntas(fallbackPerguntas);
         }
-      } catch {
-        setPerguntas(fallbackPerguntas);
+      } catch (err) {
+        console.error("Erro ao carregar perguntas:", err);
       } finally {
         setIsLoadingPerguntas(false);
       }

@@ -1,54 +1,67 @@
+# Situação Atual do Backend - Integração de Fluxos
 
-# Atualizações Recentes do Backend (para Integração do Front)
+Este documento resume as regras de negócio e a forma correta do front-end consumir os novos módulos de Triagem e LGPD.
 
-As seguintes funcionalidades foram implementadas e já estão prontas para consumo pelo front-end:
+## 1. Fluxo de Elegibilidade (Autoexame)
 
----
+O backend agora **exige** que o doador tenha um teste de elegibilidade válido para permitir agendamentos.
 
-## 1. Persistência de Elegibilidade (Autoexame)
+### O que o Front deve fazer:
 
-Agora o backend não apenas aceita, mas **exige** a elegibilidade para permitir agendamentos.
+1. **Doador Logado:** Ao finalizar o teste de elegibilidade (`EligibilityTestPage.tsx`), o front deve disparar `POST /api/auth/elegibilidade` com o corpo `{"apto": true}`.
+2. **Validade (7 dias):** O teste agora tem validade de **7 dias**. O backend controla isso pelo campo `autoexame_validade`. O doador pode agendar para qualquer data futura, desde que o *ato de agendar* ocorra dentro desses 7 dias.
+3. **Tratamento de Erro:** Se o front tentar disparar `POST /api/agendamentos` e o backend retornar erro `403` com o código `REQUIRES_ELIGIBILITY`, o doador deve ser orientado a refazer o teste.
 
-* **Endpoints:**
-  * `POST /api/auth/elegibilidade`: Salva o resultado do teste. Enviar `{"apto": true/false}`.
-  * `GET /api/auth/elegibilidade/atual`: Retorna se o usuário está apto e a validade do teste.
-* **Regra de Negócio:** Se o usuário tentar `POST /api/agendamentos` sem estar apto no autoexame, receberá erro `403` com o código `REQUIRES_ELIGIBILITY`.
+## 2. Cadastro + Pré-triagem (LGPD)
 
----
+O endpoint de registro foi unificado para garantir conformidade legal e fluidez no UX.
 
-## 2. Ciclo de Vida do Agendamento e Doação
+### O que o Front deve fazer:
 
-O fluxo de status foi padronizado para refletir a realidade da coleta.
+* **LGPD:** O campo `lgpd_aceite: true` é **obrigatório** no `POST /api/auth/register`.
+* **Pré-triagem:** Se o usuário fez o teste antes de se cadastrar, envie as respostas no array `respostas_pre_triagem`. Se o resultado for "apto", o backend já ativa a elegibilidade do usuário automaticamente por 7 dias.
 
-* **Status de Conclusão:** Ao registrar uma doação (`POST /api/doacoes`), o agendamento muda automaticamente para o status **`FIN`** (Finalizado).
-* **Visibilidade na Agenda (Staff):** A rota `GET /api/agendamentos` agora retorna agendamentos com status **`CAN`** (Cancelado) para funcionários, permitindo que a função de "Reabrir" do front-end funcione.
-* **Histórico do Doador:** A rota `GET /api/agendamentos/historico` agora inclui todos os status, permitindo ver agendamentos concluídos (`FIN`) e cancelados.
+## 1. Fluxo de Elegibilidade (Autoexame)
 
----
+...
 
-## 3. Emissão de Certificados Reais
+## 2. Cadastro + Pré-triagem (LGPD)
 
-O placeholder de certificados agora é uma funcionalidade completa.
+...
 
-* **Endpoints:**
-  * `GET /api/certificados`: Lista as doações concluídas do usuário logado.
-  * `GET /api/certificados/{id}/pdf`: Gera e retorna o arquivo PDF oficial do certificado.
-* **Segurança:** O certificado só pode ser baixado se a doação pertencer ao usuário logado e estiver devidamente registrada no sistema.
+## 3. Triagem Clínica Dinâmica (Módulo Staff)
 
----
+...
 
-## 4. Resumo de Novas Rotas
+## 4. Padronização de Status (CON vs FIN)
+
+Foi introduzida uma distinção clara entre presença e conclusão:
+
+* **CON (Confirmado):** O doador está presente no hemocentro. Use este status para liberar o botão de "Iniciar Triagem".
+* **FIN (Finalizado):** O backend define este status automaticamente ao registrar uma doação bem-sucedida (`POST /api/doacoes`).
+* **Importante:** O front deve tratar `FIN` como o estado final de sucesso absoluto do ciclo.
+
+## 4. Novos Endpoints Disponíveis
+
+Abaixo, a lista de rotas que o front-end já pode utilizar para substituir placeholders:
 
 ```http
-// Elegibilidade
-POST /api/auth/elegibilidade
-GET  /api/auth/elegibilidade/atual
+// Elegibilidade e Gestão de Conta (Doador)
+POST   /api/auth/elegibilidade         // Salva resultado do autoexame
+GET    /api/auth/elegibilidade/atual   // Verifica status e validade (7 dias)
+GET    /api/auth/meus-dados            // Portabilidade LGPD (Art. 18)
+DELETE /api/auth/minha-conta           // Anonimização e exclusão (LGPD)
+
+// Triagem e Auditoria (Staff)
+GET    /api/triagens/perguntas         // Busca perguntas dinâmicas
+POST   /api/auth/triagens              // Registro completo (Sinais vitais + Respostas)
+POST   /api/auth/doadores/{id}/tipo-sangue-historico // Auditoria de alteração de tipo sanguíneo
 
 // Certificados
-GET  /api/certificados
-GET  /api/certificados/{id}/pdf
+GET    /api/certificados               // Lista doações que geram certificado
+GET    /api/certificados/{id}/pdf       // Download do PDF oficial
 ```
 
 ---
 
-**Status da Integração:** O backend agora valida e persiste todas as regras que antes eram apenas visuais no front-end.
+**Status:** O backend está 100% sincronizado com as necessidades de validação real de negócio solicitadas pelo front-end.clear
