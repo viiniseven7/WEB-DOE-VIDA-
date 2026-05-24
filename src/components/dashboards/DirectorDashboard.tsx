@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import {
   Droplet, Calendar, Users, LogOut, Bell, TrendingUp, Activity,
   UserCheck, BarChart3, Clock, Download, UserPlus, Plus, Minus,
@@ -44,6 +46,17 @@ const bloodTypeDistribution = [
   { name: 'AB-', value: 1, color: '#0891B2' },
 ];
 
+const emptyDirectorStats = {
+  agendamentos_hoje: 0,
+  confirmados_hoje: 0,
+  doacoes_mes: 0,
+  estoque_critico: [] as string[],
+  agendamentos_semana: {} as Record<string, number>,
+  doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
+  doacoes_por_tipo: {} as Record<string, number>,
+  total_doadores_ativos: 0,
+};
+
 const roleLabels: Record<number, string> = {
   1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
 };
@@ -62,9 +75,14 @@ export function DirectorDashboard() {
   const navigate = useNavigate();
 
   // ── Estado: dados da API
+  const [hemocentros, setHemocentros] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [agendamentosHoje, setAgendamentosHoje] = useState<any[]>([]);
+  const [doacoes, setDoacoes] = useState<any[]>([]);
+  const [stats, setStats] = useState(emptyDirectorStats);
   const [isLoading, setIsLoading] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
   // ── Estado: API de Estoque
   const [stock, setStock] = useState<any[]>([]);
@@ -104,11 +122,16 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [usersRes, agendRes, stockRes] = await Promise.all([
+      const [hemocentrosRes, usersRes, agendRes, doacoesRes, stockRes, statsRes] = await Promise.all([
+        api.get('/hemocentros'),
         api.get('/users'),
         api.get('/agendamentos'),
+        api.get('/doacoes'),
         api.get('/estoque'),
+        api.get('/estatisticas/diretor'),
       ]);
+
+      setHemocentros(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []);
 
       const todosUsers = Array.isArray(usersRes.data)
         ? usersRes.data
@@ -134,6 +157,11 @@ export function DirectorDashboard() {
 
       setAgendamentosHoje(agendHoje);
 
+      const doacoesData = Array.isArray(doacoesRes.data)
+        ? doacoesRes.data
+        : doacoesRes.data.data ?? [];
+      setDoacoes(doacoesData.filter((doacao: any) => Number(doacao.hemocentro_id) === Number(user.hemocentro_id)));
+
       // Mapeia estoque da API
       const stockDataRaw = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
       const myStock = stockDataRaw.filter((s: any) => Number(s.hemocentro_id) === Number(user.hemocentro_id));
@@ -144,6 +172,7 @@ export function DirectorDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 150
       })));
+      setStats({ ...emptyDirectorStats, ...statsRes.data });
 
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
@@ -242,24 +271,73 @@ export function DirectorDashboard() {
   };
 
 
-  const handleConfirmExport = () => {
+  const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
-    const names: Record<string, string> = {
-      monthly: 'Mensal', donors: 'Doadores', stock: 'Estoque', performance: 'Desempenho',
+
+    const endpoints: Record<string, string> = {
+      donations: '/relatorios/doacoes',
+      stock:     '/relatorios/estoque',
+      donors:    '/relatorios/doadores',
     };
-    const ext = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
-    toast.success(`Relatório ${names[reportType]} exportado em ${ext}!`);
-    setExportDialogOpen(false);
-    setReportType('');
-    setReportFormat('pdf');
+
+    const endpoint = endpoints[reportType];
+    if (!endpoint) { toast.error('Tipo de relatório não disponível'); return; }
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:8000/api${endpoint}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Erro ao gerar relatório');
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Relatório gerado com sucesso!');
+      setExportDialogOpen(false);
+    } catch {
+      toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    }
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
-  const hemocentroNome = user.hemocentro?.nome || user.hemocentroName || `Hemocentro #${user.hemocentro_id}`;
+  const hemocentroNomeResolvido =
+    user.hemocentro?.nome ||
+    user.hemocentroName ||
+    hemocentros.find((hemocentro: any) => Number(hemocentro.id) === Number(user.hemocentro_id))?.nome ||
+    '';
+  const hemocentroNome = hemocentroNomeResolvido
+    ? `Hemocentro ${hemocentroNomeResolvido}`
+    : 'Hemocentro vinculado';
+  const notifications = useMemo(() => buildDashboardNotifications({
+    hemocentroId: Number(user?.hemocentro_id),
+    doacoes,
+    agendamentos: agendamentosHoje,
+    users: staffList,
+    hemocentros,
+  }), [user?.hemocentro_id, doacoes, agendamentosHoje, staffList, hemocentros]);
+  const notificationsKey = notifications.map((notification) => `${notification.id}:${notification.timeLabel}`).join('|');
+
+  useEffect(() => {
+    setHasUnreadNotifications(notifications.length > 0);
+  }, [notificationsKey]);
   const agendConcluidos = agendamentosHoje.filter(
     (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
   const staffOnline = staffList.filter((s: any) => s.status === 1 || s.status === 'ativo').length;
+  const monthlyStats = stats.doacoes_por_mes.length
+    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, donations: item.total }))
+    : monthlyDonations;
+  const bloodTypeStats = Object.keys(stats.doacoes_por_tipo || {}).length
+    ? Object.entries(stats.doacoes_por_tipo).map(([name, value]) => ({
+        name,
+        value: Number(value),
+        color: bloodTypeDistribution.find(d => d.name === name)?.color || '#DC2626',
+      }))
+    : bloodTypeDistribution;
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -278,6 +356,49 @@ export function DirectorDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Popover
+              open={notificationsOpen}
+              onOpenChange={(open) => {
+                setNotificationsOpen(open);
+                if (open) {
+                  setHasUnreadNotifications(false);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {hasUnreadNotifications && notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-purple-600 text-white rounded-full text-[10px] flex items-center justify-center">
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="border-b px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-900">Atualizações do hemocentro</p>
+                  <p className="text-xs text-gray-500">{hemocentroNome}</p>
+                </div>
+                <div className="divide-y">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-gray-500">
+                      Nenhuma atualização recente disponível.
+                    </div>
+                  ) : notifications.map((notification) => (
+                    <div key={notification.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                          <p className="text-sm text-gray-600">{notification.description}</p>
+                        </div>
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">{notification.timeLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Avatar>
               <AvatarFallback className="bg-purple-100 text-purple-600">
                 {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
@@ -314,7 +435,7 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">325</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
@@ -339,7 +460,7 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : agendamentosHoje.length}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -353,7 +474,7 @@ export function DirectorDashboard() {
             <CardHeader className="pb-3">
               <CardDescription>Estoque Crítico</CardDescription>
               <CardTitle className="text-3xl text-red-600">
-                {stock.filter(s => s.current < s.min).length}
+                {stats.estoque_critico.length}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -384,7 +505,7 @@ export function DirectorDashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={monthlyDonations}>
+                    <LineChart data={monthlyStats}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" /><YAxis />
                       <Tooltip /><Legend />
@@ -400,17 +521,31 @@ export function DirectorDashboard() {
                   <CardDescription>Doações do mês atual</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie data={bloodTypeDistribution} cx="50%" cy="50%" outerRadius={100}
-                        label={({ name, value }) => `${name}: ${value}%`} dataKey="value">
-                        {bloodTypeDistribution.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={bloodTypeStats}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          innerRadius={40}
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {bloodTypeStats.map((entry, i) => (
+                            <Cell key={`cell-${i}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: any, name: string) => [`${value} bolsas`, name]}
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Legend verticalAlign="bottom" height={36} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -505,31 +640,33 @@ export function DirectorDashboard() {
                   {stock.map(item => {
                     const critico = item.current < item.min;
                     return (
-                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-sm transition-all">
+                      <div key={item.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-50 p-3 rounded-lg">
-                              <p className="text-xl font-bold text-red-600">{item.type}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-900">{item.current} bolsas</p>
-                              <p className="text-xs text-gray-500">Mín: {item.min} | Máx: {item.max}</p>
-                            </div>
+                            <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
+                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                              {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
-                            </Badge>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleOpenUpdateStock(item.type)}>
-                              <Activity className="h-4 w-4" />
-                            </Button>
+                          <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
+                            {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
+                          </Badge>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Estoque atual</span>
+                            <span className="font-semibold">{item.current} bolsas</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }} />
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500">
+                            <span>Mín: {item.min}</span><span>Máx: {item.max}</span>
                           </div>
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2.5">
-                          <div
-                            className={`h-2.5 rounded-full ${critico ? 'bg-red-600' : item.current < item.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
-                            style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }}
-                          />
+                        <div className="mt-3 pt-3 border-t">
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenUpdateStock(item.type)}>
+                            <Activity className="h-4 w-4 mr-2" />Atualizar Estoque
+                          </Button>
                         </div>
                       </div>
                     );
@@ -687,11 +824,15 @@ export function DirectorDashboard() {
               <Label>Quantidade (bolsas)</Label>
               <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
             </div>
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+              Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
+              <strong>{stock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUpdateStockDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
-              {stockAction === 'add' ? 'Adicionar' : 'Remover'}
+              {stockAction === 'add' ? <><Plus className="h-4 w-4 mr-2" />Adicionar</> : <><Minus className="h-4 w-4 mr-2" />Remover</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -731,7 +872,7 @@ export function DirectorDashboard() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmExport} className="bg-purple-600 hover:bg-purple-700 text-white">
+            <Button onClick={handleExportReport} className="bg-purple-600 hover:bg-purple-700 text-white">
               <Download className="h-4 w-4 mr-2" />Exportar
             </Button>
           </DialogFooter>
