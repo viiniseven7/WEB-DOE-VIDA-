@@ -130,6 +130,18 @@ O front foi ajustado para a agenda não depender de `/estoque` ou `/estatisticas
 
 Após sucesso, o front mantém o card visível como "Doação realizada", com visual verde.
 
+### Busca de doadores
+
+- Usa `GET /api/users` a partir da aba "Doadores".
+- **Busca via Backend:** O front agora envia todos os filtros para a API e exibe os resultados retornados. A regra de visibilidade por hemocentro é aplicada no servidor.
+- **Filtros Expandidos:** Suporta busca por Nome/CPF, Tipo Sanguíneo, Sexo, Status (Ativo/Inativo), Cidade, Faixa Etária e Período de Última Doação.
+- **Experiência do Usuário:**
+  - Exibe indicador de carregamento (spinner) durante a busca.
+  - Botão "Limpar" para resetar todos os filtros e estados.
+  - Paginação sincronizada com os metadados da API.
+- O tipo sanguíneo do doador é normalizado no backend e exibido conforme retornado.
+- **Segurança:** Removida a filtragem local redundante; o front confia na autorização do backend.
+
 ---
 
 ## Pontos que dependem do backend
@@ -151,3 +163,23 @@ Após sucesso, o front mantém o card visível como "Doação realizada", com vi
 npm install
 npm run build
 ```
+## Atualizacao recente do front
+
+### Painel do funcionario
+
+- A aba `Agenda` foi reorganizada para deixar titulo a esquerda, calendario no centro e busca no canto direito.
+- A aba `Estoque` ganhou bloco recolhivel para doacoes do dia, evitando listas muito longas abertas por padrao.
+- Doacoes com estoque atualizado passam para estado visual verde claro.
+
+### Cenario demo local para validar usabilidade
+
+- O front passou a gerar 50 agendamentos demo no painel do funcionario, com nomes ficticios e distribuicao em 10 dias do mes.
+- Essa massa aparece apenas em ambiente local (`localhost` e `127.0.0.1`).
+- Os agendamentos demo suportam fluxo local de check-in, cancelamento, reabertura, triagem, geracao de doacao demo e atualizacao de estoque demo.
+
+### Observacao importante
+
+- Esse comportamento foi criado para teste de UX e navegacao.
+- Ele nao substitui seed real do backend e nao grava esses 50 registros na base.
+
+---

@@ -41,27 +41,34 @@ Foi introduzida uma distinção clara entre presença e conclusão:
 * **FIN (Finalizado):** O backend define este status automaticamente ao registrar uma doação bem-sucedida (`POST /api/doacoes`).
 * **Importante:** O front deve tratar `FIN` como o estado final de sucesso absoluto do ciclo.
 
-## 4. Novos Endpoints Disponíveis
+## 5. Busca de Doadores (Regra de Hemocentro)
 
-Abaixo, a lista de rotas que o front-end já pode utilizar para substituir placeholders:
+A busca de doadores foi reestruturada para garantir a privacidade e seguir as regras de negócio das unidades.
 
-```http
-// Elegibilidade e Gestão de Conta (Doador)
-POST   /api/auth/elegibilidade         // Salva resultado do autoexame
-GET    /api/auth/elegibilidade/atual   // Verifica status e validade (7 dias)
-GET    /api/auth/meus-dados            // Portabilidade LGPD (Art. 18)
-DELETE /api/auth/minha-conta           // Anonimização e exclusão (LGPD)
+### Regras Aplicadas:
 
-// Triagem e Auditoria (Staff)
-GET    /api/triagens/perguntas         // Busca perguntas dinâmicas
-POST   /api/auth/triagens              // Registro completo (Sinais vitais + Respostas)
-POST   /api/auth/doadores/{id}/tipo-sangue-historico // Auditoria de alteração de tipo sanguíneo
-
-// Certificados
-GET    /api/certificados               // Lista doações que geram certificado
-GET    /api/certificados/{id}/pdf       // Download do PDF oficial
-```
+1. **Visibilidade Restrita:** Funcionários e Diretores autenticados só visualizam doadores que já realizaram doação no **mesmo hemocentro** ao qual o funcionário pertence.
+2. **Vínculo por Doação:** O backend utiliza a tabela de `doacoes` e o campo `doador_id` para validar se um doador possui histórico na unidade do funcionário.
+3. **Segurança de Dados:** O filtro é aplicado no nível do servidor (Supabase Edge Function). Mesmo que parâmetros de busca sejam manipulados no frontend, o backend bloqueia o retorno de doadores de outras unidades.
+4. **Filtros Dinâmicos:** Suporte completo a filtros combinados (AND) via Query Params:
+   - Pesquisa por Nome/CPF (`q`).
+   - Tipo Sanguíneo (`bloodType`).
+   - Sexo, Status, Cidade, Faixa Etária.
+   - Período de última doação.
+5. **Enriquecimento de Resposta:** O retorno inclui metadados de paginação e campos normalizados como `lastDonation` e `hemocentroName`.
 
 ---
 
 **Status:** O backend está 100% sincronizado com as necessidades de validação real de negócio solicitadas pelo front-end.clear
+## 6. Observacao sobre o fluxo demo local do painel de funcionario
+
+As ultimas alteracoes de agenda, triagem e estoque usadas para teste de usabilidade do painel de funcionario foram implementadas no frontend, em modo demo local.
+
+### Importante
+
+1. O backend real continua sendo a fonte de verdade para `agendamentos`, `triagens`, `doacoes` e `estoque`.
+2. Os 50 agendamentos ficticios distribuidos em 10 dias do mes nao foram persistidos na base Laravel.
+3. O tratamento local de check-in, cancelamento, reabertura, triagem e estoque para IDs demo existe apenas para evitar erro de integracao durante testes de UX em `localhost`.
+4. Se a equipe quiser transformar esse cenario em massa real de homologacao, o ideal e criar seed proprio no backend com persistencia em banco.
+
+---

@@ -16,8 +16,15 @@ Os caminhos abaixo são relativos ao prefixo padrão `/api` do Laravel.
 ### POST /api/auth/register
 
 - **Controller**: `AuthController@register`
-- **Body JSON esperado**: `name`, `email`, `password`, `cpf`, `sexo`, `data_nasc`, `cep`, `rua`, `numero`, `cidade`, etc.
+- **Body JSON esperado**: 
+  - `name`, `email`, `password`, `cpf` (obrigatórios)
+  - `sexo` (`male`, `female`, `other`)
+  - `data_nasc` (`YYYY-MM-DD`)
+  - `phone`, `tipo_sanguineo`
+  - `cep`, `rua`, `numero`, `cidade`, `uf`
+  - `hemocenterId`, `hemocentroName`
 - **Perfil**: O sistema define automaticamente `role_id = 1` (Doador).
+- **Status inicial**: Definido como `1` (Ativo) por padrão.
 
 ### POST /api/auth/login
 
@@ -36,12 +43,115 @@ Os caminhos abaixo são relativos ao prefixo padrão `/api` do Laravel.
 
 ### GET /api/users
 
-- **Middleware**: `auth:sanctum`
-- **Filtro de Segurança/Privacidade**:
+- **Parâmetros de Busca (Query String)**:
+  - `search` ou `name`: Pesquisa por nome parcial.
+  - `cpf`: Pesquisa por CPF.
+  - `role`: Filtra por papel (`doador`, `funcionario`, `diretor`, `admin`).
+  - `tipo_sang`: Filtra por tipo sanguíneo (`A+`, `O-`, etc.).
+  - `sexo`: Filtra por sexo (`M`, `F`, `Outro`).
+  - `status`: Filtra por status do usuário (`1` para Ativo, `0` para Inativo).
+  - `cidade`: Filtra por nome da cidade (busca parcial).
+  - `idade_min` / `idade_max`: Filtra por faixa etária (calculado via `data_nasc`).
+  - `data_doacao_inicio` / `data_doacao_fim`: Filtra doadores que doaram dentro de um período específico (`YYYY-MM-DD`).
+- **Paginação**:
+  - `page`: Número da página (padrão: 1).
+  - `limit`: Resultados por página (padrão: 10).
+- **Filtro de Segurança e Regra de Negócio (Backend)**:
   - **Doador**: Vê apenas seus próprios dados.
-  - **Funcionário/Diretor**: Vê apenas doadores que já realizaram triagem ou doação em seu hemocentro vinculado.
+  - **Funcionário/Diretor**: Vê apenas doadores que já realizaram doação no **hemocentro ao qual o funcionário pertence**.
+    - O sistema identifica o `hemocentro_id` do funcionário logado e filtra na tabela `doacao` pelo campo `user_id`, retornando apenas doadores com doação registrada naquela unidade.
   - **Admin**: Vê todos os usuários do sistema.
-- **Ordenação**: Alfabética por nome.
+- **Segurança Obrigatória**: Mesmo que o usuário altere parâmetros manualmente, o backend bloqueia o acesso a doadores de outros hemocentros.
+- **Retorno**:
+  - `data`: Lista de usuários encontrados, incluindo `hemocentroName` e `lastDonation`.
+  - `meta`: Objeto com `total`, `page`, `limit` e `totalPages`.
+
+### Comportamento da busca de doadores no painel do funcionario
+
+- A busca não retorna todos os doadores do sistema por padrão; ela é sempre restrita ao hemocentro do funcionário.
+- Se a busca for enviada vazia, nenhum doador deve ser exibido.
+- `search` ou `name` filtra por nome parcial.
+- `cpf` filtra por CPF.
+- `tipo_sang` deve ser um filtro exato.
+- Todos os filtros ativos são combinados por interseção (`AND`).
+- O backend é o responsável por toda a lógica de filtragem e segurança, o frontend apenas exibe os resultados retornados.
+
+### Comportamento da busca de usuarios no painel do admin
+
+- O admin vê usuários do sistema inteiro, sem restrição por hemocentro.
+- A listagem da tela só aparece depois que uma pesquisa ou filtro é aplicado.
+- Se a busca for enviada vazia e sem filtros, nenhum usuário deve ser exibido na grade.
+- A busca textual aceita `nome`, `email` ou `cpf`.
+- O filtro por tipo de usuário usa os perfis do sistema:
+  - `1`: doador
+  - `2`: funcionario
+  - `3`: diretor
+  - `4`: admin
+- O filtro de `status` permite separar usuários `ativos` e `inativos`.
+- Quando mais de um filtro é usado ao mesmo tempo, o resultado deve respeitar todos eles (`AND`).
+- O botão de limpar deve remover texto, filtros e resultados da busca atual.
+
+### Notificacoes no dashboard por hemocentro
+
+- Os dashboards de `funcionario`, `diretor` e `admin` exibem um sino de notificações no cabeçalho.
+- O sino mostra até 3 atualizações recentes relacionadas ao hemocentro do usuário.
+- As notificações podem incluir:
+  - última doação registrada, com o nome do último doador
+  - atualização de agenda/agendamento
+  - atualização de cadastro de usuário vinculado ao hemocentro
+  - atualização de dados do próprio hemocentro
+- Ao abrir o popover do sino, o contador numérico deve desaparecer, marcando as notificações atuais como lidas.
+- O contador só volta a aparecer quando surgir uma atualização nova na base consultada pelo dashboard.
+- Para montar esse resumo, o frontend depende das leituras já existentes de:
+  - `GET /api/doacoes`
+  - `GET /api/agendamentos`
+  - `GET /api/users`
+  - `GET /api/hemocentros`
+
+### Destaque visual no calendario da agenda do funcionario
+
+- No painel do funcionário, o calendário da agenda deve destacar em vermelho os dias com movimentação do hemocentro.
+- O destaque é calculado a partir de datas encontradas em:
+  - agendamentos carregados do hemocentro
+  - doações carregadas do hemocentro
+- O objetivo é indicar rapidamente quais dias tiveram alteração, sem o usuário precisar abrir data por data.
+- A seleção do dia continua funcionando normalmente; o destaque vermelho é apenas um marcador visual de atividade.
+
+### Fluxo de estoque por doacao no painel do funcionario
+
+- Depois que uma doacao e registrada, ela nao entra automaticamente no estoque.
+- O painel do funcionario exibe uma lista com as doacoes do dia que ainda aguardam lancamento no estoque.
+- Cada doacao pendente deve aparecer apenas uma vez, com nome do doador, tipo sanguineo, quantidade e horario.
+- Ao clicar em `Atualizar estoque`, o frontend envia o `doacao_id` correspondente.
+- Quando o lancamento e concluido com sucesso, essa doacao deve desaparecer da lista de pendencias.
+- A atualizacao manual do estoque por tipo sanguineo continua disponivel em paralelo.
+
+### POST /api/seed-doadores
+
+- **Controller**: `DevSeedController@seedDoadores`
+- **Objetivo**: Criar rapidamente doadores de teste já vinculados a um hemocentro por meio de doações registradas.
+- **Uso sugerido**: ambiente local/desenvolvimento via Postman.
+- **Body JSON opcional**:
+  - `hemocentro_id`: ID do hemocentro onde as doações serão registradas.
+- **Comportamento**:
+  - cria ou reaproveita um funcionário do hemocentro informado
+  - cria 10 doadores de teste com nomes, sexos, idades, cidades e tipos sanguíneos variados
+  - cria 1 doação para cada doador no hemocentro escolhido
+  - pode ser chamado novamente sem duplicar doadores já seedados
+- **Exemplo**:
+
+```json
+{
+    "hemocentro_id": 1
+}
+```
+
+- **Resposta esperada**:
+  - `message`
+  - `hemocentro`
+  - `funcionario`
+  - `doadores`
+  - `total_doadores`
 
 ### POST /api/auth/users
 
@@ -169,6 +279,7 @@ Os caminhos abaixo são relativos ao prefixo padrão `/api` do Laravel.
 
 - **Regra**: O `funcionario_id` é preenchido automaticamente com o usuário logado.
 - **Regra de Negócio**: A triagem vinculada deve ter `apto = true`.
+- **Regra de Negocio**: O registro da doacao nao faz mais o lancamento automatico no estoque; esse passo e separado.
 
 ---
 
@@ -194,6 +305,12 @@ Os caminhos abaixo são relativos ao prefixo padrão `/api` do Laravel.
   - `tipo_sangue`: `A+`, `A-`, `B+`, `B-`, `AB+`, `AB-`, `O+`, `O-`.
   - `quantidade`: Valor a ser somado ao estoque atual.
   - `quantidade_minima`: (Opcional) Define o alerta de estoque baixo.
+  - `doacao_id`: (Opcional) ID da doacao que esta sendo lancada no estoque.
+- **Regras de lancamento por doacao**:
+  - se `doacao_id` for enviado, a doacao precisa pertencer ao mesmo hemocentro informado
+  - uma mesma doacao nao pode ser lancada no estoque mais de uma vez
+  - ao concluir o lancamento, o backend registra `estoque_lancado_em` e `estoque_lancado_por` na tabela `doacao`
+  - isso permite que o frontend remova a doacao da fila de pendencias e evite duplicidade visual
 
 ### PUT /api/auth/estoque/
 
@@ -299,3 +416,27 @@ Endpoints que geram arquivos PDF para download.
 
 - **Segurança**: Rotas sob `/auth/` exigem token Sanctum.
 - **Hierarquia**: O fluxo ideal é Agendamento -> Triagem -> Doação.
+---
+
+## Atualizacao recente - painel do funcionario
+
+### Agenda do funcionario
+
+- O cabecalho da aba `Agenda` foi reorganizado em 3 zonas visuais:
+- titulo e contagem a esquerda
+- calendario ao centro
+- busca de doador a direita
+- O objetivo foi melhorar leitura e uso em rotina operacional.
+
+### Estoque do dia
+
+- A caixa de acompanhamento do estoque continua filtrando apenas doacoes da data atual.
+- No fluxo real, isso significa que doacoes de dias anteriores nao aparecem mais nessa lista quando o dia muda.
+- Quando a atualizacao do estoque e concluida, o item passa para estado visual verde claro.
+- A listagem de doacoes do bloco agora pode ser recolhida e expandida pelo usuario.
+
+### Fluxo demo local
+
+- Em ambiente local (`localhost` e `127.0.0.1`), o frontend pode adicionar agendamentos demo para teste de usabilidade do painel de funcionario.
+- Esses dados demo nao sao persistidos pela API Laravel.
+- Check-in, cancelamento, reabertura, triagem e atualizacao de estoque de itens demo sao resolvidos localmente para nao enviar IDs ficticios ao backend.

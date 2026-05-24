@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -11,8 +11,10 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Switch } from '../ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '../ui/dialog';
+import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import {
   Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
   Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
@@ -93,8 +95,11 @@ export function AdminDashboard() {
   // ── Estado: dados da API
   const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [doacoes, setDoacoes] = useState<any[]>([]);
   const [stats, setStats] = useState(emptyAdminStats);
   const [isLoading, setIsLoading] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
   // ── Estado: mocks locais
   const [campaigns, setCampaigns] = useState(campaignsMock);
@@ -133,7 +138,9 @@ export function AdminDashboard() {
   const [reportType, setReportType] = useState('');
   const [reportFormat, setReportFormat] = useState('pdf');
   const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [userFilter, setUserFilter] = useState('all');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [userSearchPerformed, setUserSearchPerformed] = useState(false);
 
   // ── Formulário: novo hemocentro
   const [hcForm, setHcForm] = useState({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
@@ -155,15 +162,17 @@ export function AdminDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [hcRes, usersRes, stockRes, statsRes] = await Promise.all([
+      const [hcRes, usersRes, doacoesRes, stockRes, statsRes] = await Promise.all([
         api.get('/hemocentros'),
         api.get('/users'),
+        api.get('/doacoes'),
         api.get('/estoque'),
         api.get('/estatisticas/admin'),
       ]);
 
       setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
       setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+      setDoacoes(Array.isArray(doacoesRes.data) ? doacoesRes.data : doacoesRes.data.data ?? []);
 
       // Agrega estoque globalmente
       const allStock = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
@@ -317,6 +326,26 @@ export function AdminDashboard() {
     }
   };
 
+  const handleSearchUsers = () => {
+    const hasSearch = userSearchTerm.trim().length > 0;
+    const hasRoleFilter = userRoleFilter !== 'all';
+    const hasStatusFilter = userStatusFilter !== 'all';
+
+    if (!hasSearch && !hasRoleFilter && !hasStatusFilter) {
+      setUserSearchPerformed(false);
+      return;
+    }
+
+    setUserSearchPerformed(true);
+  };
+
+  const handleClearUserSearch = () => {
+    setUserSearchTerm('');
+    setUserRoleFilter('all');
+    setUserStatusFilter('all');
+    setUserSearchPerformed(false);
+  };
+
   // ─── Estoque (API) ──────────────────────────────────────────────────────────
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
@@ -412,17 +441,42 @@ export function AdminDashboard() {
   // ─── Computados ─────────────────────────────────────────────────────────────
   const hemocentrosAtivos = hemocentros.filter(h => h.status === 1);
   const totalDonors = users.filter(u => Number(u.role_id) === 1).length;
+  const hemocentroNomeResolvido =
+    user?.hemocentro?.nome ||
+    user?.hemocentroName ||
+    hemocentros.find((hemocentro) => Number(hemocentro.id) === Number(user?.hemocentro_id))?.nome ||
+    '';
+  const hemocentroNome = hemocentroNomeResolvido
+    ? `Hemocentro ${hemocentroNomeResolvido}`
+    : 'Todos os hemocentros';
+  const notifications = useMemo(() => buildDashboardNotifications({
+    hemocentroId: user?.hemocentro_id ? Number(user.hemocentro_id) : null,
+    doacoes,
+    users,
+    hemocentros,
+  }), [user?.hemocentro_id, doacoes, users, hemocentros]);
+  const notificationsKey = notifications.map((notification) => `${notification.id}:${notification.timeLabel}`).join('|');
+
+  useEffect(() => {
+    setHasUnreadNotifications(notifications.length > 0);
+  }, [notificationsKey]);
 
   const filteredUsers = users.filter(u => {
+    const normalizedSearch = userSearchTerm.trim().toLowerCase();
+    const cleanCpfSearch = userSearchTerm.replace(/\D/g, '');
     const matchesSearch =
-      u.name?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-      u.email?.toLowerCase().includes(userSearchTerm.toLowerCase());
-    const matchesFilter =
-      userFilter === 'all' ||
-      (userFilter === 'ativo' && u.status === 1) ||
-      (userFilter === 'inativo' && u.status === 0) ||
-      String(u.role_id) === userFilter;
-    return matchesSearch && matchesFilter;
+      normalizedSearch.length === 0 ||
+      u.name?.toLowerCase().includes(normalizedSearch) ||
+      u.email?.toLowerCase().includes(normalizedSearch) ||
+      (cleanCpfSearch.length > 0 && (u.cpf || '').replace(/\D/g, '').includes(cleanCpfSearch));
+    const matchesRole =
+      userRoleFilter === 'all' || String(u.role_id) === userRoleFilter;
+    const matchesStatus =
+      userStatusFilter === 'all' ||
+      (userStatusFilter === 'ativo' && Number(u.status) === 1) ||
+      (userStatusFilter === 'inativo' && Number(u.status) === 0);
+
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   const stockDistribution = globalStock.map(item => ({
@@ -455,6 +509,49 @@ export function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Popover
+              open={notificationsOpen}
+              onOpenChange={(open) => {
+                setNotificationsOpen(open);
+                if (open) {
+                  setHasUnreadNotifications(false);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {hasUnreadNotifications && notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-green-600 text-white rounded-full text-[10px] flex items-center justify-center">
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="border-b px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-900">Atualizações recentes</p>
+                  <p className="text-xs text-gray-500">{hemocentroNome}</p>
+                </div>
+                <div className="divide-y">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-gray-500">
+                      Nenhuma atualização recente disponível.
+                    </div>
+                  ) : notifications.map((notification) => (
+                    <div key={notification.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                          <p className="text-sm text-gray-600">{notification.description}</p>
+                        </div>
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">{notification.timeLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button variant="ghost" size="sm" onClick={() => setShowReportDialog(true)} className="gap-2">
               <Download className="h-4 w-4" /><span className="hidden md:inline">Exportar</span>
             </Button>
@@ -465,7 +562,7 @@ export function AdminDashboard() {
             </Avatar>
             <div className="hidden md:block">
               <p className="text-sm font-semibold">{user.name}</p>
-              <p className="text-xs text-gray-600">Administrador</p>
+              <p className="text-xs text-gray-600">{hemocentroNome}</p>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogoutClick} className="gap-2">
               <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
@@ -692,30 +789,69 @@ export function AdminDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col md:flex-row gap-4 mb-4">
-                  <div className="flex-1 relative">
+                <div className="space-y-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_220px_180px] gap-4">
+                    <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input placeholder="Buscar por nome ou email..." value={userSearchTerm}
-                      onChange={e => setUserSearchTerm(e.target.value)} className="pl-10" />
+                    <Input
+                      placeholder="Buscar por nome, email ou CPF..."
+                      value={userSearchTerm}
+                      onChange={e => setUserSearchTerm(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSearchUsers();
+                        }
+                      }}
+                      className="pl-10"
+                    />
                   </div>
-                  <Select value={userFilter} onValueChange={setUserFilter}>
-                    <SelectTrigger className="w-full md:w-48"><SelectValue /></SelectTrigger>
+                  <Select value={userRoleFilter} onValueChange={setUserRoleFilter}>
+                    <SelectTrigger><SelectValue placeholder="Tipo de usuario" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos Perfis</SelectItem>
-                      <SelectItem value="ativo">Ativos</SelectItem>
-                      <SelectItem value="inativo">Inativos</SelectItem>
+                      <SelectItem value="all">Todos os tipos</SelectItem>
                       <SelectItem value="1">Doadores</SelectItem>
                       <SelectItem value="2">Funcionários</SelectItem>
                       <SelectItem value="3">Diretores</SelectItem>
                       <SelectItem value="4">Administradores</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select value={userStatusFilter} onValueChange={setUserStatusFilter}>
+                    <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos status</SelectItem>
+                      <SelectItem value="ativo">Ativos</SelectItem>
+                      <SelectItem value="inativo">Inativos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button onClick={handleSearchUsers} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Search className="h-4 w-4" />
+                    Pesquisar
+                  </Button>
+                  <Button variant="outline" onClick={handleClearUserSearch} className="gap-2">
+                    <Filter className="h-4 w-4" />
+                    Limpar
+                  </Button>
                 </div>
 
                 {isLoading ? (
                   <div className="text-center py-8 animate-pulse text-gray-500">Carregando usuários...</div>
+                ) : !userSearchPerformed ? (
+                  <div className="text-center py-10 text-gray-500 border-dashed border-2 rounded-lg">
+                    <Users className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+                    <p>Pesquise por nome, email ou CPF e use os filtros para listar usuarios.</p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">Resultados da busca</p>
+                        <p className="text-sm text-gray-500">{filteredUsers.length} usuario(s) encontrado(s)</p>
+                      </div>
+                    </div>
                     {filteredUsers.map(u => (
                       <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 gap-4">
                         <div className="flex items-center gap-4">
@@ -757,6 +893,7 @@ export function AdminDashboard() {
                     )}
                   </div>
                 )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

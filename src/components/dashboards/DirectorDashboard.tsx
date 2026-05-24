@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import {
   Droplet, Calendar, Users, LogOut, Bell, TrendingUp, Activity,
   UserCheck, BarChart3, Clock, Download, UserPlus, Plus, Minus,
@@ -73,10 +75,14 @@ export function DirectorDashboard() {
   const navigate = useNavigate();
 
   // ── Estado: dados da API
+  const [hemocentros, setHemocentros] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [agendamentosHoje, setAgendamentosHoje] = useState<any[]>([]);
+  const [doacoes, setDoacoes] = useState<any[]>([]);
   const [stats, setStats] = useState(emptyDirectorStats);
   const [isLoading, setIsLoading] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
   // ── Estado: API de Estoque
   const [stock, setStock] = useState<any[]>([]);
@@ -116,12 +122,16 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [usersRes, agendRes, stockRes, statsRes] = await Promise.all([
+      const [hemocentrosRes, usersRes, agendRes, doacoesRes, stockRes, statsRes] = await Promise.all([
+        api.get('/hemocentros'),
         api.get('/users'),
         api.get('/agendamentos'),
+        api.get('/doacoes'),
         api.get('/estoque'),
         api.get('/estatisticas/diretor'),
       ]);
+
+      setHemocentros(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []);
 
       const todosUsers = Array.isArray(usersRes.data)
         ? usersRes.data
@@ -146,6 +156,11 @@ export function DirectorDashboard() {
       });
 
       setAgendamentosHoje(agendHoje);
+
+      const doacoesData = Array.isArray(doacoesRes.data)
+        ? doacoesRes.data
+        : doacoesRes.data.data ?? [];
+      setDoacoes(doacoesData.filter((doacao: any) => Number(doacao.hemocentro_id) === Number(user.hemocentro_id)));
 
       // Mapeia estoque da API
       const stockDataRaw = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
@@ -289,7 +304,26 @@ export function DirectorDashboard() {
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
-  const hemocentroNome = user.hemocentro?.nome || user.hemocentroName || `Hemocentro #${user.hemocentro_id}`;
+  const hemocentroNomeResolvido =
+    user.hemocentro?.nome ||
+    user.hemocentroName ||
+    hemocentros.find((hemocentro: any) => Number(hemocentro.id) === Number(user.hemocentro_id))?.nome ||
+    '';
+  const hemocentroNome = hemocentroNomeResolvido
+    ? `Hemocentro ${hemocentroNomeResolvido}`
+    : 'Hemocentro vinculado';
+  const notifications = useMemo(() => buildDashboardNotifications({
+    hemocentroId: Number(user?.hemocentro_id),
+    doacoes,
+    agendamentos: agendamentosHoje,
+    users: staffList,
+    hemocentros,
+  }), [user?.hemocentro_id, doacoes, agendamentosHoje, staffList, hemocentros]);
+  const notificationsKey = notifications.map((notification) => `${notification.id}:${notification.timeLabel}`).join('|');
+
+  useEffect(() => {
+    setHasUnreadNotifications(notifications.length > 0);
+  }, [notificationsKey]);
   const agendConcluidos = agendamentosHoje.filter(
     (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
@@ -322,6 +356,49 @@ export function DirectorDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Popover
+              open={notificationsOpen}
+              onOpenChange={(open) => {
+                setNotificationsOpen(open);
+                if (open) {
+                  setHasUnreadNotifications(false);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {hasUnreadNotifications && notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-purple-600 text-white rounded-full text-[10px] flex items-center justify-center">
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="border-b px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-900">Atualizações do hemocentro</p>
+                  <p className="text-xs text-gray-500">{hemocentroNome}</p>
+                </div>
+                <div className="divide-y">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-gray-500">
+                      Nenhuma atualização recente disponível.
+                    </div>
+                  ) : notifications.map((notification) => (
+                    <div key={notification.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                          <p className="text-sm text-gray-600">{notification.description}</p>
+                        </div>
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">{notification.timeLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Avatar>
               <AvatarFallback className="bg-purple-100 text-purple-600">
                 {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
