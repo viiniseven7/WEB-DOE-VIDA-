@@ -18,7 +18,7 @@ import { buildDashboardNotifications } from '../../services/dashboard-notificati
 import {
   Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
   Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
-  Minus, Search, FileText, Download, Eye, CheckCircle2, XCircle, Filter
+  Minus, Search, Download, Eye, CheckCircle2, XCircle, Filter
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -54,19 +54,6 @@ interface UserItem {
   hemocentro?: Hemocentro;
 }
 
-// ─── Mocks (sem equivalente na API) ──────────────────────────────────────────
-
-const permissionGroups = [
-  { id: 'pg-001', name: 'Funcionário Padrão', description: 'Acesso básico ao sistema', permissions: ['view_donors', 'register_donations', 'view_schedule'], users: 45 },
-  { id: 'pg-002', name: 'Enfermeiro', description: 'Acesso completo ao registro de doações', permissions: ['view_donors', 'register_donations', 'view_schedule', 'manage_stock'], users: 18 },
-  { id: 'pg-003', name: 'Diretor', description: 'Gestão completa do hemocentro', permissions: ['all_hemocentro'], users: 5 },
-];
-
-const campaignsMock = [
-  { id: 'c-001', title: 'Campanha de Urgência - Tipo O-', subtitle: 'Precisamos urgentemente de doadores O-', status: 'active', sent: 2847, opened: 1523, clicks: 289, date: '2026-03-05' },
-  { id: 'c-002', title: 'Doação de Junho - Salve Vidas', subtitle: 'Sua doação pode salvar até 4 vidas', status: 'scheduled', date: '2026-06-01' },
-  { id: 'c-003', title: 'Campanha de Natal 2025', subtitle: 'Doe sangue neste Natal', status: 'completed', sent: 3120, opened: 1890, clicks: 456, date: '2025-12-20' },
-];
 
 const systemStats = [
   { month: 'Jan', total: 1245, hc1: 245, hc2: 198, hc3: 245, hc4: 176 },
@@ -75,16 +62,63 @@ const systemStats = [
 ];
 
 const emptyAdminStats = {
-  total_hemocentros: 0,
-  total_usuarios: 0,
+  total_hemocentros:      0,
+  total_usuarios:         0,
+  taxa_comparecimento:    0,
   doacoes_por_hemocentro: [] as Array<{ hemocentro_id: number; hemocentro: string; total: number }>,
-  estoque_global: {} as Record<string, number>,
-  doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
-  doacoes_por_tipo: {} as Record<string, number>,
+  estoque_global:         {} as Record<string, number>,
+  doacoes_por_mes:        [] as Array<{ mes: string; total: number }>,
+  doacoes_por_tipo:       {} as Record<string, number>,
 };
 
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
+
+const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
+  'Agendamentos': {
+    ver_agendamentos:       'Ver agendamentos',
+    criar_agendamentos:     'Criar agendamentos',
+    confirmar_agendamentos: 'Confirmar / reabrir agendamentos',
+    cancelar_agendamentos:  'Cancelar agendamentos',
+  },
+  'Doações': {
+    ver_doacoes:       'Ver doações',
+    registrar_doacoes: 'Registrar doações',
+  },
+  'Triagem': {
+    ver_triagens:      'Ver triagens',
+    registrar_triagem: 'Registrar triagem clínica',
+  },
+  'Estoque': {
+    ver_estoque:       'Ver estoque',
+    gerenciar_estoque: 'Gerenciar estoque',
+  },
+  'Alertas Médicos': {
+    ver_alertas_medicos:       'Ver alertas médicos',
+    gerenciar_alertas_medicos: 'Criar / editar alertas médicos',
+  },
+  'Usuários': {
+    ver_usuarios:     'Ver usuários',
+    criar_usuarios:   'Criar usuários',
+    excluir_usuarios: 'Excluir usuários',
+  },
+  'Hemocentros': {
+    ver_hemocentros:       'Ver hemocentros',
+    gerenciar_hemocentros: 'Gerenciar hemocentros',
+  },
+  'Campanhas': {
+    ver_campanhas:       'Ver campanhas',
+    gerenciar_campanhas: 'Criar / editar campanhas',
+    disparar_campanhas:  'Disparar campanhas',
+  },
+  'Estatísticas': {
+    ver_estatisticas_hemocentro: 'Ver estatísticas do hemocentro',
+    ver_estatisticas_globais:    'Ver estatísticas globais',
+  },
+  'Relatórios': {
+    exportar_relatorios: 'Exportar relatórios PDF',
+  },
+};
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
@@ -101,14 +135,24 @@ export function AdminDashboard() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  // ── Estado: mocks locais
-  const [campaigns, setCampaigns] = useState(campaignsMock);
+  // ── Estado: campanhas
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [isDisparando, setIsDisparando] = useState(false);
+  const [disparoResultado, setDisparoResultado] = useState<any>(null);
   const [globalStock, setGlobalStock] = useState<any[]>([]);
-  const [permissions, setPermissions] = useState(permissionGroups);
+
+  // ── Estado: roles
+  const [roles, setRoles] = useState<any[]>([]);
+  const [allPermissions, setAllPermissions] = useState<Record<string, Record<string, string>>>(DEFAULT_PERMISSIONS);
+  const [showRoleDialog, setShowRoleDialog] = useState(false);
+  const [showEditRoleDialog, setShowEditRoleDialog] = useState(false);
+  const [showDeleteRoleDialog, setShowDeleteRoleDialog] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<any>(null);
+  const [roleToDelete, setRoleToDelete] = useState<any>(null);
+  const [roleForm, setRoleForm] = useState({ name: '', permissions: [] as string[] });
 
   // ── Estado: dialogs
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showHemocentroDialog, setShowHemocentroDialog] = useState(false);
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [showStockDialog, setShowStockDialog] = useState(false);
@@ -120,8 +164,6 @@ export function AdminDashboard() {
   const [showEditHemocentroDialog, setShowEditHemocentroDialog] = useState(false);
   const [showEditCampaignDialog, setShowEditCampaignDialog] = useState(false);
   const [showDeleteCampaignDialog, setShowDeleteCampaignDialog] = useState(false);
-  const [showEditPermissionDialog, setShowEditPermissionDialog] = useState(false);
-  const [showDeletePermissionDialog, setShowDeletePermissionDialog] = useState(false);
 
   // ── Estado: formulários / seleções
   const [selectedBloodType, setSelectedBloodType] = useState('');
@@ -131,8 +173,6 @@ export function AdminDashboard() {
   const [selectedHemocentro, setSelectedHemocentro] = useState<Hemocentro | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [campaignToDelete, setCampaignToDelete] = useState<any>(null);
-  const [selectedPermission, setSelectedPermission] = useState<any>(null);
-  const [permissionToDelete, setPermissionToDelete] = useState<any>(null);
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
   const [reportType, setReportType] = useState('');
@@ -148,6 +188,16 @@ export function AdminDashboard() {
   // ── Formulário: novo usuário
   const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
 
+  // ── Formulário: nova campanha
+  const [campaignForm, setCampaignForm] = useState({
+    titulo: '',
+    subtitulo: '',
+    descricao: '',
+    tipo_sangue: '',
+    data_publi: '',
+    data_expiracao: '',
+  });
+
   // ─── Guard ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
@@ -162,12 +212,13 @@ export function AdminDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [hcRes, usersRes, doacoesRes, stockRes, statsRes] = await Promise.all([
+      const [hcRes, usersRes, doacoesRes, stockRes, statsRes, campanhasRes] = await Promise.all([
         api.get('/hemocentros'),
         api.get('/users'),
         api.get('/doacoes'),
         api.get('/estoque'),
         api.get('/estatisticas/admin'),
+        api.get('/campanhas'),
       ]);
 
       setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
@@ -198,12 +249,28 @@ export function AdminDashboard() {
         critical: s.quantidade < s.quantidade_minima
       })));
       setStats({ ...emptyAdminStats, ...statsRes.data });
-
+      setCampaigns(
+        Array.isArray(campanhasRes.data)
+          ? campanhasRes.data
+          : campanhasRes.data?.data ?? []
+      );
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err.response?.data);
       toast.error('Erro ao carregar dados do painel');
     } finally {
       setIsLoading(false);
+    }
+
+    // Roles e permissões são carregados separadamente para não bloquear o dashboard
+    try {
+      const [rolesRes, permsRes] = await Promise.all([
+        api.get('/roles'),
+        api.get('/permissions'),
+      ]);
+      setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : rolesRes.data?.data ?? []);
+      setAllPermissions(permsRes.data ?? {});
+    } catch (err) {
+      console.warn('Roles/permissions não carregadas da API, usando padrão:', err);
     }
   }, [user]);
 
@@ -256,10 +323,11 @@ export function AdminDashboard() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const selectedRoleObj = roles.find(r => String(r.id) === newUserForm.role_id);
       const payload: any = {
         ...newUserForm,
         cpf: newUserForm.cpf.replace(/\D/g, ''),
-        role: roleNames[newUserForm.role_id],
+        role: selectedRoleObj?.name || roleNames[newUserForm.role_id],
         role_id: Number(newUserForm.role_id)
       };
       if (newUserForm.hemocentro_id) payload.hemocentro_id = Number(newUserForm.hemocentro_id);
@@ -287,7 +355,7 @@ export function AdminDashboard() {
         name: selectedUser.name,
         email: selectedUser.email,
         role_id: selectedUser.role_id,
-        role: roleNames[String(selectedUser.role_id)],
+        role: roles.find(r => r.id === selectedUser.role_id)?.name || roleNames[String(selectedUser.role_id)],
         status: selectedUser.status
       };
       if (selectedUser.hemocentro_id) payload.hemocentro_id = selectedUser.hemocentro_id;
@@ -383,26 +451,129 @@ export function AdminDashboard() {
   };
 
 
-  // ─── Campanhas (local) ──────────────────────────────────────────────────────
-  const handleCreateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowCampaignDialog(false); toast.success('Campanha criada!'); };
-  const handleUpdateCampaign = (e: React.FormEvent) => { e.preventDefault(); setShowEditCampaignDialog(false); toast.success('Campanha atualizada!'); };
-  const handleConfirmDeleteCampaign = () => {
-    if (!campaignToDelete) return;
-    setCampaigns(c => c.filter(x => x.id !== campaignToDelete.id));
-    setShowDeleteCampaignDialog(false);
-    setCampaignToDelete(null);
-    toast.success('Campanha excluída!');
+  // ─── Campanhas (API) ────────────────────────────────────────────────────────
+  const handleCreateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/auth/campanhas', {
+        titulo:         campaignForm.titulo,
+        subtitulo:      campaignForm.subtitulo || undefined,
+        descricao:      campaignForm.descricao || undefined,
+        tipo_sangue:    campaignForm.tipo_sangue || undefined,
+        data_publi:     campaignForm.data_publi,
+        data_expiracao: campaignForm.data_expiracao || undefined,
+      });
+      toast.success('Campanha criada com sucesso!');
+      setShowCampaignDialog(false);
+      setCampaignForm({ titulo: '', subtitulo: '', descricao: '', tipo_sangue: '', data_publi: '', data_expiracao: '' });
+      fetchData();
+    } catch (err: any) {
+      const erros = err.response?.data?.errors;
+      toast.error(erros ? Object.values(erros).flat().join('\n') : 'Erro ao criar campanha');
+    }
   };
 
-  // ─── Permissões (local) ─────────────────────────────────────────────────────
-  const handleCreatePermissionGroup = (e: React.FormEvent) => { e.preventDefault(); setShowPermissionDialog(false); toast.success('Grupo criado!'); };
-  const handleUpdatePermission = (e: React.FormEvent) => { e.preventDefault(); setShowEditPermissionDialog(false); toast.success('Grupo atualizado!'); };
-  const handleConfirmDeletePermission = () => {
-    if (!permissionToDelete) return;
-    setPermissions(p => p.filter(x => x.id !== permissionToDelete.id));
-    setShowDeletePermissionDialog(false);
-    setPermissionToDelete(null);
-    toast.success('Grupo removido!');
+  const handleUpdateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCampaign) return;
+    try {
+      await api.put(`/auth/campanhas/${selectedCampaign.id}`, {
+        titulo:         selectedCampaign.titulo,
+        subtitulo:      selectedCampaign.subtitulo,
+        descricao:      selectedCampaign.descricao,
+        tipo_sangue:    selectedCampaign.tipo_sangue,
+        data_publi:     selectedCampaign.data_publi,
+        data_expiracao: selectedCampaign.data_expiracao,
+        status:         selectedCampaign.status,
+      });
+      toast.success('Campanha atualizada!');
+      setShowEditCampaignDialog(false);
+      setSelectedCampaign(null);
+      fetchData();
+    } catch {
+      toast.error('Erro ao atualizar campanha');
+    }
+  };
+
+  const handleConfirmDeleteCampaign = async () => {
+    if (!campaignToDelete) return;
+    try {
+      await api.delete(`/auth/campanhas/${campaignToDelete.id}`);
+      toast.success('Campanha removida!');
+      setShowDeleteCampaignDialog(false);
+      setCampaignToDelete(null);
+      fetchData();
+    } catch {
+      toast.error('Erro ao remover campanha');
+    }
+  };
+
+  const handleDispararCampaign = async (campanha: any) => {
+    setIsDisparando(true);
+    setDisparoResultado(null);
+    try {
+      const res = await api.post(`/auth/campanhas/${campanha.id}/disparar`);
+      setDisparoResultado(res.data);
+      toast.success(`Campanha disparada para ${res.data.total_disparado} doadores!`);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao disparar campanha');
+    } finally {
+      setIsDisparando(false);
+    }
+  };
+
+
+  // ─── Roles (API) ────────────────────────────────────────────────────────────
+  const togglePermission = (permName: string, currentPerms: string[], setter: (p: string[]) => void) => {
+    setter(
+      currentPerms.includes(permName)
+        ? currentPerms.filter(p => p !== permName)
+        : [...currentPerms, permName]
+    );
+  };
+
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/auth/roles', { name: roleForm.name, permissions: roleForm.permissions });
+      toast.success('Role criada com sucesso!');
+      setShowRoleDialog(false);
+      setRoleForm({ name: '', permissions: [] });
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao criar role');
+    }
+  };
+
+  const handleUpdateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole) return;
+    try {
+      await api.put(`/auth/roles/${selectedRole.id}`, {
+        name: selectedRole.name,
+        permissions: selectedRole.permissions ?? [],
+      });
+      toast.success('Role atualizada!');
+      setShowEditRoleDialog(false);
+      setSelectedRole(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao atualizar role');
+    }
+  };
+
+  const handleConfirmDeleteRole = async () => {
+    if (!roleToDelete) return;
+    try {
+      await api.delete(`/auth/roles/${roleToDelete.id}`);
+      toast.success('Role removida!');
+      setShowDeleteRoleDialog(false);
+      setRoleToDelete(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao remover role');
+    }
   };
 
   // ─── Relatório (simulado) ───────────────────────────────────────────────────
@@ -619,7 +790,7 @@ export function AdminDashboard() {
           <Card className="border-l-4 border-l-orange-600">
             <CardHeader className="pb-3">
               <CardDescription>Campanhas Ativas</CardDescription>
-              <CardTitle className="text-3xl">{campaigns.filter(c => c.status === 'active').length}</CardTitle>
+              <CardTitle className="text-3xl">{campaigns.filter(c => c.status === true || c.status === 1).length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -700,9 +871,9 @@ export function AdminDashboard() {
 
             <div className="grid md:grid-cols-3 gap-6">
               <Card>
-                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">87%</CardTitle></CardHeader>
+                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">{stats.taxa_comparecimento ?? 87}%</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} /></div>
+                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: `${stats.taxa_comparecimento ?? 87}%` }} /></div>
                   <p className="text-sm text-gray-600 mt-2">Em todos os hemocentros</p>
                 </CardContent>
               </Card>
@@ -954,58 +1125,70 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Permissões (local) ── */}
+          {/* ── Roles / Permissões ── */}
           <TabsContent value="permissions" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div><CardTitle>Grupos de Permissões</CardTitle><CardDescription>Níveis de acesso ao sistema</CardDescription></div>
-                  <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4" />Novo Grupo</Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader><DialogTitle>Criar Grupo de Permissões</DialogTitle></DialogHeader>
-                      <form onSubmit={handleCreatePermissionGroup} className="space-y-4">
-                        <div><Label>Nome do Grupo</Label><Input placeholder="Ex: Técnico de Laboratório" required /></div>
-                        <div><Label>Descrição</Label><Textarea placeholder="Descreva as responsabilidades" /></div>
-                        <div className="flex gap-2 justify-end">
-                          <Button type="button" variant="outline" onClick={() => setShowPermissionDialog(false)}>Cancelar</Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">Criar Grupo</Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
+                  <div>
+                    <CardTitle>Roles de Acesso</CardTitle>
+                    <CardDescription>Gerencie os perfis de acesso do sistema</CardDescription>
+                  </div>
+                  <Button onClick={() => { setRoleForm({ name: '', permissions: [] }); setShowRoleDialog(true); }} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Plus className="h-4 w-4" />Nova Role
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {permissions.map(group => (
-                    <div key={group.id} className="p-4 border rounded-lg hover:bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
-                          <div className="bg-purple-100 p-3 rounded-lg"><Shield className="h-6 w-6 text-purple-600" /></div>
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando roles...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {roles.map((role: any) => (
+                      <div key={role.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-purple-100 p-2 rounded-lg">
+                            <Settings className="h-5 w-5 text-purple-600" />
+                          </div>
                           <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="font-semibold">{group.name}</p>
-                              <Badge variant="outline">{group.users} usuários</Badge>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-gray-900">{role.name}</p>
+                              {role.sistema && (
+                                <Badge variant="outline" className="text-xs text-gray-500">sistema</Badge>
+                              )}
                             </div>
-                            <p className="text-sm text-gray-600 mb-2">{group.description}</p>
-                            <div className="flex flex-wrap gap-1">
-                              {group.permissions.map(p => (
-                                <Badge key={p} variant="outline" className="bg-green-50 text-green-700 text-xs">{p.replace(/_/g, ' ')}</Badge>
-                              ))}
-                            </div>
+                            <p className="text-sm text-gray-500">
+                              {role.users_count} usuário{role.users_count !== 1 ? 's' : ''} vinculado{role.users_count !== 1 ? 's' : ''}
+                            </p>
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => { setSelectedPermission(group); setShowEditPermissionDialog(true); }}><Edit className="h-4 w-4" /></Button>
-                          <Button variant="outline" size="sm" onClick={() => { setPermissionToDelete(group); setShowDeletePermissionDialog(true); }}><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={role.sistema}
+                            onClick={() => { setSelectedRole({ ...role }); setShowEditRoleDialog(true); }}
+                            title={role.sistema ? 'Roles do sistema não podem ser editadas' : 'Editar'}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={role.sistema || role.users_count > 0}
+                            onClick={() => { setRoleToDelete(role); setShowDeleteRoleDialog(true); }}
+                            title={role.sistema ? 'Roles do sistema não podem ser removidas' : role.users_count > 0 ? 'Remova os usuários antes de excluir' : 'Excluir'}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {roles.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhuma role encontrada.</div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1024,17 +1207,73 @@ export function AdminDashboard() {
                       <DialogHeader><DialogTitle>Criar Nova Campanha</DialogTitle></DialogHeader>
                       <form onSubmit={handleCreateCampaign} className="space-y-4">
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div><Label>Título</Label><Input required /></div>
-                          <div><Label>Subtítulo</Label><Input /></div>
+                          <div>
+                            <Label>Título *</Label>
+                            <Input
+                              required
+                              value={campaignForm.titulo}
+                              onChange={e => setCampaignForm({ ...campaignForm, titulo: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label>Subtítulo</Label>
+                            <Input
+                              value={campaignForm.subtitulo}
+                              onChange={e => setCampaignForm({ ...campaignForm, subtitulo: e.target.value })}
+                            />
+                          </div>
                         </div>
-                        <div><Label>Mensagem</Label><Textarea rows={4} required /></div>
+                        <div>
+                          <Label>Mensagem / Descrição *</Label>
+                          <Textarea
+                            required
+                            rows={4}
+                            value={campaignForm.descricao}
+                            onChange={e => setCampaignForm({ ...campaignForm, descricao: e.target.value })}
+                            placeholder="Texto que será enviado por e-mail aos doadores..."
+                          />
+                        </div>
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div><Label>Data de Envio</Label><Input type="date" required /></div>
-                          <div><Label>Horário</Label><Input type="time" defaultValue="09:00" required /></div>
+                          <div>
+                            <Label>Tipo sanguíneo alvo</Label>
+                            <Select
+                              value={campaignForm.tipo_sangue || 'todos'}
+                              onValueChange={v => setCampaignForm({ ...campaignForm, tipo_sangue: v === 'todos' ? '' : v })}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="todos">Todos os tipos</SelectItem>
+                                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Data de publicação *</Label>
+                            <Input
+                              type="date"
+                              required
+                              value={campaignForm.data_publi}
+                              onChange={e => setCampaignForm({ ...campaignForm, data_publi: e.target.value })}
+                            />
+                          </div>
                         </div>
-                        <div className="flex gap-2 justify-end">
-                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>Cancelar</Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700"><Send className="h-4 w-4 mr-2" />Criar e Agendar</Button>
+                        <div>
+                          <Label>Data de expiração</Label>
+                          <Input
+                            type="date"
+                            value={campaignForm.data_expiracao}
+                            onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: e.target.value })}
+                          />
+                        </div>
+                        <div className="flex gap-2 justify-end pt-2">
+                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
+                            Cancelar
+                          </Button>
+                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                            <Send className="h-4 w-4 mr-2" />Criar Campanha
+                          </Button>
                         </div>
                       </form>
                     </DialogContent>
@@ -1043,29 +1282,84 @@ export function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {campaigns.map(campaign => (
+                  {campaigns.length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <Send className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p>Nenhuma campanha criada ainda.</p>
+                    </div>
+                  ) : campaigns.map((campaign: any) => (
                     <div key={campaign.id} className="p-4 border rounded-lg hover:bg-gray-50">
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold">{campaign.title}</p>
-                            <Badge className={campaign.status === 'active' ? 'bg-green-100 text-green-600 border-none' : campaign.status === 'scheduled' ? 'bg-blue-100 text-blue-600 border-none' : 'bg-gray-100 text-gray-600 border-none'}>
-                              {campaign.status === 'active' ? 'Ativa' : campaign.status === 'scheduled' ? 'Agendada' : 'Concluída'}
+                            <p className="font-semibold">{campaign.titulo}</p>
+                            {campaign.tipo_sangue && (
+                              <Badge className="bg-red-100 text-red-600 border-none">
+                                {campaign.tipo_sangue}
+                              </Badge>
+                            )}
+                            <Badge className={
+                              campaign.status
+                                ? 'bg-green-100 text-green-600 border-none'
+                                : 'bg-gray-100 text-gray-600 border-none'
+                            }>
+                              {campaign.status ? 'Ativa' : 'Inativa'}
                             </Badge>
                           </div>
-                          <p className="text-sm text-gray-600">{campaign.subtitle}</p>
-                          <p className="text-xs text-gray-500 mt-1">{new Date(campaign.date).toLocaleDateString('pt-BR')}</p>
+                          {campaign.subtitulo && (
+                            <p className="text-sm text-gray-600">{campaign.subtitulo}</p>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">
+                            {campaign.data_publi
+                              ? new Date(campaign.data_publi).toLocaleDateString('pt-BR')
+                              : '—'}
+                          </p>
                         </div>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => { setSelectedCampaign(campaign); setShowEditCampaignDialog(true); }}><Edit className="h-4 w-4" /></Button>
-                          <Button variant="outline" size="sm" onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-green-700 border-green-300 hover:bg-green-50"
+                            disabled={isDisparando}
+                            onClick={() => handleDispararCampaign(campaign)}
+                          >
+                            <Send className="h-4 w-4 mr-1" />
+                            {isDisparando ? 'Disparando...' : 'Disparar'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setSelectedCampaign({ ...campaign }); setShowEditCampaignDialog(true); }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
                         </div>
                       </div>
-                      {(campaign as any).sent && (
-                        <div className="grid grid-cols-3 gap-4 pt-3 border-t">
-                          <div><p className="text-xs text-gray-600">Enviados</p><p className="text-lg font-semibold">{(campaign as any).sent.toLocaleString()}</p></div>
-                          <div><p className="text-xs text-gray-600">Abertos</p><p className="text-lg font-semibold text-blue-600">{(campaign as any).opened?.toLocaleString()} ({Math.round(((campaign as any).opened / (campaign as any).sent) * 100)}%)</p></div>
-                          <div><p className="text-xs text-gray-600">Cliques</p><p className="text-lg font-semibold text-green-600">{(campaign as any).clicks?.toLocaleString()} ({Math.round(((campaign as any).clicks / (campaign as any).sent) * 100)}%)</p></div>
+                      {(campaign.total_disparado > 0) && (
+                        <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                          <div>
+                            <p className="text-xs text-gray-600">Total disparado</p>
+                            <p className="text-lg font-semibold">{campaign.total_disparado.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-600">Segmentação ML</p>
+                            <p className="text-sm font-medium text-purple-600">
+                              {campaign.total_disparado < 9999 ? 'Ativa' : 'Fallback local'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {disparoResultado && disparoResultado.campanha_id === campaign.id && (
+                        <div className="mt-3 p-3 bg-green-50 rounded-lg text-sm text-green-800">
+                          Último disparo: {disparoResultado.total_disparado} doadores atingidos
+                          {disparoResultado.segmentacao === 'ml' && ' (segmentado pelo ML)'}
                         </div>
                       )}
                     </div>
@@ -1235,11 +1529,16 @@ export function AdminDashboard() {
               <div>
                 <Label>Perfil *</Label>
                 <Select value={newUserForm.role_id} onValueChange={v => setNewUserForm({ ...newUserForm, role_id: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2">Funcionário</SelectItem>
-                    <SelectItem value="3">Diretor</SelectItem>
-                    <SelectItem value="4">Admin</SelectItem>
+                    {roles
+                      .filter(r => r.name !== 'doador')
+                      .map(r => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {roleLabels[r.id] || r.name}
+                        </SelectItem>
+                      ))
+                    }
                   </SelectContent>
                 </Select>
               </div>
@@ -1281,10 +1580,11 @@ export function AdminDashboard() {
                   <Select value={String(selectedUser.role_id)} onValueChange={v => setSelectedUser({ ...selectedUser, role_id: Number(v) })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">Doador</SelectItem>
-                      <SelectItem value="2">Funcionário</SelectItem>
-                      <SelectItem value="3">Diretor</SelectItem>
-                      <SelectItem value="4">Admin</SelectItem>
+                      {roles.map(r => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {roleLabels[r.id] || r.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1379,22 +1679,66 @@ export function AdminDashboard() {
           <DialogHeader><DialogTitle>Editar Campanha</DialogTitle></DialogHeader>
           {selectedCampaign && (
             <form onSubmit={handleUpdateCampaign} className="space-y-4">
-              <div><Label>Título</Label><Input value={selectedCampaign.title} onChange={e => setSelectedCampaign({ ...selectedCampaign, title: e.target.value })} required /></div>
-              <div><Label>Subtítulo</Label><Input value={selectedCampaign.subtitle} onChange={e => setSelectedCampaign({ ...selectedCampaign, subtitle: e.target.value })} /></div>
               <div>
-                <Label>Status</Label>
-                <Select value={selectedCampaign.status} onValueChange={v => setSelectedCampaign({ ...selectedCampaign, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Ativa</SelectItem>
-                    <SelectItem value="scheduled">Agendada</SelectItem>
-                    <SelectItem value="completed">Concluída</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Título *</Label>
+                <Input
+                  required
+                  value={selectedCampaign?.titulo || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, titulo: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Subtítulo</Label>
+                <Input
+                  value={selectedCampaign?.subtitulo || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, subtitulo: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Descrição</Label>
+                <Textarea
+                  rows={3}
+                  value={selectedCampaign?.descricao || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, descricao: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Tipo sanguíneo alvo</Label>
+                  <Select
+                    value={selectedCampaign?.tipo_sangue || 'todos'}
+                    onValueChange={v => setSelectedCampaign({ ...selectedCampaign, tipo_sangue: v === 'todos' ? '' : v })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os tipos</SelectItem>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select
+                    value={selectedCampaign?.status ? '1' : '0'}
+                    onValueChange={v => setSelectedCampaign({ ...selectedCampaign, status: v === '1' })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Ativa</SelectItem>
+                      <SelectItem value="0">Inativa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>Cancelar</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">Salvar Alterações</Button>
+                <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                  Salvar alterações
+                </Button>
               </DialogFooter>
             </form>
           )}
@@ -1407,8 +1751,8 @@ export function AdminDashboard() {
           <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Campanha</DialogTitle></DialogHeader>
           {campaignToDelete && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="font-semibold text-gray-900">{campaignToDelete.title}</p>
-              <p className="text-sm text-gray-600">{campaignToDelete.subtitle}</p>
+              <p className="font-semibold text-gray-900">{campaignToDelete.titulo}</p>
+              <p className="text-sm text-gray-600">{campaignToDelete.subtitulo}</p>
             </div>
           )}
           <DialogFooter>
@@ -1495,6 +1839,132 @@ export function AdminDashboard() {
             <Button variant="outline" onClick={() => setShowStockDetailsDialog(false)}>Fechar</Button>
             <Button onClick={() => { setShowStockDetailsDialog(false); handleOpenUpdateStock(selectedBloodTypeForDetails); }} className="bg-green-600 hover:bg-green-700 text-white gap-2">
               <Activity className="h-4 w-4" />Ajustar Estoque
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Criar Role */}
+      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+        <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>Nova Role</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateRole} className="flex flex-col flex-1 min-h-0 gap-4">
+            <div>
+              <Label>Nome da role *</Label>
+              <Input
+                required
+                placeholder="ex: supervisor_clinico"
+                value={roleForm.name}
+                onChange={e => setRoleForm({ ...roleForm, name: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">Use letras minúsculas e underscores.</p>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-1">
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Permissões</Label>
+              <div className="space-y-4">
+                {Object.entries(allPermissions).map(([categoria, perms]) => (
+                  <div key={categoria}>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{categoria}</p>
+                    <div className="grid grid-cols-2 gap-1.5 pl-1">
+                      {Object.entries(perms).map(([permName, permLabel]) => (
+                        <label key={permName} className="flex items-center gap-2 text-sm cursor-pointer hover:text-gray-900 text-gray-700 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={roleForm.permissions.includes(permName)}
+                            onChange={() => togglePermission(permName, roleForm.permissions, p => setRoleForm({ ...roleForm, permissions: p }))}
+                            className="w-4 h-4 rounded accent-green-600"
+                          />
+                          {permLabel}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <DialogFooter className="pt-2 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowRoleDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                Criar Role ({roleForm.permissions.length} permissão{roleForm.permissions.length !== 1 ? 'ões' : ''})
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Role */}
+      <Dialog open={showEditRoleDialog} onOpenChange={setShowEditRoleDialog}>
+        <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>Editar Role</DialogTitle></DialogHeader>
+          {selectedRole && (
+            <form onSubmit={handleUpdateRole} className="flex flex-col flex-1 min-h-0 gap-4">
+              <div>
+                <Label>Nome da role *</Label>
+                <Input
+                  required
+                  disabled={selectedRole.sistema}
+                  value={selectedRole.name}
+                  onChange={e => setSelectedRole({ ...selectedRole, name: e.target.value })}
+                />
+                {selectedRole.sistema && (
+                  <p className="text-xs text-amber-600 mt-1">Roles do sistema não podem ser renomeadas, apenas as permissões podem ser alteradas.</p>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto pr-1">
+                <Label className="text-sm font-semibold text-gray-700 mb-2 block">Permissões</Label>
+                <div className="space-y-4">
+                  {Object.entries(allPermissions).map(([categoria, perms]) => (
+                    <div key={categoria}>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{categoria}</p>
+                      <div className="grid grid-cols-2 gap-1.5 pl-1">
+                        {Object.entries(perms).map(([permName, permLabel]) => (
+                          <label key={permName} className="flex items-center gap-2 text-sm cursor-pointer hover:text-gray-900 text-gray-700 py-0.5">
+                            <input
+                              type="checkbox"
+                              checked={(selectedRole.permissions ?? []).includes(permName)}
+                              onChange={() => togglePermission(
+                                permName,
+                                selectedRole.permissions ?? [],
+                                p => setSelectedRole({ ...selectedRole, permissions: p })
+                              )}
+                              className="w-4 h-4 rounded accent-green-600"
+                            />
+                            {permLabel}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <DialogFooter className="pt-2 border-t">
+                <Button type="button" variant="outline" onClick={() => setShowEditRoleDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-green-600 hover:bg-green-700">Salvar alterações</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Excluir Role */}
+      <Dialog open={showDeleteRoleDialog} onOpenChange={setShowDeleteRoleDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />Excluir Role
+            </DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
+          </DialogHeader>
+          {roleToDelete && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="font-semibold text-gray-900">{roleToDelete.name}</p>
+              <p className="text-sm text-gray-500">{roleToDelete.users_count} usuários vinculados</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteRoleDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteRole} className="gap-2">
+              <Trash2 className="h-4 w-4" />Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
