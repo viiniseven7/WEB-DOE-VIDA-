@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -26,7 +26,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+// --- Tipos -------------------------------------------------------------------
 
 interface Hemocentro {
   id: number;
@@ -73,6 +73,7 @@ const emptyAdminStats = {
 
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
+const systemRoleNames = new Set(['doador', 'funcionario', 'diretor', 'admin', 'enfermeiro']);
 
 const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
   'Agendamentos': {
@@ -120,13 +121,13 @@ const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
   },
 };
 
-// ─── Componente ──────────────────────────────────────────────────────────────
+// --- Componente --------------------------------------------------------------
 
 export function AdminDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
 
-  // ── Estado: dados da API
+  // -- Estado: dados da API
   const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [doacoes, setDoacoes] = useState<any[]>([]);
@@ -135,13 +136,13 @@ export function AdminDashboard() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  // ── Estado: campanhas
+  // -- Estado: campanhas
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [isDisparando, setIsDisparando] = useState(false);
   const [disparoResultado, setDisparoResultado] = useState<any>(null);
   const [globalStock, setGlobalStock] = useState<any[]>([]);
 
-  // ── Estado: roles
+  // -- Estado: roles
   const [roles, setRoles] = useState<any[]>([]);
   const [allPermissions, setAllPermissions] = useState<Record<string, Record<string, string>>>(DEFAULT_PERMISSIONS);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
@@ -151,7 +152,7 @@ export function AdminDashboard() {
   const [roleToDelete, setRoleToDelete] = useState<any>(null);
   const [roleForm, setRoleForm] = useState({ name: '', permissions: [] as string[] });
 
-  // ── Estado: dialogs
+  // -- Estado: dialogs
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
   const [showHemocentroDialog, setShowHemocentroDialog] = useState(false);
   const [showUserDialog, setShowUserDialog] = useState(false);
@@ -165,7 +166,7 @@ export function AdminDashboard() {
   const [showEditCampaignDialog, setShowEditCampaignDialog] = useState(false);
   const [showDeleteCampaignDialog, setShowDeleteCampaignDialog] = useState(false);
 
-  // ── Estado: formulários / seleções
+  // -- Estado: formulários / seleções
   const [selectedBloodType, setSelectedBloodType] = useState('');
   const [selectedBloodTypeForDetails, setSelectedBloodTypeForDetails] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
@@ -182,13 +183,13 @@ export function AdminDashboard() {
   const [userStatusFilter, setUserStatusFilter] = useState('all');
   const [userSearchPerformed, setUserSearchPerformed] = useState(false);
 
-  // ── Formulário: novo hemocentro
+  // -- Formulário: novo hemocentro
   const [hcForm, setHcForm] = useState({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
 
-  // ── Formulário: novo usuário
+  // -- Formulário: novo usuário
   const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
 
-  // ── Formulário: nova campanha
+  // -- Formulário: nova campanha
   const [campaignForm, setCampaignForm] = useState({
     titulo: '',
     subtitulo: '',
@@ -198,7 +199,7 @@ export function AdminDashboard() {
     data_expiracao: '',
   });
 
-  // ─── Guard ──────────────────────────────────────────────────────────────────
+  // --- Guard ------------------------------------------------------------------
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -207,7 +208,7 @@ export function AdminDashboard() {
     }
   }, [user, navigate]);
 
-  // ─── Fetch inicial ──────────────────────────────────────────────────────────
+  // --- Fetch inicial ----------------------------------------------------------
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
@@ -261,16 +262,19 @@ export function AdminDashboard() {
       setIsLoading(false);
     }
 
-    // Roles e permissões são carregados separadamente para não bloquear o dashboard
     try {
-      const [rolesRes, permsRes] = await Promise.all([
-        api.get('/roles'),
-        api.get('/permissions'),
-      ]);
+      const rolesRes = await api.get('/roles');
       setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : rolesRes.data?.data ?? []);
-      setAllPermissions(permsRes.data ?? {});
     } catch (err) {
-      console.warn('Roles/permissions não carregadas da API, usando padrão:', err);
+      console.warn('Roles não carregadas da API:', err);
+    }
+
+    try {
+      const permsRes = await api.get('/permissions');
+      setAllPermissions(permsRes.data ?? DEFAULT_PERMISSIONS);
+    } catch (err) {
+      console.warn('Permissões não carregadas da API, usando padrão:', err);
+      setAllPermissions(DEFAULT_PERMISSIONS);
     }
   }, [user]);
 
@@ -280,7 +284,7 @@ export function AdminDashboard() {
 
   const handleLogoutClick = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
 
-  // ─── Hemocentros ────────────────────────────────────────────────────────────
+  // --- Hemocentros ------------------------------------------------------------
   const handleCreateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -319,7 +323,7 @@ export function AdminDashboard() {
     }
   };
 
-  // ─── Usuários ───────────────────────────────────────────────────────────────
+  // --- Usuários ---------------------------------------------------------------
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -414,7 +418,7 @@ export function AdminDashboard() {
     setUserSearchPerformed(false);
   };
 
-  // ─── Estoque (API) ──────────────────────────────────────────────────────────
+  // --- Estoque (API) ----------------------------------------------------------
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
@@ -442,7 +446,7 @@ export function AdminDashboard() {
         quantidade: valueToSend,
       });
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} - ${selectedBloodType}`);
       setShowStockDialog(false);
       fetchData();
     } catch (err: any) {
@@ -451,7 +455,7 @@ export function AdminDashboard() {
   };
 
 
-  // ─── Campanhas (API) ────────────────────────────────────────────────────────
+  // --- Campanhas (API) --------------------------------------------------------
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -524,7 +528,7 @@ export function AdminDashboard() {
   };
 
 
-  // ─── Roles (API) ────────────────────────────────────────────────────────────
+  // --- Roles (API) ------------------------------------------------------------
   const togglePermission = (permName: string, currentPerms: string[], setter: (p: string[]) => void) => {
     setter(
       currentPerms.includes(permName)
@@ -535,48 +539,64 @@ export function AdminDashboard() {
 
   const handleCreateRole = async (e: React.FormEvent) => {
     e.preventDefault();
+    const roleName = roleForm.name.trim().toLowerCase();
+    if (systemRoleNames.has(roleName)) {
+      toast.error('Este cargo é padrão do sistema e não pode ser criado pelo dashboard');
+      return;
+    }
+
     try {
-      await api.post('/auth/roles', { name: roleForm.name, permissions: roleForm.permissions });
-      toast.success('Role criada com sucesso!');
+      await api.post('/auth/roles', { name: roleName, permissions: roleForm.permissions });
+      toast.success('Cargo criado com sucesso!');
       setShowRoleDialog(false);
       setRoleForm({ name: '', permissions: [] });
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erro ao criar role');
+      toast.error(err.response?.data?.message || 'Erro ao criar cargo');
     }
   };
 
   const handleUpdateRole = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRole) return;
+    if (selectedRole.sistema || systemRoleNames.has(selectedRole.name)) {
+      toast.error('Cargos padrão do sistema não podem ser alterados');
+      return;
+    }
+
     try {
       await api.put(`/auth/roles/${selectedRole.id}`, {
-        name: selectedRole.name,
+        name: selectedRole.name.trim().toLowerCase(),
         permissions: selectedRole.permissions ?? [],
       });
-      toast.success('Role atualizada!');
+      toast.success('Cargo atualizado!');
       setShowEditRoleDialog(false);
       setSelectedRole(null);
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erro ao atualizar role');
+      toast.error(err.response?.data?.message || 'Erro ao atualizar cargo');
     }
   };
 
   const handleConfirmDeleteRole = async () => {
     if (!roleToDelete) return;
+    if (roleToDelete.sistema || systemRoleNames.has(roleToDelete.name)) {
+      toast.error('Cargos padrão do sistema não podem ser removidos');
+      return;
+    }
+
     try {
       await api.delete(`/auth/roles/${roleToDelete.id}`);
-      toast.success('Role removida!');
+      toast.success('Cargo removido!');
       setShowDeleteRoleDialog(false);
       setRoleToDelete(null);
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erro ao remover role');
+      toast.error(err.response?.data?.message || 'Erro ao remover cargo');
     }
   };
 
-  // ─── Relatório (simulado) ───────────────────────────────────────────────────
+  // --- Relatório (simulado) ---------------------------------------------------
   const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
 
@@ -609,7 +629,7 @@ export function AdminDashboard() {
     }
   };
 
-  // ─── Computados ─────────────────────────────────────────────────────────────
+  // --- Computados -------------------------------------------------------------
   const hemocentrosAtivos = hemocentros.filter(h => h.status === 1);
   const totalDonors = users.filter(u => Number(u.role_id) === 1).length;
   const hemocentroNomeResolvido =
@@ -744,7 +764,7 @@ export function AdminDashboard() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! 👋</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! </h2>
           <p className="text-gray-600">Visão global do sistema DoaVida</p>
         </div>
 
@@ -811,13 +831,13 @@ export function AdminDashboard() {
             <TabsTrigger value="settings">Configurações</TabsTrigger>
           </TabsList>
 
-          {/* ── Overview ── */}
+          {/* -- Overview -- */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle>Doações por Hemocentro</CardTitle>
-                  <CardDescription>Comparativo — Este Mês</CardDescription>
+                  <CardDescription>Comparativo - Este Mês</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
@@ -888,14 +908,14 @@ export function AdminDashboard() {
             </div>
           </TabsContent>
 
-          {/* ── Estoque Global ── */}
+          {/* -- Estoque Global -- */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Estoque Global de Sangue</CardTitle>
-                    <CardDescription>Monitoramento consolidado — dados simulados</CardDescription>
+                    <CardDescription>Monitoramento consolidado - dados simulados</CardDescription>
                   </div>
                   <Badge variant="outline" className="text-red-600 border-red-600">
                     {globalStock.filter(s => s.critical).length} Críticos
@@ -945,7 +965,7 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Usuários ── */}
+          {/* -- Usuários -- */}
           <TabsContent value="users" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1069,7 +1089,7 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Hemocentros ── */}
+          {/* -- Hemocentros -- */}
           <TabsContent value="hemocentros" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1125,23 +1145,23 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Roles / Permissões ── */}
+          {/* -- Roles / Permissões -- */}
           <TabsContent value="permissions" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Roles de Acesso</CardTitle>
-                    <CardDescription>Gerencie os perfis de acesso do sistema</CardDescription>
+                    <CardTitle>Cargos e Permissões</CardTitle>
+                    <CardDescription>Crie cargos personalizados para usuários novos sem alterar os cargos padrão</CardDescription>
                   </div>
                   <Button onClick={() => { setRoleForm({ name: '', permissions: [] }); setShowRoleDialog(true); }} className="gap-2 bg-green-600 hover:bg-green-700">
-                    <Plus className="h-4 w-4" />Nova Role
+                    <Plus className="h-4 w-4" />Novo Cargo
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando roles...</div>
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando cargos...</div>
                 ) : (
                   <div className="space-y-3">
                     {roles.map((role: any) => (
@@ -1168,7 +1188,7 @@ export function AdminDashboard() {
                             size="sm"
                             disabled={role.sistema}
                             onClick={() => { setSelectedRole({ ...role }); setShowEditRoleDialog(true); }}
-                            title={role.sistema ? 'Roles do sistema não podem ser editadas' : 'Editar'}
+                            title={role.sistema ? 'Cargos padrão do sistema não podem ser editados' : 'Editar'}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -1177,7 +1197,7 @@ export function AdminDashboard() {
                             size="sm"
                             disabled={role.sistema || role.users_count > 0}
                             onClick={() => { setRoleToDelete(role); setShowDeleteRoleDialog(true); }}
-                            title={role.sistema ? 'Roles do sistema não podem ser removidas' : role.users_count > 0 ? 'Remova os usuários antes de excluir' : 'Excluir'}
+                            title={role.sistema ? 'Cargos padrão do sistema não podem ser removidos' : role.users_count > 0 ? 'Remova os usuários antes de excluir' : 'Excluir'}
                           >
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
@@ -1185,7 +1205,7 @@ export function AdminDashboard() {
                       </div>
                     ))}
                     {roles.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">Nenhuma role encontrada.</div>
+                      <div className="text-center py-8 text-gray-500">Nenhum cargo encontrado.</div>
                     )}
                   </div>
                 )}
@@ -1193,7 +1213,7 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Campanhas (local) ── */}
+          {/* -- Campanhas (local) -- */}
           <TabsContent value="campaigns" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1312,7 +1332,7 @@ export function AdminDashboard() {
                           <p className="text-xs text-gray-500 mt-1">
                             {campaign.data_publi
                               ? new Date(campaign.data_publi).toLocaleDateString('pt-BR')
-                              : '—'}
+                              : '-'}
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -1369,7 +1389,7 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Configurações ── */}
+          {/* -- Configurações -- */}
           <TabsContent value="settings" className="space-y-6">
             <Card>
               <CardHeader><CardTitle>Configurações do Sistema</CardTitle><CardDescription>Configurações globais do DoaVida</CardDescription></CardHeader>
@@ -1399,7 +1419,7 @@ export function AdminDashboard() {
         </Tabs>
       </main>
 
-      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
+      {/* --- DIALOGS ----------------------------------------------------------- */}
 
       {/* Criar Hemocentro */}
       <Dialog open={showHemocentroDialog} onOpenChange={setShowHemocentroDialog}>
@@ -1531,7 +1551,11 @@ export function AdminDashboard() {
                 <Select value={newUserForm.role_id} onValueChange={v => setNewUserForm({ ...newUserForm, role_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {roles
+                    {(roles.length ? roles : [
+                      { id: 2, name: 'funcionario' },
+                      { id: 3, name: 'diretor' },
+                      { id: 4, name: 'admin' },
+                    ])
                       .filter(r => r.name !== 'doador')
                       .map(r => (
                         <SelectItem key={r.id} value={String(r.id)}>
@@ -1580,7 +1604,12 @@ export function AdminDashboard() {
                   <Select value={String(selectedUser.role_id)} onValueChange={v => setSelectedUser({ ...selectedUser, role_id: Number(v) })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {roles.map(r => (
+                      {(roles.length ? roles : [
+                        { id: 1, name: 'doador' },
+                        { id: 2, name: 'funcionario' },
+                        { id: 3, name: 'diretor' },
+                        { id: 4, name: 'admin' },
+                      ]).map(r => (
                         <SelectItem key={r.id} value={String(r.id)}>
                           {roleLabels[r.id] || r.name}
                         </SelectItem>
@@ -1644,7 +1673,7 @@ export function AdminDashboard() {
       {/* Atualizar Estoque */}
       <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
         <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader><DialogTitle>Atualizar Estoque Global — {selectedBloodType}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Atualizar Estoque Global - {selectedBloodType}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div>
               <Label>Ação</Label>
@@ -1799,12 +1828,12 @@ export function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Detalhes Estoque — mantido simples, dados locais */}
+      {/* Detalhes Estoque - mantido simples, dados locais */}
       <Dialog open={showStockDetailsDialog} onOpenChange={setShowStockDetailsDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Droplet className="h-5 w-5 text-red-600" />Detalhes Global — Tipo {selectedBloodTypeForDetails}
+              <Droplet className="h-5 w-5 text-red-600" />Detalhes Global - Tipo {selectedBloodTypeForDetails}
             </DialogTitle>
           </DialogHeader>
           {selectedBloodTypeForDetails && (() => {
@@ -1844,20 +1873,20 @@ export function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Criar Role */}
+      {/* Criar Cargo */}
       <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
         <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
-          <DialogHeader><DialogTitle>Nova Role</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Novo Cargo</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateRole} className="flex flex-col flex-1 min-h-0 gap-4">
             <div>
-              <Label>Nome da role *</Label>
+              <Label>Nome do cargo *</Label>
               <Input
                 required
-                placeholder="ex: supervisor_clinico"
+                placeholder="ex: marketing_campanhas"
                 value={roleForm.name}
                 onChange={e => setRoleForm({ ...roleForm, name: e.target.value })}
               />
-              <p className="text-xs text-gray-500 mt-1">Use letras minúsculas e underscores.</p>
+              <p className="text-xs text-gray-500 mt-1">Use letras minúsculas, números e underscores. Cargos padrão do sistema ficam bloqueados.</p>
             </div>
             <div className="flex-1 overflow-y-auto pr-1">
               <Label className="text-sm font-semibold text-gray-700 mb-2 block">Permissões</Label>
@@ -1885,21 +1914,21 @@ export function AdminDashboard() {
             <DialogFooter className="pt-2 border-t">
               <Button type="button" variant="outline" onClick={() => setShowRoleDialog(false)}>Cancelar</Button>
               <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                Criar Role ({roleForm.permissions.length} permissão{roleForm.permissions.length !== 1 ? 'ões' : ''})
+                Criar Cargo ({roleForm.permissions.length} permissão{roleForm.permissions.length !== 1 ? 'ões' : ''})
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Editar Role */}
+      {/* Editar Cargo */}
       <Dialog open={showEditRoleDialog} onOpenChange={setShowEditRoleDialog}>
         <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
-          <DialogHeader><DialogTitle>Editar Role</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Editar Cargo</DialogTitle></DialogHeader>
           {selectedRole && (
             <form onSubmit={handleUpdateRole} className="flex flex-col flex-1 min-h-0 gap-4">
               <div>
-                <Label>Nome da role *</Label>
+                <Label>Nome do cargo *</Label>
                 <Input
                   required
                   disabled={selectedRole.sistema}
@@ -1907,7 +1936,7 @@ export function AdminDashboard() {
                   onChange={e => setSelectedRole({ ...selectedRole, name: e.target.value })}
                 />
                 {selectedRole.sistema && (
-                  <p className="text-xs text-amber-600 mt-1">Roles do sistema não podem ser renomeadas, apenas as permissões podem ser alteradas.</p>
+                  <p className="text-xs text-amber-600 mt-1">Cargos padrão do sistema não podem ser alterados pelo dashboard.</p>
                 )}
               </div>
               <div className="flex-1 overflow-y-auto pr-1">
@@ -1946,12 +1975,12 @@ export function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Excluir Role */}
+      {/* Excluir Cargo */}
       <Dialog open={showDeleteRoleDialog} onOpenChange={setShowDeleteRoleDialog}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle className="text-red-600 flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />Excluir Role
+              <Trash2 className="h-5 w-5" />Excluir Cargo
             </DialogTitle>
             <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
           </DialogHeader>
@@ -1972,3 +2001,4 @@ export function AdminDashboard() {
     </div>
   );
 }
+
