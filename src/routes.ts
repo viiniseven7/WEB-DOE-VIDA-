@@ -11,6 +11,7 @@ import { DonorDashboard } from "./components/dashboards/DonorDashboard";
 import { StaffDashboard } from "./components/dashboards/StaffDashboard";
 import { DirectorDashboard } from "./components/dashboards/DirectorDashboard";
 import { AdminDashboard } from "./components/dashboards/AdminDashboard";
+import { CustomRoleDashboard } from "./components/dashboards/CustomRoleDashboard";
 import { NotFound } from "./components/NotFound";
 
 export const router = createBrowserRouter([
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "dashboard/funcionario", Component: StaffDashboard },
       { path: "dashboard/diretor", Component: DirectorDashboard },
       { path: "dashboard/admin", Component: AdminDashboard },
+      { path: "dashboard/custom", Component: CustomRoleDashboard },
       { path: "*", Component: NotFound },
     ],
   },

@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import {
   Droplet, Calendar, Users, LogOut, Bell, TrendingUp, Activity,
-  UserCheck, BarChart3, Clock, Download, UserPlus, Plus, Minus,
+  UserCheck, BarChart3, Download, UserPlus, Plus, Minus,
   FileText, FileSpreadsheet, FilePieChart
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -106,7 +106,7 @@ export function DirectorDashboard() {
 
   // ── Relatório
   const [reportType, setReportType] = useState('');
-  const [reportFormat, setReportFormat] = useState('pdf');
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   // ─── Guard ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -275,31 +275,46 @@ export function DirectorDashboard() {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
 
     const endpoints: Record<string, string> = {
-      donations: '/relatorios/doacoes',
-      stock:     '/relatorios/estoque',
-      donors:    '/relatorios/doadores',
+      doacoes:      '/relatorios/doacoes/pdf',
+      estoque:      '/relatorios/estoque/pdf',
+      doadores:     '/relatorios/doadores/pdf',
+      agendamentos: '/relatorios/agendamentos/pdf',
+      triagens:     '/relatorios/triagens/pdf',
+    };
+
+    const nomes: Record<string, string> = {
+      doacoes:      'doacoes',
+      estoque:      'estoque',
+      doadores:     'doadores',
+      agendamentos: 'agendamentos',
+      triagens:     'triagens',
     };
 
     const endpoint = endpoints[reportType];
-    if (!endpoint) { toast.error('Tipo de relatório não disponível'); return; }
+    if (!endpoint) { toast.error('Tipo não disponível'); return; }
 
+    setIsDownloadingReport(true);
+    toast.info('Gerando relatório PDF...');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`http://localhost:8000/api${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Erro ao gerar relatório');
+      if (!res.ok) throw new Error();
       const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href     = url;
-      link.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.href = url;
+      link.download = `relatorio-${nomes[reportType]}-${new Date().toISOString().split('T')[0]}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
       toast.success('Relatório gerado com sucesso!');
       setExportDialogOpen(false);
+      setReportType('');
     } catch {
       toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    } finally {
+      setIsDownloadingReport(false);
     }
   };
 
@@ -683,13 +698,14 @@ export function DirectorDashboard() {
                 <CardTitle>Relatórios e Análises</CardTitle>
                 <CardDescription>Gere relatórios detalhados do hemocentro</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {[
-                    { icon: BarChart3, title: 'Relatório Mensal', desc: 'Doações e estatísticas', value: 'monthly' },
-                    { icon: Users,     title: 'Relatório de Doadores', desc: 'Cadastros e perfil', value: 'donors' },
-                    { icon: Droplet,   title: 'Relatório de Estoque', desc: 'Entrada e saída', value: 'stock' },
-                    { icon: Activity,  title: 'Relatório de Desempenho', desc: 'Equipe e processos', value: 'performance' },
+                    { icon: BarChart3, title: 'Doações',       desc: 'Coletas, volume, tipos',     value: 'doacoes' },
+                    { icon: Droplet,   title: 'Estoque',        desc: 'Níveis e alertas',           value: 'estoque' },
+                    { icon: Users,     title: 'Doadores',       desc: 'Cadastros e perfil',         value: 'doadores' },
+                    { icon: Calendar,  title: 'Agendamentos',   desc: 'Status e taxa de conclusão', value: 'agendamentos' },
+                    { icon: UserCheck, title: 'Triagens',       desc: 'Aptidão e motivos',          value: 'triagens' },
                   ].map(({ icon: Icon, title, desc, value }) => (
                     <Button
                       key={value}
@@ -706,26 +722,6 @@ export function DirectorDashboard() {
                       </div>
                     </Button>
                   ))}
-                </div>
-
-                <div className="pt-6 border-t">
-                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-purple-600" /> Relatórios Recentes
-                  </h4>
-                  <div className="space-y-2">
-                    {[
-                      { name: 'Relatório Mensal - Fevereiro 2026', date: '01/03/2026', size: '2.4 MB' },
-                      { name: 'Relatório de Estoque - Janeiro 2026', date: '25/02/2026', size: '1.8 MB' },
-                    ].map((r, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div>
-                          <p className="font-semibold text-sm text-gray-900">{r.name}</p>
-                          <p className="text-xs text-gray-500">{r.date} • {r.size}</p>
-                        </div>
-                        <Button size="sm" variant="ghost"><Download className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -840,40 +836,39 @@ export function DirectorDashboard() {
 
       {/* Exportar Relatório */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Exportar Relatório</DialogTitle>
-            <DialogDescription>Selecione o tipo e formato</DialogDescription>
+            <DialogTitle>Gerar Relatório PDF</DialogTitle>
+            <DialogDescription>Selecione o relatório desejado. O arquivo será baixado automaticamente.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Tipo de Relatório</Label>
-              <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="monthly">Relatório Mensal</SelectItem>
-                  <SelectItem value="donors">Relatório de Doadores</SelectItem>
-                  <SelectItem value="stock">Relatório de Estoque</SelectItem>
-                  <SelectItem value="performance">Relatório de Desempenho</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Formato</Label>
-              <Select value={reportFormat} onValueChange={setReportFormat}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">PDF</SelectItem>
-                  <SelectItem value="excel">Excel (.xlsx)</SelectItem>
-                  <SelectItem value="csv">CSV</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-2 gap-3 py-4">
+            {[
+              { value: 'doacoes',      label: 'Doações',       desc: 'Coletas, volume, tipos',         color: 'border-red-200 hover:border-red-400' },
+              { value: 'estoque',      label: 'Estoque',        desc: 'Níveis e alertas',               color: 'border-blue-200 hover:border-blue-400' },
+              { value: 'doadores',     label: 'Doadores',       desc: 'Cadastros e perfil',             color: 'border-green-200 hover:border-green-400' },
+              { value: 'agendamentos', label: 'Agendamentos',   desc: 'Status e taxa de conclusão',     color: 'border-purple-200 hover:border-purple-400' },
+              { value: 'triagens',     label: 'Triagens',       desc: 'Aptidão e motivos',              color: 'border-violet-200 hover:border-violet-400' },
+            ].map(({ value, label, desc, color }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setReportType(value)}
+                className={`text-left p-3 rounded-lg border-2 transition-colors ${color} ${reportType === value ? 'bg-gray-50 border-opacity-100' : 'border-gray-100'}`}
+              >
+                <div className="font-medium text-sm text-gray-900">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
+              </button>
+            ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleExportReport} className="bg-purple-600 hover:bg-purple-700 text-white">
-              <Download className="h-4 w-4 mr-2" />Exportar
+            <Button variant="outline" onClick={() => { setExportDialogOpen(false); setReportType(''); }}>Cancelar</Button>
+            <Button
+              onClick={handleExportReport}
+              disabled={!reportType || isDownloadingReport}
+              className="bg-red-600 hover:bg-red-700 text-white gap-2"
+            >
+              <Download className="h-4 w-4" />
+              {isDownloadingReport ? 'Gerando...' : 'Baixar PDF'}
             </Button>
           </DialogFooter>
         </DialogContent>

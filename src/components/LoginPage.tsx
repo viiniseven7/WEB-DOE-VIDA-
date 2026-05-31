@@ -36,6 +36,7 @@ const role = typeof rawRole === 'string'
     else if (role === 'funcionario') target = '/dashboard/funcionario';
     else if (role === 'diretor') target = '/dashboard/diretor';
     else if (role === 'admin') target = '/dashboard/admin';
+    else if (role) target = '/dashboard/custom';
 
     if (target && location.pathname !== target) {
       navigate(target, { replace: true });
