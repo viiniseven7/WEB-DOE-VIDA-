@@ -24,27 +24,12 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 
-// ─── Mocks (sem API equivalente) ─────────────────────────────────────────────
+// ─── Cores para Gráficos ───────────────────────────────────────────────────
 
-const monthlyDonations = [
-  { month: 'Jan', donations: 245 },
-  { month: 'Fev', donations: 289 },
-  { month: 'Mar', donations: 267 },
-  { month: 'Abr', donations: 312 },
-  { month: 'Mai', donations: 298 },
-  { month: 'Jun', donations: 325 },
-];
-
-const bloodTypeDistribution = [
-  { name: 'O+', value: 35, color: '#DC2626' },
-  { name: 'A+', value: 28, color: '#EA580C' },
-  { name: 'B+', value: 18, color: '#CA8A04' },
-  { name: 'AB+', value: 8, color: '#16A34A' },
-  { name: 'O-', value: 5, color: '#2563EB' },
-  { name: 'A-', value: 3, color: '#7C3AED' },
-  { name: 'B-', value: 2, color: '#DB2777' },
-  { name: 'AB-', value: 1, color: '#0891B2' },
-];
+const BLOOD_COLORS: Record<string, string> = {
+  'O+': '#DC2626', 'A+': '#EA580C', 'B+': '#CA8A04', 'AB+': '#16A34A',
+  'O-': '#2563EB', 'A-': '#7C3AED', 'B-': '#DB2777', 'AB-': '#0891B2',
+};
 
 const emptyDirectorStats = {
   agendamentos_hoje: 0,
@@ -55,6 +40,9 @@ const emptyDirectorStats = {
   doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
   doacoes_por_tipo: {} as Record<string, number>,
   total_doadores_ativos: 0,
+  taxa_comparecimento: null as number | null,
+  media_diaria: null as number | null,
+  satisfacao: null as number | null,
 };
 
 const roleLabels: Record<number, string> = {
@@ -122,13 +110,34 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
+      // Executa as chamadas individualmente para que uma falha não cancele todas
+      const fetchHemocentros = api.get('/hemocentros').catch(err => {
+        console.error('Erro em /hemocentros:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchUsers = api.get('/users').catch(err => {
+        console.error('Erro em /users:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchAgend = api.get('/agendamentos').catch(err => {
+        console.error('Erro em /agendamentos:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchDoacoes = api.get('/doacoes').catch(err => {
+        console.error('Erro em /doacoes:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchStock = api.get('/estoque').catch(err => {
+        console.error('Erro em /estoque:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchStats = api.get('/estatisticas/diretor').catch(err => {
+        console.error('Erro em /estatisticas/diretor:', err.response?.data || err.message);
+        return { data: { data: {} } };
+      });
+
       const [hemocentrosRes, usersRes, agendRes, doacoesRes, stockRes, statsRes] = await Promise.all([
-        api.get('/hemocentros'),
-        api.get('/users'),
-        api.get('/agendamentos'),
-        api.get('/doacoes'),
-        api.get('/estoque'),
-        api.get('/estatisticas/diretor'),
+        fetchHemocentros, fetchUsers, fetchAgend, fetchDoacoes, fetchStock, fetchStats
       ]);
 
       setHemocentros(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []);
@@ -172,10 +181,13 @@ export function DirectorDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 150
       })));
-      setStats({ ...emptyDirectorStats, ...statsRes.data });
+
+      // Trata o invólucro 'data' comum no Laravel
+      const realStats = statsRes.data?.data || statsRes.data || {};
+      setStats({ ...emptyDirectorStats, ...realStats });
 
     } catch (err: any) {
-      console.error('Erro ao carregar dados:', err.response?.data);
+      console.error('Erro crítico no fetchData:', err);
       toast.error('Erro ao carregar dados do painel');
     } finally {
       setIsLoading(false);
@@ -319,14 +331,20 @@ export function DirectorDashboard() {
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
+  const hemocentro = user.hemocentro || {};
   const hemocentroNomeResolvido =
-    user.hemocentro?.nome ||
+    hemocentro.nome ||
     user.hemocentroName ||
-    hemocentros.find((hemocentro: any) => Number(hemocentro.id) === Number(user.hemocentro_id))?.nome ||
+    hemocentros.find((h: any) => Number(h.id) === Number(user.hemocentro_id))?.nome ||
     '';
   const hemocentroNome = hemocentroNomeResolvido
     ? `Hemocentro ${hemocentroNomeResolvido}`
-    : 'Hemocentro vinculado';
+    : `Hemocentro vinculado (#${user.hemocentro_id})`;
+  const hemocentroLocal = hemocentro.cidade ? `${hemocentro.cidade}, ${hemocentro.uf || ''}` : 'Localização não informada';
+
+  const presencasHoje = stats.confirmados_hoje || 0;
+  const totalAgendados = stats.agendamentos_hoje || 0;
+
   const notifications = useMemo(() => buildDashboardNotifications({
     hemocentroId: Number(user?.hemocentro_id),
     doacoes,
@@ -339,20 +357,23 @@ export function DirectorDashboard() {
   useEffect(() => {
     setHasUnreadNotifications(notifications.length > 0);
   }, [notificationsKey]);
+
   const agendConcluidos = agendamentosHoje.filter(
     (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
+
   const staffOnline = staffList.filter((s: any) => s.status === 1 || s.status === 'ativo').length;
-  const monthlyStats = stats.doacoes_por_mes.length
-    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, donations: item.total }))
-    : monthlyDonations;
-  const bloodTypeStats = Object.keys(stats.doacoes_por_tipo || {}).length
-    ? Object.entries(stats.doacoes_por_tipo).map(([name, value]) => ({
-        name,
-        value: Number(value),
-        color: bloodTypeDistribution.find(d => d.name === name)?.color || '#DC2626',
-      }))
-    : bloodTypeDistribution;
+
+  const monthlyStats = (stats.doacoes_por_mes || []).length
+    ? stats.doacoes_por_mes.map((item: any) => ({ month: item.mes, donations: item.total }))
+    : [];
+
+  // O gráfico de pizza reflete o ESTOQUE REAL (stock)
+  const bloodTypeStats = stock.map(item => ({
+    name: item.type,
+    value: item.current,
+    color: BLOOD_COLORS[item.type] || '#DC2626',
+  })).filter(item => item.value > 0);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -416,7 +437,7 @@ export function DirectorDashboard() {
             </Popover>
             <Avatar>
               <AvatarFallback className="bg-purple-100 text-purple-600">
-                {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div className="hidden md:block">
@@ -438,7 +459,7 @@ export function DirectorDashboard() {
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
               Olá, {user.name?.split(' ')[0]}! 👋
             </h2>
-            <p className="text-gray-600">{hemocentroNome} — Gerenciamento completo</p>
+            <p className="text-gray-600">{hemocentroNome} — {hemocentroLocal}</p>
           </div>
           <Button onClick={() => setExportDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
             <Download className="h-4 w-4" />Exportar Relatório
@@ -450,24 +471,25 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes || 0}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
-                <TrendingUp className="h-4 w-4" /><span>+8% vs mês anterior</span>
+                <TrendingUp className="h-4 w-4" />
+                <span>{stats.crescimento_mes ? `${stats.crescimento_mes}% vs mês anterior` : 'Acompanhamento em tempo real'}</span>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3">
-              <CardDescription>Equipe no Hemocentro</CardDescription>
+              <CardDescription>Equipe na Unidade</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : staffList.length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Users className="h-4 w-4 text-blue-600" />
-                <span>{staffList.length} cadastrados</span>
+                <span>{staffList.filter((s:any) => s.status === 1 || s.status === 'ativo').length} ativos agora</span>
               </div>
             </CardContent>
           </Card>
@@ -475,12 +497,12 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : totalAgendados}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar className="h-4 w-4 text-green-600" />
-                <span>{agendConcluidos} concluídos</span>
+                <span>{presencasHoje} presenças registradas</span>
               </div>
             </CardContent>
           </Card>
@@ -489,7 +511,7 @@ export function DirectorDashboard() {
             <CardHeader className="pb-3">
               <CardDescription>Estoque Crítico</CardDescription>
               <CardTitle className="text-3xl text-red-600">
-                {stats.estoque_critico.length}
+                {stats.estoque_critico?.length || 0}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -513,75 +535,97 @@ export function DirectorDashboard() {
           {/* ── Visão Geral ── */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Evolução de Doações</CardTitle>
-                  <CardDescription>Últimos 6 meses</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={monthlyStats}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" /><YAxis />
-                      <Tooltip /><Legend />
-                      <Line type="monotone" dataKey="donations" stroke="#9333EA" strokeWidth={2} name="Doações" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Distribuição por Tipo Sanguíneo</CardTitle>
-                  <CardDescription>Doações do mês atual</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={bloodTypeStats}
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          innerRadius={40}
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {bloodTypeStats.map((entry, i) => (
-                            <Cell key={`cell-${i}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: any, name: string) => [`${value} bolsas`, name]}
-                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        />
-                        <Legend verticalAlign="bottom" height={36} />
-                      </PieChart>
+              {monthlyStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Evolução de Doações</CardTitle>
+                    <CardDescription>Volumes processados (Últimos meses)</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={monthlyStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" /><YAxis />
+                        <Tooltip /><Legend />
+                        <Line type="monotone" dataKey="donations" stroke="#9333EA" strokeWidth={2} name="Bolsas Coletadas" />
+                      </LineChart>
                     </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
+
+              {bloodTypeStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Distribuição por Tipo Sanguíneo</CardTitle>
+                    <CardDescription>Composição do estoque atual</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={bloodTypeStats}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            innerRadius={40}
+                            paddingAngle={5}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {bloodTypeStats.map((entry, i) => (
+                              <Cell key={`cell-${i}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: any, name: string) => [`${value} bolsas`, name]}
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          />
+                          <Legend verticalAlign="bottom" height={36} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">87%</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} /></div>
-                  <p className="text-sm text-gray-600 mt-2">218 de 250 agendamentos</p>
+              {stats.taxa_comparecimento !== null && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">{stats.taxa_comparecimento}%</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: `${stats.taxa_comparecimento}%` }} /></div>
+                    <p className="text-sm text-gray-600 mt-2">Comparecimento (CON) vs Agendados hoje</p>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {stats.media_diaria !== null && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Média Diária</CardDescription><CardTitle className="text-3xl">{stats.media_diaria}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-gray-600">coletas por dia útil</p></CardContent>
+                </Card>
+              )}
+
+              {stats.satisfacao !== null && stats.satisfacao > 0 && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Satisfação</CardDescription><CardTitle className="text-3xl">{stats.satisfacao}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-gray-600">de 5.0 estrelas</p></CardContent>
+                </Card>
+              )}
+            </div>
+            
+            {monthlyStats.length === 0 && bloodTypeStats.length === 0 && !isLoading && (
+              <Card className="bg-purple-50 border-purple-100">
+                <CardContent className="py-12 text-center">
+                  <BarChart3 className="h-12 w-12 text-purple-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-purple-900">Aguardando dados estatísticos</h3>
+                  <p className="text-purple-600">Os indicadores de performance serão exibidos assim que as primeiras doações forem processadas no sistema.</p>
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Média Diária</CardDescription><CardTitle className="text-3xl">15.2</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-gray-600">doações por dia útil</p><p className="text-sm text-green-600 mt-1">↑ 12% vs mês anterior</p></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Satisfação</CardDescription><CardTitle className="text-3xl">4.8</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-gray-600">de 5.0 estrelas</p><p className="text-sm text-gray-600 mt-1">baseado em 156 avaliações</p></CardContent>
-              </Card>
-            </div>
+            )}
           </TabsContent>
 
           {/* ── Funcionários ── */}
