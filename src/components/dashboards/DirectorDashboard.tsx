@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import {
   Droplet, Calendar, Users, LogOut, Bell, TrendingUp, Activity,
-  UserCheck, BarChart3, Clock, Download, UserPlus, Plus, Minus,
+  UserCheck, BarChart3, Download, UserPlus, Plus, Minus,
   FileText, FileSpreadsheet, FilePieChart
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -24,27 +24,12 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 
-// ─── Mocks (sem API equivalente) ─────────────────────────────────────────────
+// ─── Cores para Gráficos ───────────────────────────────────────────────────
 
-const monthlyDonations = [
-  { month: 'Jan', donations: 245 },
-  { month: 'Fev', donations: 289 },
-  { month: 'Mar', donations: 267 },
-  { month: 'Abr', donations: 312 },
-  { month: 'Mai', donations: 298 },
-  { month: 'Jun', donations: 325 },
-];
-
-const bloodTypeDistribution = [
-  { name: 'O+', value: 35, color: '#DC2626' },
-  { name: 'A+', value: 28, color: '#EA580C' },
-  { name: 'B+', value: 18, color: '#CA8A04' },
-  { name: 'AB+', value: 8, color: '#16A34A' },
-  { name: 'O-', value: 5, color: '#2563EB' },
-  { name: 'A-', value: 3, color: '#7C3AED' },
-  { name: 'B-', value: 2, color: '#DB2777' },
-  { name: 'AB-', value: 1, color: '#0891B2' },
-];
+const BLOOD_COLORS: Record<string, string> = {
+  'O+': '#DC2626', 'A+': '#EA580C', 'B+': '#CA8A04', 'AB+': '#16A34A',
+  'O-': '#2563EB', 'A-': '#7C3AED', 'B-': '#DB2777', 'AB-': '#0891B2',
+};
 
 const emptyDirectorStats = {
   agendamentos_hoje: 0,
@@ -55,6 +40,9 @@ const emptyDirectorStats = {
   doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
   doacoes_por_tipo: {} as Record<string, number>,
   total_doadores_ativos: 0,
+  taxa_comparecimento: null as number | null,
+  media_diaria: null as number | null,
+  satisfacao: null as number | null,
 };
 
 const roleLabels: Record<number, string> = {
@@ -106,7 +94,7 @@ export function DirectorDashboard() {
 
   // ── Relatório
   const [reportType, setReportType] = useState('');
-  const [reportFormat, setReportFormat] = useState('pdf');
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   // ─── Guard ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -122,13 +110,34 @@ export function DirectorDashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
+      // Executa as chamadas individualmente para que uma falha não cancele todas
+      const fetchHemocentros = api.get('/hemocentros').catch(err => {
+        console.error('Erro em /hemocentros:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchUsers = api.get('/users').catch(err => {
+        console.error('Erro em /users:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchAgend = api.get('/agendamentos').catch(err => {
+        console.error('Erro em /agendamentos:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchDoacoes = api.get('/doacoes').catch(err => {
+        console.error('Erro em /doacoes:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchStock = api.get('/estoque').catch(err => {
+        console.error('Erro em /estoque:', err.response?.data || err.message);
+        return { data: [] };
+      });
+      const fetchStats = api.get('/estatisticas/diretor').catch(err => {
+        console.error('Erro em /estatisticas/diretor:', err.response?.data || err.message);
+        return { data: { data: {} } };
+      });
+
       const [hemocentrosRes, usersRes, agendRes, doacoesRes, stockRes, statsRes] = await Promise.all([
-        api.get('/hemocentros'),
-        api.get('/users'),
-        api.get('/agendamentos'),
-        api.get('/doacoes'),
-        api.get('/estoque'),
-        api.get('/estatisticas/diretor'),
+        fetchHemocentros, fetchUsers, fetchAgend, fetchDoacoes, fetchStock, fetchStats
       ]);
 
       setHemocentros(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []);
@@ -172,10 +181,13 @@ export function DirectorDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 150
       })));
-      setStats({ ...emptyDirectorStats, ...statsRes.data });
+
+      // Trata o invólucro 'data' comum no Laravel
+      const realStats = statsRes.data?.data || statsRes.data || {};
+      setStats({ ...emptyDirectorStats, ...realStats });
 
     } catch (err: any) {
-      console.error('Erro ao carregar dados:', err.response?.data);
+      console.error('Erro crítico no fetchData:', err);
       toast.error('Erro ao carregar dados do painel');
     } finally {
       setIsLoading(false);
@@ -275,43 +287,64 @@ export function DirectorDashboard() {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
 
     const endpoints: Record<string, string> = {
-      donations: '/relatorios/doacoes',
-      stock:     '/relatorios/estoque',
-      donors:    '/relatorios/doadores',
+      doacoes:      '/relatorios/doacoes/pdf',
+      estoque:      '/relatorios/estoque/pdf',
+      doadores:     '/relatorios/doadores/pdf',
+      agendamentos: '/relatorios/agendamentos/pdf',
+      triagens:     '/relatorios/triagens/pdf',
+    };
+
+    const nomes: Record<string, string> = {
+      doacoes:      'doacoes',
+      estoque:      'estoque',
+      doadores:     'doadores',
+      agendamentos: 'agendamentos',
+      triagens:     'triagens',
     };
 
     const endpoint = endpoints[reportType];
-    if (!endpoint) { toast.error('Tipo de relatório não disponível'); return; }
+    if (!endpoint) { toast.error('Tipo não disponível'); return; }
 
+    setIsDownloadingReport(true);
+    toast.info('Gerando relatório PDF...');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`http://localhost:8000/api${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Erro ao gerar relatório');
+      if (!res.ok) throw new Error();
       const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href     = url;
-      link.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.href = url;
+      link.download = `relatorio-${nomes[reportType]}-${new Date().toISOString().split('T')[0]}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
       toast.success('Relatório gerado com sucesso!');
       setExportDialogOpen(false);
+      setReportType('');
     } catch {
       toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    } finally {
+      setIsDownloadingReport(false);
     }
   };
 
   // ─── Computados ───────────────────────────────────────────────────────────
+  const hemocentro = user.hemocentro || {};
   const hemocentroNomeResolvido =
-    user.hemocentro?.nome ||
+    hemocentro.nome ||
     user.hemocentroName ||
-    hemocentros.find((hemocentro: any) => Number(hemocentro.id) === Number(user.hemocentro_id))?.nome ||
+    hemocentros.find((h: any) => Number(h.id) === Number(user.hemocentro_id))?.nome ||
     '';
   const hemocentroNome = hemocentroNomeResolvido
     ? `Hemocentro ${hemocentroNomeResolvido}`
-    : 'Hemocentro vinculado';
+    : `Hemocentro vinculado (#${user.hemocentro_id})`;
+  const hemocentroLocal = hemocentro.cidade ? `${hemocentro.cidade}, ${hemocentro.uf || ''}` : 'Localização não informada';
+
+  const presencasHoje = stats.confirmados_hoje || 0;
+  const totalAgendados = stats.agendamentos_hoje || 0;
+
   const notifications = useMemo(() => buildDashboardNotifications({
     hemocentroId: Number(user?.hemocentro_id),
     doacoes,
@@ -324,20 +357,23 @@ export function DirectorDashboard() {
   useEffect(() => {
     setHasUnreadNotifications(notifications.length > 0);
   }, [notificationsKey]);
+
   const agendConcluidos = agendamentosHoje.filter(
     (a: any) => ['FIN', 'concluido', 'Finalizado'].includes(a.status || a.status_agendamento)
   ).length;
+
   const staffOnline = staffList.filter((s: any) => s.status === 1 || s.status === 'ativo').length;
-  const monthlyStats = stats.doacoes_por_mes.length
-    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, donations: item.total }))
-    : monthlyDonations;
-  const bloodTypeStats = Object.keys(stats.doacoes_por_tipo || {}).length
-    ? Object.entries(stats.doacoes_por_tipo).map(([name, value]) => ({
-        name,
-        value: Number(value),
-        color: bloodTypeDistribution.find(d => d.name === name)?.color || '#DC2626',
-      }))
-    : bloodTypeDistribution;
+
+  const monthlyStats = (stats.doacoes_por_mes || []).length
+    ? stats.doacoes_por_mes.map((item: any) => ({ month: item.mes, donations: item.total }))
+    : [];
+
+  // O gráfico de pizza reflete o ESTOQUE REAL (stock)
+  const bloodTypeStats = stock.map(item => ({
+    name: item.type,
+    value: item.current,
+    color: BLOOD_COLORS[item.type] || '#DC2626',
+  })).filter(item => item.value > 0);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -401,7 +437,7 @@ export function DirectorDashboard() {
             </Popover>
             <Avatar>
               <AvatarFallback className="bg-purple-100 text-purple-600">
-                {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div className="hidden md:block">
@@ -423,7 +459,7 @@ export function DirectorDashboard() {
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
               Olá, {user.name?.split(' ')[0]}! 👋
             </h2>
-            <p className="text-gray-600">{hemocentroNome} — Gerenciamento completo</p>
+            <p className="text-gray-600">{hemocentroNome} — {hemocentroLocal}</p>
           </div>
           <Button onClick={() => setExportDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
             <Download className="h-4 w-4" />Exportar Relatório
@@ -435,24 +471,25 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
               <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes || 0}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
-                <TrendingUp className="h-4 w-4" /><span>+8% vs mês anterior</span>
+                <TrendingUp className="h-4 w-4" />
+                <span>{stats.crescimento_mes ? `${stats.crescimento_mes}% vs mês anterior` : 'Acompanhamento em tempo real'}</span>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3">
-              <CardDescription>Equipe no Hemocentro</CardDescription>
+              <CardDescription>Equipe na Unidade</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : staffList.length}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Users className="h-4 w-4 text-blue-600" />
-                <span>{staffList.length} cadastrados</span>
+                <span>{staffList.filter((s:any) => s.status === 1 || s.status === 'ativo').length} ativos agora</span>
               </div>
             </CardContent>
           </Card>
@@ -460,12 +497,12 @@ export function DirectorDashboard() {
           <Card className="border-l-4 border-l-green-600">
             <CardHeader className="pb-3">
               <CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : totalAgendados}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar className="h-4 w-4 text-green-600" />
-                <span>{agendConcluidos} concluídos</span>
+                <span>{presencasHoje} presenças registradas</span>
               </div>
             </CardContent>
           </Card>
@@ -474,7 +511,7 @@ export function DirectorDashboard() {
             <CardHeader className="pb-3">
               <CardDescription>Estoque Crítico</CardDescription>
               <CardTitle className="text-3xl text-red-600">
-                {stats.estoque_critico.length}
+                {stats.estoque_critico?.length || 0}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -498,75 +535,97 @@ export function DirectorDashboard() {
           {/* ── Visão Geral ── */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Evolução de Doações</CardTitle>
-                  <CardDescription>Últimos 6 meses</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={monthlyStats}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" /><YAxis />
-                      <Tooltip /><Legend />
-                      <Line type="monotone" dataKey="donations" stroke="#9333EA" strokeWidth={2} name="Doações" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Distribuição por Tipo Sanguíneo</CardTitle>
-                  <CardDescription>Doações do mês atual</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={bloodTypeStats}
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          innerRadius={40}
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {bloodTypeStats.map((entry, i) => (
-                            <Cell key={`cell-${i}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: any, name: string) => [`${value} bolsas`, name]}
-                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        />
-                        <Legend verticalAlign="bottom" height={36} />
-                      </PieChart>
+              {monthlyStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Evolução de Doações</CardTitle>
+                    <CardDescription>Volumes processados (Últimos meses)</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={monthlyStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" /><YAxis />
+                        <Tooltip /><Legend />
+                        <Line type="monotone" dataKey="donations" stroke="#9333EA" strokeWidth={2} name="Bolsas Coletadas" />
+                      </LineChart>
                     </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
+
+              {bloodTypeStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Distribuição por Tipo Sanguíneo</CardTitle>
+                    <CardDescription>Composição do estoque atual</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={bloodTypeStats}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            innerRadius={40}
+                            paddingAngle={5}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {bloodTypeStats.map((entry, i) => (
+                              <Cell key={`cell-${i}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: any, name: string) => [`${value} bolsas`, name]}
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          />
+                          <Legend verticalAlign="bottom" height={36} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">87%</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} /></div>
-                  <p className="text-sm text-gray-600 mt-2">218 de 250 agendamentos</p>
+              {stats.taxa_comparecimento !== null && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">{stats.taxa_comparecimento}%</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: `${stats.taxa_comparecimento}%` }} /></div>
+                    <p className="text-sm text-gray-600 mt-2">Comparecimento (CON) vs Agendados hoje</p>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {stats.media_diaria !== null && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Média Diária</CardDescription><CardTitle className="text-3xl">{stats.media_diaria}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-gray-600">coletas por dia útil</p></CardContent>
+                </Card>
+              )}
+
+              {stats.satisfacao !== null && stats.satisfacao > 0 && (
+                <Card>
+                  <CardHeader className="pb-3"><CardDescription>Satisfação</CardDescription><CardTitle className="text-3xl">{stats.satisfacao}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-gray-600">de 5.0 estrelas</p></CardContent>
+                </Card>
+              )}
+            </div>
+            
+            {monthlyStats.length === 0 && bloodTypeStats.length === 0 && !isLoading && (
+              <Card className="bg-purple-50 border-purple-100">
+                <CardContent className="py-12 text-center">
+                  <BarChart3 className="h-12 w-12 text-purple-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-purple-900">Aguardando dados estatísticos</h3>
+                  <p className="text-purple-600">Os indicadores de performance serão exibidos assim que as primeiras doações forem processadas no sistema.</p>
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Média Diária</CardDescription><CardTitle className="text-3xl">15.2</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-gray-600">doações por dia útil</p><p className="text-sm text-green-600 mt-1">↑ 12% vs mês anterior</p></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Satisfação</CardDescription><CardTitle className="text-3xl">4.8</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-gray-600">de 5.0 estrelas</p><p className="text-sm text-gray-600 mt-1">baseado em 156 avaliações</p></CardContent>
-              </Card>
-            </div>
+            )}
           </TabsContent>
 
           {/* ── Funcionários ── */}
@@ -683,13 +742,14 @@ export function DirectorDashboard() {
                 <CardTitle>Relatórios e Análises</CardTitle>
                 <CardDescription>Gere relatórios detalhados do hemocentro</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {[
-                    { icon: BarChart3, title: 'Relatório Mensal', desc: 'Doações e estatísticas', value: 'monthly' },
-                    { icon: Users,     title: 'Relatório de Doadores', desc: 'Cadastros e perfil', value: 'donors' },
-                    { icon: Droplet,   title: 'Relatório de Estoque', desc: 'Entrada e saída', value: 'stock' },
-                    { icon: Activity,  title: 'Relatório de Desempenho', desc: 'Equipe e processos', value: 'performance' },
+                    { icon: BarChart3, title: 'Doações',       desc: 'Coletas, volume, tipos',     value: 'doacoes' },
+                    { icon: Droplet,   title: 'Estoque',        desc: 'Níveis e alertas',           value: 'estoque' },
+                    { icon: Users,     title: 'Doadores',       desc: 'Cadastros e perfil',         value: 'doadores' },
+                    { icon: Calendar,  title: 'Agendamentos',   desc: 'Status e taxa de conclusão', value: 'agendamentos' },
+                    { icon: UserCheck, title: 'Triagens',       desc: 'Aptidão e motivos',          value: 'triagens' },
                   ].map(({ icon: Icon, title, desc, value }) => (
                     <Button
                       key={value}
@@ -706,26 +766,6 @@ export function DirectorDashboard() {
                       </div>
                     </Button>
                   ))}
-                </div>
-
-                <div className="pt-6 border-t">
-                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-purple-600" /> Relatórios Recentes
-                  </h4>
-                  <div className="space-y-2">
-                    {[
-                      { name: 'Relatório Mensal - Fevereiro 2026', date: '01/03/2026', size: '2.4 MB' },
-                      { name: 'Relatório de Estoque - Janeiro 2026', date: '25/02/2026', size: '1.8 MB' },
-                    ].map((r, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div>
-                          <p className="font-semibold text-sm text-gray-900">{r.name}</p>
-                          <p className="text-xs text-gray-500">{r.date} • {r.size}</p>
-                        </div>
-                        <Button size="sm" variant="ghost"><Download className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -840,40 +880,39 @@ export function DirectorDashboard() {
 
       {/* Exportar Relatório */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Exportar Relatório</DialogTitle>
-            <DialogDescription>Selecione o tipo e formato</DialogDescription>
+            <DialogTitle>Gerar Relatório PDF</DialogTitle>
+            <DialogDescription>Selecione o relatório desejado. O arquivo será baixado automaticamente.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Tipo de Relatório</Label>
-              <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="monthly">Relatório Mensal</SelectItem>
-                  <SelectItem value="donors">Relatório de Doadores</SelectItem>
-                  <SelectItem value="stock">Relatório de Estoque</SelectItem>
-                  <SelectItem value="performance">Relatório de Desempenho</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Formato</Label>
-              <Select value={reportFormat} onValueChange={setReportFormat}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">PDF</SelectItem>
-                  <SelectItem value="excel">Excel (.xlsx)</SelectItem>
-                  <SelectItem value="csv">CSV</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-2 gap-3 py-4">
+            {[
+              { value: 'doacoes',      label: 'Doações',       desc: 'Coletas, volume, tipos',         color: 'border-red-200 hover:border-red-400' },
+              { value: 'estoque',      label: 'Estoque',        desc: 'Níveis e alertas',               color: 'border-blue-200 hover:border-blue-400' },
+              { value: 'doadores',     label: 'Doadores',       desc: 'Cadastros e perfil',             color: 'border-green-200 hover:border-green-400' },
+              { value: 'agendamentos', label: 'Agendamentos',   desc: 'Status e taxa de conclusão',     color: 'border-purple-200 hover:border-purple-400' },
+              { value: 'triagens',     label: 'Triagens',       desc: 'Aptidão e motivos',              color: 'border-violet-200 hover:border-violet-400' },
+            ].map(({ value, label, desc, color }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setReportType(value)}
+                className={`text-left p-3 rounded-lg border-2 transition-colors ${color} ${reportType === value ? 'bg-gray-50 border-opacity-100' : 'border-gray-100'}`}
+              >
+                <div className="font-medium text-sm text-gray-900">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
+              </button>
+            ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleExportReport} className="bg-purple-600 hover:bg-purple-700 text-white">
-              <Download className="h-4 w-4 mr-2" />Exportar
+            <Button variant="outline" onClick={() => { setExportDialogOpen(false); setReportType(''); }}>Cancelar</Button>
+            <Button
+              onClick={handleExportReport}
+              disabled={!reportType || isDownloadingReport}
+              className="bg-red-600 hover:bg-red-700 text-white gap-2"
+            >
+              <Download className="h-4 w-4" />
+              {isDownloadingReport ? 'Gerando...' : 'Baixar PDF'}
             </Button>
           </DialogFooter>
         </DialogContent>

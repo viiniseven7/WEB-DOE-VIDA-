@@ -8,6 +8,7 @@ export interface User {
   role_id: number | null;
   tempo_restricao?: string;
   roles: string[];
+  permissions: string[];
 }
 
 interface AuthContextType {
@@ -50,9 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               ? [roleMap[response.data.user.role_id]]
               : ['doador'];
 
+          const permissions = Array.isArray(response.data.permissions) ? response.data.permissions : [];
           setUser({
             ...response.data.user,
             roles,
+            permissions,
           });
 
         } catch {
@@ -80,9 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? [roleMap[res.data.user.role_id]]
           : ['doador'];
 
+      const permissions = Array.isArray(res.data.permissions) ? res.data.permissions : [];
       const userData = {
         ...res.data.user,
         roles,
+        permissions,
       };
 
       setUser(userData);
