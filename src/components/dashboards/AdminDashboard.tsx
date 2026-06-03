@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
@@ -266,6 +266,14 @@ export function AdminDashboard() {
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
   const [reportType, setReportType] = useState('');
+  const [reportPeriod, setReportPeriod] = useState('30');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportBloodType, setReportBloodType] = useState('todos');
+  const [chartPeriod, setChartPeriod] = useState('30');
+  const [chartStartDate, setChartStartDate] = useState('');
+  const [chartEndDate, setChartEndDate] = useState('');
+  const [chartBloodType, setChartBloodType] = useState('todos');
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
   const [mlRecsLoading, setMlRecsLoading] = useState(false);
   const [mlRecs, setMlRecs] = useState<any[]>([]);
@@ -784,6 +792,47 @@ export function AdminDashboard() {
     setShowCampaignDialog(true);
   };
 
+  const formatDatePt = (date: Date) => date.toLocaleDateString('pt-BR');
+
+  const resolvePeriodFilter = (period: string, startDate?: string, endDate?: string) => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const startOfToday = new Date(today);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    if (period === 'all') {
+      return { start: null as Date | null, end: null as Date | null, label: 'Período completo' };
+    }
+
+    if (period === 'previous_month') {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth(), 0);
+      end.setHours(23, 59, 59, 999);
+      return { start, end, label: `Mês anterior (${formatDatePt(start)} a ${formatDatePt(end)})` };
+    }
+
+    if (period === 'custom' && startDate && endDate) {
+      const start = new Date(`${startDate}T00:00:00`);
+      const end = new Date(`${endDate}T23:59:59`);
+      return { start, end, label: `${formatDatePt(start)} a ${formatDatePt(end)}` };
+    }
+
+    const days = Number(period) || 30;
+    const start = new Date(startOfToday);
+    start.setDate(start.getDate() - days);
+    return { start, end: today, label: `Últimos ${days} dias (${formatDatePt(start)} a ${formatDatePt(today)})` };
+  };
+
+  const isDateInPeriod = (value: any, periodInfo: { start: Date | null; end: Date | null }) => {
+    if (!periodInfo.start && !periodInfo.end) return true;
+    if (!value) return false;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return false;
+    if (periodInfo.start && date < periodInfo.start) return false;
+    if (periodInfo.end && date > periodInfo.end) return false;
+    return true;
+  };
+
 
   // --- Roles (API) ------------------------------------------------------------
   const togglePermission = (permName: string, currentPerms: string[], setter: (p: string[]) => void) => {
@@ -856,6 +905,10 @@ export function AdminDashboard() {
   // --- Relatório ---------------------------------------------------------------
   const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
+    if (reportPeriod === 'custom' && (!reportStartDate || !reportEndDate)) {
+      toast.error('Informe a data inicial e final do período');
+      return;
+    }
 
     const endpoints: Record<string, string> = {
       doacoes:      '/relatorios/doacoes/pdf',
@@ -877,12 +930,19 @@ export function AdminDashboard() {
 
     const endpoint = endpoints[reportType];
     if (!endpoint) { toast.error('Tipo não disponível'); return; }
+    const reportPeriodInfo = resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate);
+    const params = new URLSearchParams();
+    params.set('periodo', reportPeriod);
+    params.set('periodo_label', reportPeriodInfo.label);
+    if (reportPeriodInfo.start) params.set('data_inicio', formatDateInput(reportPeriodInfo.start));
+    if (reportPeriodInfo.end) params.set('data_fim', formatDateInput(reportPeriodInfo.end));
+    if (reportBloodType !== 'todos') params.set('tipo_sangue', reportBloodType);
 
     setIsDownloadingReport(true);
     toast.info('Gerando relatório PDF...');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:8000/api${endpoint}`, {
+      const res = await fetch(`http://localhost:8000/api${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -944,17 +1004,52 @@ export function AdminDashboard() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const stockDistribution = globalStock.map(item => ({
+  const chartPeriodInfo = resolvePeriodFilter(chartPeriod, chartStartDate, chartEndDate);
+  const selectedBloodTypeLabel = chartBloodType === 'todos' ? 'Todos os tipos sanguíneos' : chartBloodType;
+  const filteredDoacoesForCharts = doacoes.filter((d: any) => {
+    const matchesDate = isDateInPeriod(d.data_hora_doacao || d.data_doacao || d.created_at, chartPeriodInfo);
+    const matchesType = chartBloodType === 'todos' || d.tipo_sangue === chartBloodType || d.tipo_sang === chartBloodType;
+    return matchesDate && matchesType;
+  });
+
+  const doacoesPorTipoData = Object.entries(stats.doacoes_por_tipo || {})
+    .map(([tipo, total]) => ({ tipo, total: Number(total) }))
+    .filter(d => chartBloodType === 'todos' || d.tipo === chartBloodType)
+    .sort((a, b) => b.total - a.total);
+
+  const estoqueBarData = globalStock
+    .filter(s => chartBloodType === 'todos' || s.type === chartBloodType)
+    .map(s => ({ tipo: s.type, atual: s.current, minimo: s.min, critico: s.critical }));
+
+  const stockDistribution = globalStock
+    .filter(item => chartBloodType === 'todos' || item.type === chartBloodType)
+    .map(item => ({
     name: item.type,
     value: item.current,
     color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A',
   }));
-  const donationsByHemocentro = stats.doacoes_por_hemocentro.length
-    ? stats.doacoes_por_hemocentro.map(item => ({ hemocentro: item.hemocentro, total: item.total }))
-    : systemStats;
-  const monthlySystemStats = stats.doacoes_por_mes.length
-    ? stats.doacoes_por_mes.map(item => ({ month: item.mes, total: item.total }))
-    : systemStats;
+  const donationsByHemocentro = filteredDoacoesForCharts.length
+    ? Object.values(filteredDoacoesForCharts.reduce((acc: Record<string, { hemocentro: string; total: number }>, item: any) => {
+        const nome = item.hemocentro?.nome || item.hemocentro || `Hemocentro ${item.hemocentro_id ?? 'N/D'}`;
+        acc[nome] = acc[nome] || { hemocentro: nome, total: 0 };
+        acc[nome].total += 1;
+        return acc;
+      }, {}))
+    : [];
+  const monthlySystemStats = filteredDoacoesForCharts.length
+    ? Object.values(filteredDoacoesForCharts.reduce((acc: Record<string, { month: string; total: number }>, item: any) => {
+        const rawDate = item.data_hora_doacao || item.data_doacao || item.created_at;
+        const date = rawDate ? new Date(rawDate) : null;
+        if (!date || Number.isNaN(date.getTime())) return acc;
+        const month = `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+        acc[month] = acc[month] || { month, total: 0 };
+        acc[month].total += 1;
+        return acc;
+      }, {}))
+    : [];
+  const monthlyAreaData = (stats.doacoes_por_mes || []).length > 0
+    ? (stats.doacoes_por_mes || []).map((item: any) => ({ mes: item.mes, total: item.total }))
+    : monthlySystemStats.map((item: any) => ({ mes: item.month, total: item.total }));
   const doacoesMesAtual = stats.doacoes_por_mes.length
     ? stats.doacoes_por_mes[stats.doacoes_por_mes.length - 1].total
     : 0;
@@ -1042,58 +1137,6 @@ export function AdminDashboard() {
           <p className="text-gray-600">Visão global do sistema DoaVida</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Total de Hemocentros</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.total_hemocentros || hemocentros.length}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Building2 className="h-4 w-4 text-green-600" />
-                <span>{hemocentrosAtivos.length} ativos</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-blue-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : doacoesMesAtual}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-green-600">
-                <BarChart3 className="h-4 w-4" /><span>+12% vs mês anterior</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Total de Doadores</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : totalDonors}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="h-4 w-4 text-purple-600" /><span>Cadastrados no sistema</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-orange-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Campanhas Ativas</CardDescription>
-              <CardTitle className="text-3xl">{campaigns.filter(c => c.status === true || c.status === 1).length}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Mail className="h-4 w-4 text-orange-600" /><span>Em andamento</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 md:grid-cols-7 lg:w-auto h-auto">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
@@ -1107,77 +1150,210 @@ export function AdminDashboard() {
 
           {/* -- Overview -- */}
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
+            <div className="flex flex-wrap items-center gap-3 px-1 mb-4">
+              <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5" />Filtros
+              </span>
+              <Select value={chartPeriod} onValueChange={setChartPeriod}>
+                <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">Últimos 30 dias</SelectItem>
+                  <SelectItem value="90">Últimos 90 dias</SelectItem>
+                  <SelectItem value="previous_month">Mês anterior</SelectItem>
+                  <SelectItem value="all">Período completo</SelectItem>
+                  <SelectItem value="custom">Intervalo personalizado</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={chartBloodType} onValueChange={setChartBloodType}>
+                <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os tipos</SelectItem>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {chartPeriod === 'custom' && (
+                <>
+                  <Input type="date" value={chartStartDate} onChange={e => setChartStartDate(e.target.value)} className="h-8 w-[140px] text-xs" />
+                  <Input type="date" value={chartEndDate} onChange={e => setChartEndDate(e.target.value)} className="h-8 w-[140px] text-xs" />
+                </>
+              )}
+              <span className="text-[11px] text-gray-400 ml-auto hidden md:block">{chartPeriodInfo.label} · {selectedBloodTypeLabel}</span>
+            </div>
+
+            {/* KPIs — 6 cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { label: 'Hemocentros ativos', value: hemocentrosAtivos.length, sub: `de ${hemocentros.length} cadastrados`, color: 'border-l-green-500', Icon: Building2 },
+                { label: 'Doações este mês', value: stats.doacoes_por_mes?.slice(-1)[0]?.total ?? doacoesMesAtual, sub: 'último mês fechado', color: 'border-l-blue-500', Icon: Droplet },
+                { label: 'Total de doadores', value: users.filter(u => Number(u.role_id) === 1).length, sub: 'cadastrados', color: 'border-l-purple-500', Icon: Users },
+                { label: 'Comparecimento', value: `${stats.taxa_comparecimento ?? 0}%`, sub: 'agendamentos → doações', color: 'border-l-emerald-500', Icon: Activity },
+                { label: 'Estoque crítico', value: globalStock.filter(s => s.critical).length, sub: 'tipos abaixo do mínimo', color: globalStock.filter(s => s.critical).length > 0 ? 'border-l-red-500' : 'border-l-gray-200', Icon: AlertCircle },
+                { label: 'Campanhas ativas', value: campaigns.filter((c: any) => c.status === true || c.status === 1).length, sub: 'em andamento', color: 'border-l-orange-500', Icon: Mail },
+              ].map(({ label, value, sub, color, Icon }) => (
+                <Card key={label} className={`border-l-4 ${color}`}>
+                  <CardContent className="px-4 py-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-gray-500 leading-tight">{label}</p>
+                      <Icon className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                    </div>
+                    <p className="text-xl font-bold text-gray-900">{isLoading ? '—' : value}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Gráficos — linha 1 */}
+            <div className="grid lg:grid-cols-2 gap-4">
               <Card>
-                <CardHeader>
-                  <CardTitle>Doações por Hemocentro</CardTitle>
-                  <CardDescription>Comparativo - Este Mês</CardDescription>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Doações por Hemocentro</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: tabela doacao · filtrada por período · {chartPeriodInfo.label}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={donationsByHemocentro}>
+                  {donationsByHemocentro.length === 0 ? (
+                    <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhuma doação no período selecionado.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={donationsByHemocentro} layout="vertical" margin={{ left: 8, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="hemocentro" tick={{ fontSize: 11 }} width={120} />
+                        <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="total" fill="#16A34A" radius={[0, 4, 4, 0]} name="Doações" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Doações por Tipo Sanguíneo</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: estatisticas/admin → doacoes_por_tipo · histórico completo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {doacoesPorTipoData.length === 0 ? (
+                    <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhum dado disponível.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={doacoesPorTipoData} margin={{ left: 0, right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]} name="Total">
+                          {doacoesPorTipoData.map((_: any, i: number) => (
+                            <Cell key={i} fill={['#DC2626','#B91C1C','#2563EB','#1D4ED8','#7C3AED','#6D28D9','#059669','#047857'][i % 8]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Gráfico — evolução mensal AreaChart */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-semibold">Evolução de Doações — Últimos 12 meses</CardTitle>
+                    <CardDescription className="text-[11px]">Fonte: estatisticas/admin → doacoes_por_mes · agrupado por mês</CardDescription>
+                  </div>
+                  {monthlyAreaData.length > 1 && (() => {
+                    const last = monthlyAreaData[monthlyAreaData.length - 1]?.total ?? 0;
+                    const prev = monthlyAreaData[monthlyAreaData.length - 2]?.total ?? 0;
+                    const diff = prev > 0 ? Math.round(((last - prev) / prev) * 100) : 0;
+                    return (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${diff >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {diff >= 0 ? '+' : ''}{diff}% vs mês anterior
+                      </span>
+                    );
+                  })()}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthlyAreaData.length === 0 ? (
+                  <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhum dado mensal disponível.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={monthlyAreaData} margin={{ left: 0, right: 8, top: 4 }}>
+                      <defs>
+                        <linearGradient id="colorDoacoes" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#16A34A" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#16A34A" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="hemocentro" /><YAxis />
-                      <Tooltip /><Legend />
-                      <Bar dataKey="total" fill="#16A34A" name="Doações" />
+                      <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                      <Area type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={2.5} fill="url(#colorDoacoes)" dot={{ r: 3, fill: '#16A34A' }} name="Doações" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Gráficos — linha 2: estoque */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Estoque Global por Tipo Sanguíneo</CardTitle>
+                  <CardDescription className="text-[11px]">
+                    Fonte: tabela estoque agregada globalmente · posição atual em bolsas
+                    {globalStock.filter(s => s.critical).length > 0 && (
+                      <span className="ml-2 text-red-600 font-medium">⚠ {globalStock.filter(s => s.critical).length} tipo(s) crítico(s)</span>
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={estoqueBarData} margin={{ left: 0, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: any, n: string) => [`${v} bolsas`, n === 'atual' ? 'Estoque atual' : 'Mínimo exigido']} contentStyle={{ fontSize: 12 }} />
+                      <Legend formatter={(v) => v === 'atual' ? 'Estoque atual' : 'Mínimo exigido'} />
+                      <Bar dataKey="atual" name="atual" radius={[4, 4, 0, 0]}>
+                        {estoqueBarData.map((e: any, i: number) => (
+                          <Cell key={i} fill={e.critico ? '#DC2626' : e.atual < e.minimo * 1.5 ? '#EA580C' : '#16A34A'} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="minimo" name="minimo" fill="#E5E7EB" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle>Distribuição de Estoque Global</CardTitle>
-                  <CardDescription>Bolsas por tipo sanguíneo</CardDescription>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Distribuição Percentual do Estoque</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: tabela estoque · proporção de cada tipo no total atual</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
-                      <Pie data={stockDistribution} cx="50%" cy="50%" outerRadius={100}
-                        label={({ name, value }) => `${name}: ${value}`} dataKey="value">
-                        {stockDistribution.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
+                      <Pie
+                        data={stockDistribution.filter((s: any) => s.value > 0)}
+                        cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={90}
+                        paddingAngle={2} dataKey="value"
+                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {stockDistribution.filter((s: any) => s.value > 0).map((_: any, i: number) => (
+                          <Cell key={i} fill={stockDistribution.filter((s: any) => s.value > 0)[i].color} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(v: any) => [`${v} bolsas`, 'Estoque atual']} contentStyle={{ fontSize: 12 }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Evolução Total do Sistema</CardTitle>
-                <CardDescription>Últimos 3 meses</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={monthlySystemStats}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" /><YAxis />
-                    <Tooltip /><Legend />
-                    <Line type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={3} name="Total" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <div className="grid md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Taxa de Comparecimento</CardDescription><CardTitle className="text-3xl">{stats.taxa_comparecimento ?? 87}%</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-green-600" style={{ width: `${stats.taxa_comparecimento ?? 87}%` }} /></div>
-                  <p className="text-sm text-gray-600 mt-2">Em todos os hemocentros</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Hemocentros Ativos</CardDescription><CardTitle className="text-3xl">{hemocentrosAtivos.length}</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-gray-600">de {hemocentros.length} cadastrados</p></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3"><CardDescription>Estoque Crítico</CardDescription><CardTitle className="text-3xl text-red-600">{globalStock.filter(s => s.critical).length}</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-red-600">tipos abaixo do mínimo</p></CardContent>
               </Card>
             </div>
           </TabsContent>
@@ -2235,34 +2411,98 @@ export function AdminDashboard() {
 
       {/* Exportar Relatório */}
       <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[560px]">
           <DialogHeader>
-            <DialogTitle>Gerar Relatório PDF</DialogTitle>
-            <DialogDescription>Selecione o relatório desejado. O arquivo será baixado automaticamente.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Download className="h-4 w-4" />Gerar Relatório PDF
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Selecione o tipo, período e filtros. O arquivo será baixado automaticamente.
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-4">
-            {[
-              { value: 'doacoes',      label: 'Doações',       desc: 'Coletas, volume, tipos', color: 'border-red-200 hover:border-red-400' },
-              { value: 'estoque',      label: 'Estoque',        desc: 'Níveis e alertas',       color: 'border-blue-200 hover:border-blue-400' },
-              { value: 'doadores',     label: 'Doadores',       desc: 'Cadastros e perfil',     color: 'border-green-200 hover:border-green-400' },
-              { value: 'agendamentos', label: 'Agendamentos',   desc: 'Status e taxa de conclusão', color: 'border-purple-200 hover:border-purple-400' },
-              { value: 'triagens',     label: 'Triagens',       desc: 'Aptidão e motivos',      color: 'border-violet-200 hover:border-violet-400' },
-              { value: 'desempenho',   label: 'Desempenho',     desc: 'Performance mensal',     color: 'border-indigo-200 hover:border-indigo-400' },
-            ].map(({ value, label, desc, color }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setReportType(value)}
-                className={`text-left p-3 rounded-lg border-2 transition-colors ${color} ${reportType === value ? 'bg-gray-50 border-opacity-100' : 'border-gray-100'}`}
-              >
-                <div className="font-medium text-sm text-gray-900">{label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
-              </button>
-            ))}
+          <div className="space-y-4 pt-1">
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Tipo de relatório</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'doacoes',      label: 'Doações',      desc: 'Coletas e volume',    icon: '🩸' },
+                  { value: 'estoque',      label: 'Estoque',       desc: 'Níveis e alertas',    icon: '📦' },
+                  { value: 'doadores',     label: 'Doadores',      desc: 'Cadastros e perfil',  icon: '👥' },
+                  { value: 'agendamentos', label: 'Agendamentos',  desc: 'Status e taxa',       icon: '📅' },
+                  { value: 'triagens',     label: 'Triagens',      desc: 'Aptidão e motivos',   icon: '🏥' },
+                  { value: 'desempenho',   label: 'Desempenho',    desc: 'Performance mensal',  icon: '📈' },
+                ].map(({ value, label, desc, icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setReportType(value)}
+                    className={`text-left p-2.5 rounded-lg border-2 transition-all ${
+                      reportType === value ? 'border-red-400 bg-red-50' : 'border-gray-100 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">{icon}</div>
+                    <div className="text-xs font-medium text-gray-900">{label}</div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">{desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Período</Label>
+                <Select value={reportPeriod} onValueChange={setReportPeriod}>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                    <SelectItem value="90">Últimos 90 dias</SelectItem>
+                    <SelectItem value="previous_month">Mês anterior</SelectItem>
+                    <SelectItem value="all">Período completo</SelectItem>
+                    <SelectItem value="custom">Intervalo personalizado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Tipo sanguíneo</Label>
+                <Select value={reportBloodType} onValueChange={setReportBloodType}>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os tipos</SelectItem>
+                    {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {reportPeriod === 'custom' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Data inicial</Label>
+                  <Input type="date" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} className="h-8 text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-xs">Data final</Label>
+                  <Input type="date" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} className="h-8 text-xs mt-1" />
+                </div>
+              </div>
+            )}
+            {reportType && (
+              <div className="bg-gray-50 rounded-lg px-3 py-2 text-[11px] text-gray-500 flex items-center gap-2">
+                <Download className="h-3 w-3 flex-shrink-0" />
+                <span>
+                  <strong className="text-gray-700 capitalize">{reportType}</strong>
+                  {' · '}{resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate).label}
+                  {reportBloodType !== 'todos' && ` · ${reportBloodType}`}
+                </span>
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowReportDialog(false); setReportType(''); }}>Cancelar</Button>
+          <DialogFooter className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowReportDialog(false); setReportType(''); }}>
+              Cancelar
+            </Button>
             <Button
+              size="sm"
               onClick={handleExportReport}
               disabled={!reportType || isDownloadingReport}
               className="bg-red-600 hover:bg-red-700 text-white gap-2"
