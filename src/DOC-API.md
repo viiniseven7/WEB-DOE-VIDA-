@@ -440,3 +440,44 @@ Endpoints que geram arquivos PDF para download.
 - Em ambiente local (`localhost` e `127.0.0.1`), o frontend pode adicionar agendamentos demo para teste de usabilidade do painel de funcionario.
 - Esses dados demo nao sao persistidos pela API Laravel.
 - Check-in, cancelamento, reabertura, triagem e atualizacao de estoque de itens demo sao resolvidos localmente para nao enviar IDs ficticios ao backend.
+
+---
+
+## Atualizacao recente - triagem, estoque, login e ML
+
+### Login e perfis
+
+- O frontend passou a normalizar os papeis retornados no login e em `/api/auth/me`.
+- Roles como `Funcionário`, `staff`, `employee`, `colaborador` e `enfermeiro` sao tratadas como `funcionario`.
+- O painel do funcionario tambem aceita `role_id = 2` como numero ou string, evitando redirecionamento indevido para `/login`.
+
+### Triagem clinica do funcionario
+
+- O formulario de triagem no painel do funcionario analisa automaticamente as respostas.
+- O doador deve ficar como `inapto_temporario` quando as respostas indicarem:
+  - sono inferior a 6 horas nas ultimas 24 horas
+  - bebida alcoolica nas ultimas 12 horas
+  - gripe, resfriado ou infeccao recente
+  - tatuagem ou piercing recente
+  - transfusao, transplante, vacina com espera, risco para infeccoes transmissiveis, medicamento impeditivo ou cirurgia em periodo de impedimento
+- O doador fica como `apto` quando as respostas obrigatorias estiverem favoraveis e nao houver impedimento temporario ou definitivo.
+- Quando a API retorna triagem em formatos diferentes, o frontend reconhece aptidao por `apto`, `data.apto`, `status_triagem = P` ou `aptidao.resultado = apto`.
+
+### Doacao e estoque apos triagem
+
+- Quando a triagem e registrada como apta, o frontend cria a doacao em `/api/auth/doacoes`.
+- A doacao criada e preservada na lista local mesmo apos o recarregamento dos dados, para aparecer imediatamente em `Estoque > Doacoes de hoje aguardando estoque`.
+- `data_triagem` e `data_hora_doacao` passam a usar data/hora local, evitando que a doacao caia fora do filtro "hoje" por diferenca de UTC.
+- O painel expande automaticamente o bloco de pendencias de estoque apos uma doacao apta ser registrada.
+
+### Campanhas e ML
+
+- O frontend usa `VITE_ML_URL` para apontar para a API de ML:
+  - `https://doevida-ml-pipeline-production.up.railway.app`
+- O backend usa `ML_URL` e tambem aceita `ML_API_URL` como fallback.
+- Em ambiente local, a chamada do backend ao ML pode desabilitar verificacao SSL para evitar `cURL error 60` no Windows.
+- Se o ML ficar indisponivel, o backend usa fallback com os doadores encontrados pelo filtro da campanha, sem zerar a lista por `tempo_restricao`.
+- A resposta do disparo de campanha informa:
+  - `total_elegiveis`: doadores encontrados pelo filtro base
+  - `total_segmentados`: doadores selecionados apos ML/fallback
+  - `total_disparado`: emails enviados com sucesso

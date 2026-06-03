@@ -9,7 +9,8 @@ import {
   getDateKey, 
   getAppointmentDonor, 
   getAppointmentUserId, 
-  getHemocentroId 
+  getHemocentroId,
+  getUserRoles
 } from '../../services/api-normalizers';
 import { buildDashboardNotifications } from '../../services/dashboard-notifications';
 import { Button } from '../ui/button';
@@ -208,6 +209,168 @@ const getApiErrorMessage = (err: any, fallback = 'Tente novamente') => {
   return fallback;
 };
 
+const normalizeTriagemText = (value: any) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const getDateAfterDays = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + Math.max(0, days));
+  return format(date, 'yyyy-MM-dd');
+};
+
+const getCurrentLocalDate = () => format(new Date(), 'yyyy-MM-dd');
+const getCurrentLocalDateTime = () => format(new Date(), 'yyyy-MM-dd HH:mm:ss');
+
+const getCreatedTriagem = (payload: any) =>
+  extractApiObject(payload, ['triagem', 'data']);
+
+const getCreatedDoacao = (payload: any) =>
+  extractApiObject(payload, ['doacao', 'data']);
+
+const getTriagemApto = (payload: any, fallbackResultado?: string) => {
+  const triagem = getCreatedTriagem(payload);
+  const explicitApto = payload?.apto ?? payload?.data?.apto ?? triagem?.apto;
+  const statusTriagem = String(payload?.status_triagem ?? payload?.data?.status_triagem ?? triagem?.status_triagem ?? '').toUpperCase();
+  const resultado = String(
+    payload?.aptidao?.resultado ??
+    payload?.data?.aptidao?.resultado ??
+    triagem?.aptidao?.resultado ??
+    fallbackResultado ??
+    ''
+  ).toLowerCase();
+
+  if (explicitApto === true || explicitApto === 1 || explicitApto === '1' || explicitApto === 'true') return true;
+  if (explicitApto === false || explicitApto === 0 || explicitApto === '0' || explicitApto === 'false') return false;
+  if (statusTriagem === 'P' || statusTriagem === 'APTO') return true;
+  if (resultado === 'apto') return true;
+  return false;
+};
+
+const inferTemporaryCategory = (questionText: string) => {
+  if (questionText.includes('medicamento')) return 'medicamento_incompativel';
+  if (questionText.includes('cirurgia')) return 'cirurgia_recente';
+  if (questionText.includes('risco') || questionText.includes('infecc')) return 'comportamento_de_risco';
+  return 'condicao_clinica_na_triagem';
+};
+
+const selectedOptionIsYes = (optionText: string) =>
+  optionText === 'sim' || optionText.startsWith('sim ') || optionText.includes(' sim');
+
+const selectedOptionIsNo = (optionText: string) =>
+  optionText === 'nao' || optionText.startsWith('nao ') || optionText.includes(' nao');
+
+const analyzeTemporaryInaptidao = (perguntas: any[], respostas: Record<number, number>) => {
+  const impedimentos: Array<{
+    motivo: string;
+    categoria: string;
+    diasInaptidao: number | null;
+  }> = [];
+
+  perguntas.forEach((pergunta) => {
+    const opcaoId = respostas[pergunta.id];
+    const opcao = pergunta.opcoes?.find((item: any) => Number(item.id) === Number(opcaoId));
+    if (!opcao) return;
+
+    const questionText = normalizeTriagemText(pergunta.pergunta);
+    const optionText = normalizeTriagemText(opcao.texto_opcao);
+    const answeredYes = selectedOptionIsYes(optionText);
+    const answeredNo = selectedOptionIsNo(optionText);
+    const diasDaOpcao = Number.isFinite(Number(opcao.dias_inaptidao))
+      ? Number(opcao.dias_inaptidao)
+      : null;
+
+    if (opcao.gera_inaptidao === true) {
+      impedimentos.push({
+        motivo: pergunta.pergunta,
+        categoria: inferTemporaryCategory(questionText),
+        diasInaptidao: diasDaOpcao,
+      });
+      return;
+    }
+
+    const addIf = (condition: boolean, categoria: string, diasInaptidao: number | null) => {
+      if (condition) {
+        impedimentos.push({
+          motivo: pergunta.pergunta,
+          categoria,
+          diasInaptidao,
+        });
+      }
+    };
+
+    addIf(
+      (questionText.includes('sentindo') || questionText.includes('bem')) && answeredNo,
+      'condicao_clinica_na_triagem',
+      null
+    );
+    addIf(
+      questionText.includes('aliment') && answeredNo,
+      'condicao_clinica_na_triagem',
+      null
+    );
+    addIf(
+      (questionText.includes('dormiu') || questionText.includes('sono')) &&
+        (answeredNo || optionText.includes('menos de 6') || optionText.includes('menos que 6') || optionText.includes('<6')),
+      'condicao_clinica_na_triagem',
+      1
+    );
+    addIf(
+      questionText.includes('alcool') || questionText.includes('alcoolica') || questionText.includes('bebida alcoolica')
+        ? answeredYes
+        : false,
+      'condicao_clinica_na_triagem',
+      1
+    );
+    addIf(
+      (questionText.includes('gripe') || questionText.includes('resfriado') || questionText.includes('infecc')) && answeredYes,
+      'condicao_clinica_na_triagem',
+      7
+    );
+    addIf(
+      (questionText.includes('tatuagem') || questionText.includes('piercing')) && answeredYes,
+      'comportamento_de_risco',
+      183
+    );
+    addIf(
+      (questionText.includes('transfus') || questionText.includes('transplante')) && answeredYes,
+      'condicao_clinica_na_triagem',
+      365
+    );
+    addIf(
+      questionText.includes('vacina') && answeredYes,
+      'condicao_clinica_na_triagem',
+      diasDaOpcao
+    );
+    addIf(
+      (questionText.includes('risco') || questionText.includes('transmissiveis pelo sangue')) && answeredYes,
+      'comportamento_de_risco',
+      diasDaOpcao
+    );
+    addIf(
+      questionText.includes('medicamento') && answeredYes,
+      'medicamento_incompativel',
+      diasDaOpcao
+    );
+    addIf(
+      questionText.includes('cirurgia') && answeredYes,
+      'cirurgia_recente',
+      diasDaOpcao
+    );
+  });
+
+  const impedimento = impedimentos[0];
+  return {
+    resultado: impedimento ? 'inapto_temporario' as const : 'apto' as const,
+    categoria: impedimento?.categoria || '',
+    validoAte: impedimento?.diasInaptidao != null ? getDateAfterDays(impedimento.diasInaptidao) : '',
+    motivos: impedimentos.map((item) => item.motivo),
+  };
+};
+
 const emptyStaffStats = {
   agendamentos_hoje: 0,
   confirmados_hoje: 0,
@@ -287,6 +450,30 @@ export function StaffDashboard() {
     observacoes_internas: '',
     valido_ate: '',
   });
+  const triagemAutomatica = useMemo(
+    () => analyzeTemporaryInaptidao(perguntas, respostasTriagem),
+    [perguntas, respostasTriagem]
+  );
+
+  useEffect(() => {
+    setAptidaoFormal((prev) => {
+      if (triagemAutomatica.resultado === 'inapto_temporario') {
+        return {
+          ...prev,
+          resultado: 'inapto_temporario',
+          categoria_inaptidao: triagemAutomatica.categoria || prev.categoria_inaptidao,
+          valido_ate: triagemAutomatica.validoAte || prev.valido_ate,
+        };
+      }
+
+      return {
+        ...prev,
+        resultado: prev.resultado === 'inapto_definitivo' ? prev.resultado : 'apto',
+        categoria_inaptidao: prev.resultado === 'inapto_definitivo' ? prev.categoria_inaptidao : '',
+        valido_ate: prev.resultado === 'inapto_definitivo' ? prev.valido_ate : '',
+      };
+    });
+  }, [triagemAutomatica]);
 
   const [editDonorDialogOpen, setEditDonorDialogOpen] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState<any>(null);
@@ -326,7 +513,7 @@ export function StaffDashboard() {
   useEffect(() => {
     if (!user) {
       navigate('/login');
-    } else if (user.role_id !== 2 && !user.roles?.includes('funcionario')) {
+    } else if (Number(user.role_id) !== 2 && !getUserRoles(user).includes('funcionario')) {
       navigate('/login');
     }
   }, [user, navigate]);
@@ -452,7 +639,7 @@ export function StaffDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (!user || (user.role_id !== 2 && !user.roles?.includes('funcionario'))) return null;
+  if (!user || (Number(user.role_id) !== 2 && !getUserRoles(user).includes('funcionario'))) return null;
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
   const hemocentroNomeResolvido =
@@ -638,7 +825,13 @@ export function StaffDashboard() {
     try {
       await api.post(`/auth/agendamentos/${agend.id}/confirmar`);
       toast.success('Check-in realizado!');
-      fetchData();
+      await fetchData();
+      if (doacaoCriadaParaEstoque) {
+        setDoacoes((prev) => {
+          const exists = prev.some((doacao) => String(doacao?.id) === String(doacaoCriadaParaEstoque.id));
+          return exists ? prev : [doacaoCriadaParaEstoque, ...prev];
+        });
+      }
     } catch { toast.error('Erro ao confirmar agendamento'); }
   };
 
@@ -727,7 +920,7 @@ export function StaffDashboard() {
         agendamento_id: agendamentoId,
         user_id:       userId,
         hemocentro_id: hemocentroId,
-        data_triagem:  new Date().toISOString().split('T')[0],
+        data_triagem:  getCurrentLocalDate(),
         apto:          triagemData.apto,
         motivo_inaptidao: !triagemData.apto ? triagemData.motivo_inaptidao : null,
         observacoes:   triagemData.observacoes || null,
@@ -746,7 +939,7 @@ export function StaffDashboard() {
           triagem_id: triagemId,
           user_id: userId,
           hemocentro_id: hemocentroId,
-          data_hora_doacao: new Date().toISOString().replace('T', ' ').split('.')[0],
+          data_hora_doacao: getCurrentLocalDateTime(),
           tipo_sangue: doador?.tipo_sang || 'O+',
           quantidade: Number(triagemData.ml_coletados),
           data_validade_sangue: format(new Date(Date.now() + 35 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
@@ -785,23 +978,32 @@ export function StaffDashboard() {
       return;
     }
 
+    const aptidaoParaEnvio = triagemAutomatica.resultado === 'inapto_temporario'
+      ? {
+          ...aptidaoFormal,
+          resultado: 'inapto_temporario' as const,
+          categoria_inaptidao: triagemAutomatica.categoria || aptidaoFormal.categoria_inaptidao,
+          valido_ate: triagemAutomatica.validoAte || aptidaoFormal.valido_ate,
+        }
+      : aptidaoFormal;
+
     // Validar aptidão
-    if (!aptidaoFormal.resultado) {
+    if (!aptidaoParaEnvio.resultado) {
       toast.error('Selecione o resultado da aptidão');
       return;
     }
-    if (aptidaoFormal.resultado !== 'apto' && !aptidaoFormal.categoria_inaptidao) {
+    if (aptidaoParaEnvio.resultado !== 'apto' && !aptidaoParaEnvio.categoria_inaptidao) {
       toast.error('Selecione a categoria de inaptidão');
       return;
     }
-    if (aptidaoFormal.resultado === 'inapto_temporario' && !aptidaoFormal.valido_ate) {
+    if (aptidaoParaEnvio.resultado === 'inapto_temporario' && !aptidaoParaEnvio.valido_ate) {
       toast.error('Informe até quando dura a inaptidão temporária');
       return;
     }
 
     if (isDemoAppointment(selectedAgendamento)) {
       const doadorResolvido = getResolvedAppointmentDonor(selectedAgendamento);
-      const aptoDemo = aptidaoFormal.resultado === 'apto';
+      const aptoDemo = aptidaoParaEnvio.resultado === 'apto';
 
       if (aptoDemo) {
         const demoDonation = {
@@ -811,7 +1013,7 @@ export function StaffDashboard() {
           hemocentro_id: getHemocentroId(selectedAgendamento) || getHemocentroId(user),
           tipo_sangue: getDonorBloodType(doadorResolvido) || 'O+',
           quantidade: Number(triagemData.ml_coletados) || 450,
-          data_hora_doacao: new Date().toISOString().replace('T', ' ').split('.')[0],
+          data_hora_doacao: getCurrentLocalDateTime(),
           doador: doadorResolvido,
         };
 
@@ -845,6 +1047,7 @@ export function StaffDashboard() {
     try {
       const agendamentoUserId = getAppointmentUserId(selectedAgendamento);
       const doadorResolvido = getResolvedAppointmentDonor(selectedAgendamento);
+      const hemocentroId = getHemocentroId(selectedAgendamento) || getHemocentroId(user);
 
       if (!agendamentoUserId) {
         toast.error('Não foi possível identificar o doador deste agendamento.');
@@ -865,32 +1068,34 @@ export function StaffDashboard() {
 
       // Montar aptidão
       const aptidaoPayload: Record<string, any> = {
-        resultado:            aptidaoFormal.resultado,
-        observacoes_internas: aptidaoFormal.observacoes_internas || null,
+        resultado:            aptidaoParaEnvio.resultado,
+        observacoes_internas: aptidaoParaEnvio.observacoes_internas || null,
       };
-      if (aptidaoFormal.resultado !== 'apto') {
-        aptidaoPayload.categoria_inaptidao = aptidaoFormal.categoria_inaptidao;
+      if (aptidaoParaEnvio.resultado !== 'apto') {
+        aptidaoPayload.categoria_inaptidao = aptidaoParaEnvio.categoria_inaptidao;
       }
-      if (aptidaoFormal.resultado === 'inapto_temporario') {
-        aptidaoPayload.valido_ate = aptidaoFormal.valido_ate;
+      if (aptidaoParaEnvio.resultado === 'inapto_temporario') {
+        aptidaoPayload.valido_ate = aptidaoParaEnvio.valido_ate;
       }
 
       let triagemId: number | null = null;
       let apto = false;
+      let doacaoCriadaParaEstoque: any = null;
 
       try {
         const triagemRes = await api.post('/auth/triagens', {
           agendamento_id: agendamentoId,
           user_id:        agendamentoUserId,
-          hemocentro_id:  user.hemocentro_id,
-          data_triagem:   new Date().toISOString().split('T')[0],
+          hemocentro_id:  hemocentroId,
+          data_triagem:   getCurrentLocalDate(),
           sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
           respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
           aptidao:        aptidaoPayload,
         });
         
-        apto = triagemRes.data?.apto === true;
-        triagemId = triagemRes.data?.data?.id;
+        const triagemCriada = getCreatedTriagem(triagemRes.data);
+        apto = getTriagemApto(triagemRes.data, aptidaoParaEnvio.resultado);
+        triagemId = triagemCriada.id || triagemCriada.triagem_id || null;
       } catch (err: any) {
         // Recupera apenas quando o backend devolver explicitamente uma triagem existente.
         if (err.response?.data?.message?.includes('Ja existe uma triagem')) {
@@ -911,17 +1116,32 @@ export function StaffDashboard() {
 
       if (apto) {
         // Registrar doação
-        await api.post('/auth/doacoes', {
+        const doacaoPayload = {
           agendamento_id:    agendamentoId,
           triagem_id:        triagemId,
           user_id:           agendamentoUserId,
-          hemocentro_id:     user.hemocentro_id,
+          hemocentro_id:     hemocentroId,
           tipo_sangue:       getDonorBloodType(doadorResolvido) || 'O+',
           quantidade:        Number(triagemData.ml_coletados) || 450,
-          data_hora_doacao:  new Date().toISOString().replace('T', ' ').split('.')[0],
+          data_hora_doacao:  getCurrentLocalDateTime(),
           data_validade_sangue: new Date(Date.now() + 42 * 24 * 60 * 60 * 1000)
             .toISOString().split('T')[0],
+        };
+        const doacaoRes = await api.post('/auth/doacoes', doacaoPayload);
+        const doacaoCriada = getCreatedDoacao(doacaoRes.data);
+        const doacaoParaLista = {
+          ...doacaoPayload,
+          ...doacaoCriada,
+          id: doacaoCriada.id || doacaoCriada.doacao_id || `doacao-${agendamentoId}-${Date.now()}`,
+          doador: doadorResolvido,
+        };
+
+        setDoacoes((prev) => {
+          const exists = prev.some((doacao) => String(doacao?.id) === String(doacaoParaLista.id));
+          return exists ? prev : [doacaoParaLista, ...prev];
         });
+        doacaoCriadaParaEstoque = doacaoParaLista;
+        setStockDonationsExpanded(true);
         toast.success('Doação registrada com sucesso!');
       } else {
         toast.info('Triagem registrada — doador inapto para doação nesta data.');
@@ -2050,7 +2270,6 @@ export function StaffDashboard() {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { key: 'peso',               label: 'Peso (kg)',         placeholder: 'Ex: 70' },
-                  { key: 'pressao_sistolica',   label: 'Pressão sistólica', placeholder: 'Ex: 120' },
                   { key: 'pressao_diastolica',  label: 'Pressão diastólica',placeholder: 'Ex: 80' },
                   { key: 'temperatura',         label: 'Temperatura (°C)',  placeholder: 'Ex: 36.5' },
                   { key: 'frequencia_cardiaca', label: 'Freq. cardíaca (bpm)', placeholder: 'Ex: 72' },
@@ -2138,6 +2357,14 @@ export function StaffDashboard() {
               <h4 className="font-semibold text-sm uppercase tracking-wide text-gray-500">
                 Conclusão da Triagem *
               </h4>
+              {triagemAutomatica.motivos.length > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <p className="font-semibold">Analise automatica: inapto temporario.</p>
+                  <p className="mt-1">
+                    Motivo: {triagemAutomatica.motivos.join('; ')}
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { value: 'apto',              label: 'Apto',           color: 'border-green-400 bg-green-50 text-green-700' },

@@ -10,6 +10,7 @@ import { Droplet, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { SeedButton } from './SeedButton';
 import api from '../services/api';
+import { getUserRoles } from '../services/api-normalizers';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -26,10 +27,7 @@ export function LoginPage() {
   useEffect(() => {
     if (!user) return;
 
-    const rawRole = user.roles?.[0];
-const role = typeof rawRole === 'string'
-  ? rawRole.toLowerCase()
-  : (rawRole as { name: string })?.name?.toLowerCase() ?? '';
+    const role = getUserRoles(user)[0] || '';
 
     let target = '';
     if (role === 'doador') target = '/dashboard/doador';

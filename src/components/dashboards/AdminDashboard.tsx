@@ -18,7 +18,7 @@ import { buildDashboardNotifications } from '../../services/dashboard-notificati
 import {
   Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
   Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
-  Minus, Search, Download, Eye, CheckCircle2, XCircle, Filter
+  Minus, Search, Download, Eye, CheckCircle2, XCircle, Filter, Brain, Sparkles, AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -74,6 +74,94 @@ const emptyAdminStats = {
 const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
 const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
 const systemRoleNames = new Set(['doador', 'funcionario', 'diretor', 'admin', 'enfermeiro']);
+const ML_API_URL = import.meta.env.VITE_ML_URL ?? 'http://localhost:8001';
+
+const formatDateInput = (date: Date) => {
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateInput = (value?: string) => {
+  if (!value) return '';
+
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+
+  const parsed = new Date(value);
+  return formatDateInput(parsed);
+};
+
+const addDaysToDateInput = (dateInput: string, days: number) => {
+  const normalizedDate = normalizeDateInput(dateInput);
+  if (!normalizedDate) return '';
+
+  const date = new Date(`${normalizedDate}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return formatDateInput(date);
+};
+
+const validateCampaignDates = (dataPubli?: string, dataExpiracao?: string) => {
+  const publicationInput = String(dataPubli || '');
+  const expirationInput = String(dataExpiracao || '');
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(publicationInput)) {
+    return 'Informe a data de publicação no formato AAAA-MM-DD.';
+  }
+
+  const publicationDate = normalizeDateInput(dataPubli);
+  const expirationDate = normalizeDateInput(dataExpiracao);
+
+  if (!publicationDate) {
+    return 'Informe uma data de publicação válida.';
+  }
+
+  const publicationYear = publicationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(publicationYear)) {
+    return 'O ano da data de publicação deve ter exatamente 4 dígitos.';
+  }
+
+  const publicationYearNumber = Number(publicationYear);
+  if (publicationYearNumber < 2000 || publicationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  const today = formatDateInput(new Date());
+  if (publicationDate < today) {
+    return 'A data de publicação não pode ser anterior a hoje.';
+  }
+
+  if (!expirationInput) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expirationInput)) {
+    return 'Informe a data de expiração no formato AAAA-MM-DD.';
+  }
+
+  const expirationYear = expirationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(expirationYear)) {
+    return 'O ano da data de expiração deve ter exatamente 4 dígitos.';
+  }
+
+  const expirationYearNumber = Number(expirationYear);
+  if (expirationYearNumber < 2000 || expirationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  if (expirationDate < today) {
+    return 'A data de expiração não pode ser anterior a hoje.';
+  }
+
+  if (expirationDate <= publicationDate) {
+    return 'A data de expiração deve ser em um dia posterior à data de publicação.';
+  }
+
+  return null;
+};
 
 const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
   'Agendamentos': {
@@ -126,6 +214,7 @@ const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
 export function AdminDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
+  const todayDateInput = formatDateInput(new Date());
 
   // -- Estado: dados da API
   const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
@@ -138,7 +227,7 @@ export function AdminDashboard() {
 
   // -- Estado: campanhas
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [isDisparando, setIsDisparando] = useState(false);
+  const [disparandoCampaignId, setDisparandoCampaignId] = useState<string | number | null>(null);
   const [disparoResultado, setDisparoResultado] = useState<any>(null);
   const [globalStock, setGlobalStock] = useState<any[]>([]);
 
@@ -178,6 +267,10 @@ export function AdminDashboard() {
   const [stockAmount, setStockAmount] = useState('');
   const [reportType, setReportType] = useState('');
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const [mlRecsLoading, setMlRecsLoading] = useState(false);
+  const [mlRecs, setMlRecs] = useState<any[]>([]);
+  const [mlPreview, setMlPreview] = useState<any>(null);
+  const [mlStatus, setMlStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [userStatusFilter, setUserStatusFilter] = useState('all');
@@ -198,6 +291,9 @@ export function AdminDashboard() {
     data_publi: '',
     data_expiracao: '',
   });
+  const campaignExpirationMinDate = campaignForm.data_publi
+    ? addDaysToDateInput(campaignForm.data_publi, 1) || todayDateInput
+    : todayDateInput;
 
   // --- Guard ------------------------------------------------------------------
   useEffect(() => {
@@ -458,6 +554,13 @@ export function AdminDashboard() {
   // --- Campanhas (API) --------------------------------------------------------
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const campaignDateError = validateCampaignDates(campaignForm.data_publi, campaignForm.data_expiracao);
+    if (campaignDateError) {
+      toast.error(campaignDateError);
+      return;
+    }
+
     try {
       await api.post('/auth/campanhas', {
         titulo:         campaignForm.titulo,
@@ -513,18 +616,172 @@ export function AdminDashboard() {
   };
 
   const handleDispararCampaign = async (campanha: any) => {
-    setIsDisparando(true);
+    setDisparandoCampaignId(campanha.id);
     setDisparoResultado(null);
     try {
       const res = await api.post(`/auth/campanhas/${campanha.id}/disparar`);
-      setDisparoResultado(res.data);
+      setDisparoResultado({ ...res.data, campanha_id: res.data.campanha_id ?? campanha.id });
       toast.success(`Campanha disparada para ${res.data.total_disparado} doadores!`);
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Erro ao disparar campanha');
     } finally {
-      setIsDisparando(false);
+      setDisparandoCampaignId(null);
     }
+  };
+
+  const handleBuscarRecomendacoesMl = async () => {
+    setMlStatus('loading');
+    setMlRecsLoading(true);
+    try {
+      let doadores: any[] = [];
+      try {
+        const doadoresRes = await api.get('/auth/doadores/perfil-rfmt');
+        doadores = Array.isArray(doadoresRes.data?.data)
+          ? doadoresRes.data.data
+          : Array.isArray(doadoresRes.data)
+          ? doadoresRes.data
+          : [];
+      } catch (err: any) {
+        if (err.response?.status !== 404) {
+          throw err;
+        }
+
+        const doadoresRes = await api.get('/users');
+        const todosUsers = Array.isArray(doadoresRes.data)
+          ? doadoresRes.data
+          : doadoresRes.data?.data ?? [];
+        doadores = todosUsers
+          .filter((u: any) => u.role_id === 1 || u.roles?.includes('doador'))
+          .map((u: any) => ({
+            ...u,
+            recencia_meses:              6,
+            frequencia_doacoes:          1,
+            volume_total_cc:             450,
+            tempo_desde_primeira_doacao: 12,
+            risco_inatividade:           'Atencao',
+          }));
+      }
+
+      if (doadores.length === 0) {
+        toast.error('Nenhum doador encontrado para análise.');
+        setMlStatus('error');
+        return;
+      }
+
+      const BATCH = 20;
+      const resultados: any[] = [];
+      for (let i = 0; i < Math.min(doadores.length, 100); i += BATCH) {
+        const lote = doadores.slice(i, i + BATCH);
+        const promises = lote.map(async (d: any) => {
+          const toNum = (v: any, fallback: number) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0) ? n : fallback;
+          };
+          const payload = {
+            recencia_meses:               toNum(d.recencia_meses,              6),
+            frequencia_doacoes:           toNum(d.frequencia_doacoes,          1),
+            volume_total_cc:              toNum(d.volume_total_cc,             450),
+            tempo_desde_primeira_doacao:  toNum(d.tempo_desde_primeira_doacao, 12),
+            risco_inatividade:            ['Ativo','Atencao','Em_Risco','Inativo'].includes(d.risco_inatividade)
+                                          ? d.risco_inatividade
+                                          : 'Atencao',
+          };
+
+          try {
+            const [retRes, volRes] = await Promise.all([
+              fetch(`${ML_API_URL}/predizer/retorno`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }).then(r => r.json()),
+              fetch(`${ML_API_URL}/predizer/volume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }).then(r => r.json()),
+            ]);
+
+            return { doador: d, retorno: retRes, volume: volRes };
+          } catch {
+            return null;
+          }
+        });
+        const loteRes = await Promise.all(promises);
+        resultados.push(...loteRes.filter(Boolean));
+      }
+
+      const elegiveis = resultados.length;
+      const vaiRetornar = resultados.filter(r => r.retorno?.vai_retornar).length;
+      const volumeTotal = resultados
+        .filter(r => r.retorno?.vai_retornar)
+        .reduce((acc, r) => acc + (r.volume?.volume_estimado_cc ?? 450), 0);
+
+      setMlPreview({
+        total_elegiveis: elegiveis,
+        segmentados_ml: vaiRetornar,
+        pct_ml: elegiveis > 0 ? Math.round((vaiRetornar / elegiveis) * 100) : 0,
+        retorno_estimado: vaiRetornar,
+        volume_estimado_litros: Math.round(volumeTotal / 1000),
+      });
+
+      const campanhasParticipadas = campaigns
+        .filter(c => c.total_disparado > 0)
+        .map(c => c.titulo);
+
+      const recRes = await fetch(`${ML_API_URL}/recomendar/campanhas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campanhas_participadas: campanhasParticipadas,
+          n_recomendacoes: 3,
+        }),
+      }).then(r => r.json());
+
+      const recsEnriquecidas = (recRes.recomendacoes ?? []).map((rec: any) => {
+        const contextMap: Record<string, { motivo: string; estimativa: number }> = {
+          Campanha_Urgencia_O_Negativo: { motivo: 'Estoque crítico detectado', estimativa: Math.floor(vaiRetornar * 0.15) },
+          Campanha_Doacao_Regular_Mensal: { motivo: 'Doadores frequentes disponíveis', estimativa: Math.floor(vaiRetornar * 0.35) },
+          Campanha_Semana_do_Doador: { motivo: 'Alta taxa de engajamento esperada', estimativa: Math.floor(vaiRetornar * 0.28) },
+          Campanha_Doacao_Hospitais_Publicos: { motivo: 'Demanda hospitalar identificada', estimativa: Math.floor(vaiRetornar * 0.22) },
+          Campanha_Reativacao_Inativos: { motivo: `${resultados.filter(r => !r.retorno?.vai_retornar).length} doadores inativos identificados`, estimativa: Math.floor(vaiRetornar * 0.12) },
+          Campanha_Primeira_Doacao: { motivo: 'Novos cadastros sem doação', estimativa: Math.floor(vaiRetornar * 0.10) },
+          Campanha_Doador_VIP_Exclusiva: { motivo: 'Perfis VIP com alta frequência', estimativa: Math.floor(vaiRetornar * 0.08) },
+          Campanha_Tipo_A_Positivo: { motivo: 'Tipo A+ com doadores elegíveis', estimativa: Math.floor(vaiRetornar * 0.18) },
+        };
+        const ctx = contextMap[rec.campanha] ?? { motivo: 'Perfil dos doadores compatível', estimativa: Math.floor(vaiRetornar * 0.15) };
+
+        return {
+          ...rec,
+          nome_legivel: rec.campanha.replace('Campanha_', '').replace(/_/g, ' '),
+          motivo: ctx.motivo,
+          estimativa_doacoes: ctx.estimativa,
+          score_pct: Math.round(rec.score_relevancia * 100),
+        };
+      });
+
+      setMlRecs(recsEnriquecidas);
+      setMlStatus('ready');
+      toast.success('Análise ML concluída!');
+    } catch (err) {
+      console.error('Erro ML:', err);
+      setMlStatus('error');
+      toast.error('Não foi possível conectar com a API de ML. Verifique se o servidor está rodando.');
+    } finally {
+      setMlRecsLoading(false);
+    }
+  };
+
+  const handleUsarRecomendacao = (rec: any) => {
+    setCampaignForm({
+      titulo: rec.nome_legivel,
+      subtitulo: rec.motivo,
+      descricao: `Campanha recomendada pelo sistema de inteligência artificial com base no perfil atual dos doadores. Score de relevância: ${rec.score_pct}%.`,
+      tipo_sangue: '',
+      data_publi: new Date().toISOString().split('T')[0],
+      data_expiracao: '',
+    });
+    setShowCampaignDialog(true);
   };
 
 
@@ -1232,178 +1489,346 @@ export function AdminDashboard() {
 
           {/* -- Campanhas (local) -- */}
           <TabsContent value="campaigns" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div><CardTitle>Campanhas de Doação</CardTitle><CardDescription>Campanhas por email e WhatsApp</CardDescription></div>
-                  <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700"><Plus className="h-4 w-4" />Nova Campanha</Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader><DialogTitle>Criar Nova Campanha</DialogTitle></DialogHeader>
-                      <form onSubmit={handleCreateCampaign} className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <Label>Título *</Label>
-                            <Input
-                              required
-                              value={campaignForm.titulo}
-                              onChange={e => setCampaignForm({ ...campaignForm, titulo: e.target.value })}
-                            />
-                          </div>
-                          <div>
-                            <Label>Subtítulo</Label>
-                            <Input
-                              value={campaignForm.subtitulo}
-                              onChange={e => setCampaignForm({ ...campaignForm, subtitulo: e.target.value })}
-                            />
-                          </div>
-                        </div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Campanhas de doação</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Gerencie e dispare campanhas segmentadas pelo ML</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+                  onClick={handleBuscarRecomendacoesMl}
+                  disabled={mlRecsLoading}
+                >
+                  <Brain className="h-4 w-4" />
+                  {mlRecsLoading ? 'Analisando...' : 'Recomendações ML'}
+                </Button>
+                <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 bg-red-600 hover:bg-red-700">
+                      <Plus className="h-4 w-4" />Nova campanha
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader><DialogTitle>Criar Nova Campanha</DialogTitle></DialogHeader>
+                    <form onSubmit={handleCreateCampaign} className="space-y-4">
+                      <div className="grid md:grid-cols-2 gap-4">
                         <div>
-                          <Label>Mensagem / Descrição *</Label>
-                          <Textarea
-                            required
-                            rows={4}
-                            value={campaignForm.descricao}
-                            onChange={e => setCampaignForm({ ...campaignForm, descricao: e.target.value })}
-                            placeholder="Texto que será enviado por e-mail aos doadores..."
-                          />
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <Label>Tipo sanguíneo alvo</Label>
-                            <Select
-                              value={campaignForm.tipo_sangue || 'todos'}
-                              onValueChange={v => setCampaignForm({ ...campaignForm, tipo_sangue: v === 'todos' ? '' : v })}
-                            >
-                              <SelectTrigger><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="todos">Todos os tipos</SelectItem>
-                                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
-                                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label>Data de publicação *</Label>
-                            <Input
-                              type="date"
-                              required
-                              value={campaignForm.data_publi}
-                              onChange={e => setCampaignForm({ ...campaignForm, data_publi: e.target.value })}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <Label>Data de expiração</Label>
+                          <Label>Título *</Label>
                           <Input
-                            type="date"
-                            value={campaignForm.data_expiracao}
-                            onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: e.target.value })}
+                            required
+                            value={campaignForm.titulo}
+                            onChange={e => setCampaignForm({ ...campaignForm, titulo: e.target.value })}
                           />
                         </div>
-                        <div className="flex gap-2 justify-end pt-2">
-                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                            <Send className="h-4 w-4 mr-2" />Criar Campanha
-                          </Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {campaigns.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <Send className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                      <p>Nenhuma campanha criada ainda.</p>
-                    </div>
-                  ) : campaigns.map((campaign: any) => (
-                    <div key={campaign.id} className="p-4 border rounded-lg hover:bg-gray-50">
-                      <div className="flex items-start justify-between mb-3">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold">{campaign.titulo}</p>
-                            {campaign.tipo_sangue && (
-                              <Badge className="bg-red-100 text-red-600 border-none">
-                                {campaign.tipo_sangue}
-                              </Badge>
-                            )}
-                            <Badge className={
-                              campaign.status
-                                ? 'bg-green-100 text-green-600 border-none'
-                                : 'bg-gray-100 text-gray-600 border-none'
-                            }>
-                              {campaign.status ? 'Ativa' : 'Inativa'}
-                            </Badge>
-                          </div>
-                          {campaign.subtitulo && (
-                            <p className="text-sm text-gray-600">{campaign.subtitulo}</p>
-                          )}
-                          <p className="text-xs text-gray-500 mt-1">
-                            {campaign.data_publi
-                              ? new Date(campaign.data_publi).toLocaleDateString('pt-BR')
-                              : '-'}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-green-700 border-green-300 hover:bg-green-50"
-                            disabled={isDisparando}
-                            onClick={() => handleDispararCampaign(campaign)}
-                          >
-                            <Send className="h-4 w-4 mr-1" />
-                            {isDisparando ? 'Disparando...' : 'Disparar'}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => { setSelectedCampaign({ ...campaign }); setShowEditCampaignDialog(true); }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                          <Label>Subtítulo</Label>
+                          <Input
+                            value={campaignForm.subtitulo}
+                            onChange={e => setCampaignForm({ ...campaignForm, subtitulo: e.target.value })}
+                          />
                         </div>
                       </div>
-                      {(campaign.total_disparado > 0) && (
-                        <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                          <div>
-                            <p className="text-xs text-gray-600">Total disparado</p>
-                            <p className="text-lg font-semibold">{campaign.total_disparado.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Segmentação ML</p>
-                            <p className="text-sm font-medium text-purple-600">
-                              {campaign.total_disparado < 9999 ? 'Ativa' : 'Fallback local'}
-                            </p>
-                          </div>
+                      <div>
+                        <Label>Mensagem / Descrição *</Label>
+                        <Textarea
+                          required
+                          rows={4}
+                          value={campaignForm.descricao}
+                          onChange={e => setCampaignForm({ ...campaignForm, descricao: e.target.value })}
+                          placeholder="Texto que será enviado por e-mail aos doadores..."
+                        />
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Tipo sanguíneo alvo</Label>
+                          <Select
+                            value={campaignForm.tipo_sangue || 'todos'}
+                            onValueChange={v => setCampaignForm({ ...campaignForm, tipo_sangue: v === 'todos' ? '' : v })}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todos os tipos</SelectItem>
+                              {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
-                      )}
-                      {disparoResultado && disparoResultado.campanha_id === campaign.id && (
-                        <div className="mt-3 p-3 bg-green-50 rounded-lg text-sm text-green-800">
-                          Último disparo: {disparoResultado.total_disparado} doadores atingidos
-                          {disparoResultado.segmentacao === 'ml' && ' (segmentado pelo ML)'}
+                        <div>
+                          <Label>Data de publicação *</Label>
+                          <Input
+                            type="date"
+                            required
+                            min={todayDateInput}
+                            max="2100-12-31"
+                            value={campaignForm.data_publi}
+                            onChange={e => {
+                              const dataPubli = normalizeDateInput(e.target.value);
+                              setCampaignForm({
+                                ...campaignForm,
+                                data_publi: dataPubli,
+                                data_expiracao:
+                                  campaignForm.data_expiracao && campaignForm.data_expiracao <= dataPubli
+                                    ? ''
+                                    : campaignForm.data_expiracao,
+                              });
+                            }}
+                          />
                         </div>
-                      )}
+                      </div>
+                      <div>
+                        <Label>Data de expiração</Label>
+                        <Input
+                          type="date"
+                          min={campaignExpirationMinDate}
+                          max="2100-12-31"
+                          value={campaignForm.data_expiracao}
+                          onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: normalizeDateInput(e.target.value) })}
+                        />
+                      </div>
+                      <div className="flex gap-2 justify-end pt-2">
+                        <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
+                          Cancelar
+                        </Button>
+                        <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                          <Send className="h-4 w-4 mr-2" />Criar Campanha
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Campanhas ativas', value: campaigns.filter(c => c.status).length, sub: `${campaigns.filter(c => !c.status).length} inativas` },
+                { label: 'Total disparado', value: campaigns.reduce((a, c) => a + (c.total_disparado || 0), 0).toLocaleString(), sub: 'todos os tempos' },
+                { label: 'Segmentados pelo ML', value: mlPreview ? `${mlPreview.pct_ml}%` : '-', sub: mlPreview ? `de ${mlPreview.total_elegiveis} doadores` : 'rode a análise ML' },
+                { label: 'Retorno estimado', value: mlPreview ? `~${mlPreview.retorno_estimado}` : '-', sub: mlPreview ? `~${mlPreview.volume_estimado_litros}L de sangue` : 'rode a análise ML' },
+              ].map(({ label, value, sub }) => (
+                <Card key={label} className="bg-gray-50 border-0">
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-gray-500 mb-1">{label}</p>
+                    <p className="text-2xl font-semibold text-gray-900">{value}</p>
+                    <p className="text-xs text-gray-400 mt-1">{sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Campanhas</CardTitle>
+                  <CardDescription>{campaigns.filter(c => c.status).length} ativas · {campaigns.filter(c => !c.status).length} inativas</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {campaigns.length === 0 ? (
+                    <div className="text-center py-12 text-gray-400 px-6">
+                      <Send className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">Nenhuma campanha criada ainda.</p>
+                      <p className="text-xs mt-1">Use "Recomendações ML" para receber sugestões de campanhas baseadas no perfil dos doadores.</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="divide-y">
+                      {campaigns.map((campaign: any) => (
+                        <div key={campaign.id} className="p-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-medium text-sm text-gray-900 truncate">{campaign.titulo}</span>
+                                {campaign.tipo_sangue && (
+                                  <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px]">{campaign.tipo_sangue}</Badge>
+                                )}
+                                <Badge className={campaign.status ? 'bg-green-50 text-green-700 border-green-200 text-[10px]' : 'bg-gray-100 text-gray-500 border-gray-200 text-[10px]'}>
+                                  {campaign.status ? 'Ativa' : 'Inativa'}
+                                </Badge>
+                                {campaign.total_disparado > 0 && (
+                                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-[10px]">ML ativo</Badge>
+                                )}
+                              </div>
+                              {campaign.subtitulo && (
+                                <p className="text-xs text-gray-500 truncate">{campaign.subtitulo}</p>
+                              )}
+                              <div className="flex gap-4 mt-2 flex-wrap">
+                                {campaign.total_disparado > 0 && (
+                                  <span className="text-xs text-gray-500">Disparado: <span className="font-medium text-gray-700">{campaign.total_disparado.toLocaleString()}</span></span>
+                                )}
+                                {campaign.data_publi && (
+                                  <span className="text-xs text-gray-500">Publicação: <span className="font-medium text-gray-700">{new Date(campaign.data_publi).toLocaleDateString('pt-BR')}</span></span>
+                                )}
+                                {campaign.data_expiracao && (
+                                  <span className="text-xs text-gray-500">Expira: <span className="font-medium text-gray-700">{new Date(campaign.data_expiracao).toLocaleDateString('pt-BR')}</span></span>
+                                )}
+                              </div>
+                              {campaign.total_disparado > 0 && (
+                                <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-red-500 rounded-full"
+                                    style={{ width: `${Math.min((campaign.total_disparado / 500) * 100, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                              {disparoResultado?.campanha_id === campaign.id && (
+                                <div className="mt-2 p-2 bg-green-50 rounded-md text-xs text-green-700">
+                                  Último disparo: {disparoResultado.total_disparado} doadores atingidos
+                                  {disparoResultado.segmentacao === 'ml' && ' · segmentado pelo ML'}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-1.5 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-red-600 border-red-200 hover:bg-red-50 gap-1 text-xs"
+                                disabled={disparandoCampaignId !== null}
+                                onClick={() => handleDispararCampaign(campaign)}
+                              >
+                                <Send className="h-3 w-3" />
+                                {disparandoCampaignId === campaign.id ? 'Disparando...' : 'Disparar'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={() => { setSelectedCampaign({ ...campaign }); setShowEditCampaignDialog(true); }}
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="flex flex-col gap-4">
+                <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="h-4 w-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-900">Inteligência de campanhas</span>
+                  </div>
+                  <p className="text-xs text-purple-700 leading-relaxed mb-3">
+                    O modelo RFMT analisa o perfil de todos os doadores e sugere quais campanhas lançar agora com maior probabilidade de retorno e volume estimado.
+                  </p>
+                  <Button
+                    className="w-full gap-2 bg-purple-700 hover:bg-purple-800 text-white text-xs h-9"
+                    onClick={handleBuscarRecomendacoesMl}
+                    disabled={mlRecsLoading}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {mlRecsLoading ? 'Analisando doadores...' : 'Receber recomendações do ML'}
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
+
+                {mlStatus === 'idle' && (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <Brain className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm text-gray-400">Aguardando análise</p>
+                      <p className="text-xs text-gray-400 mt-1">Clique no botão acima para o ML analisar os perfis dos doadores.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'loading' && (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <div className="animate-spin h-6 w-6 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-3" />
+                      <p className="text-sm text-gray-600">Segmentando perfis via ML...</p>
+                      <p className="text-xs text-gray-400 mt-1">Isso pode levar alguns segundos</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'error' && (
+                  <Card>
+                    <CardContent className="py-6 text-center">
+                      <AlertCircle className="h-6 w-6 mx-auto mb-2 text-red-400" />
+                      <p className="text-sm text-gray-600">API ML indisponível</p>
+                      <p className="text-xs text-gray-400 mt-1">Verifique se o servidor FastAPI está rodando na porta 8001.</p>
+                      <Button variant="outline" size="sm" className="mt-3 text-xs" onClick={handleBuscarRecomendacoesMl}>
+                        Tentar novamente
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'ready' && mlRecs.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm">Campanhas recomendadas</CardTitle>
+                        <Badge className="bg-green-50 text-green-700 border-green-200 text-[10px]">{mlRecs.length} sugestões</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="divide-y">
+                        {mlRecs.map((rec: any, i: number) => (
+                          <div key={i} className="p-3 flex gap-3">
+                            <div className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-medium flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {rec.rank}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-xs font-medium text-gray-900 capitalize">{rec.nome_legivel}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">{rec.motivo}</p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${rec.score_pct}%` }} />
+                                </div>
+                                <span className="text-[10px] font-medium text-purple-700">{rec.score_pct}%</span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-6 text-[11px] border-purple-200 text-purple-700 hover:bg-purple-50"
+                                onClick={() => handleUsarRecomendacao(rec)}
+                              >
+                                Usar como base
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'ready' && mlPreview && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Estimativa do próximo disparo</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {[
+                        { label: 'Doadores elegíveis', value: mlPreview.total_elegiveis, color: '' },
+                        { label: 'Segmentados pelo ML', value: `${mlPreview.segmentados_ml} (${mlPreview.pct_ml}%)`, color: 'text-purple-700' },
+                        { label: 'Retorno estimado', value: `~${mlPreview.retorno_estimado} doações`, color: 'text-green-700' },
+                        { label: 'Volume estimado', value: `~${mlPreview.volume_estimado_litros} litros`, color: 'text-green-700' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500">{label}</span>
+                          <span className={`font-medium ${color || 'text-gray-900'}`}>{value}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
           </TabsContent>
 
           {/* -- Configurações -- */}
