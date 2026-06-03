@@ -35,6 +35,7 @@ const emptyDirectorStats = {
   agendamentos_hoje: 0,
   confirmados_hoje: 0,
   doacoes_mes: 0,
+  crescimento_mes: null as number | null,
   estoque_critico: [] as string[],
   agendamentos_semana: {} as Record<string, number>,
   doacoes_por_mes: [] as Array<{ mes: string; total: number }>,
