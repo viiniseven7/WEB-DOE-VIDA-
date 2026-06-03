@@ -76,6 +76,93 @@ const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '
 const systemRoleNames = new Set(['doador', 'funcionario', 'diretor', 'admin', 'enfermeiro']);
 const ML_API_URL = import.meta.env.VITE_ML_URL ?? 'http://localhost:8001';
 
+const formatDateInput = (date: Date) => {
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateInput = (value?: string) => {
+  if (!value) return '';
+
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+
+  const parsed = new Date(value);
+  return formatDateInput(parsed);
+};
+
+const addDaysToDateInput = (dateInput: string, days: number) => {
+  const normalizedDate = normalizeDateInput(dateInput);
+  if (!normalizedDate) return '';
+
+  const date = new Date(`${normalizedDate}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return formatDateInput(date);
+};
+
+const validateCampaignDates = (dataPubli?: string, dataExpiracao?: string) => {
+  const publicationInput = String(dataPubli || '');
+  const expirationInput = String(dataExpiracao || '');
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(publicationInput)) {
+    return 'Informe a data de publicação no formato AAAA-MM-DD.';
+  }
+
+  const publicationDate = normalizeDateInput(dataPubli);
+  const expirationDate = normalizeDateInput(dataExpiracao);
+
+  if (!publicationDate) {
+    return 'Informe uma data de publicação válida.';
+  }
+
+  const publicationYear = publicationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(publicationYear)) {
+    return 'O ano da data de publicação deve ter exatamente 4 dígitos.';
+  }
+
+  const publicationYearNumber = Number(publicationYear);
+  if (publicationYearNumber < 2000 || publicationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  const today = formatDateInput(new Date());
+  if (publicationDate < today) {
+    return 'A data de publicação não pode ser anterior a hoje.';
+  }
+
+  if (!expirationInput) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expirationInput)) {
+    return 'Informe a data de expiração no formato AAAA-MM-DD.';
+  }
+
+  const expirationYear = expirationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(expirationYear)) {
+    return 'O ano da data de expiração deve ter exatamente 4 dígitos.';
+  }
+
+  const expirationYearNumber = Number(expirationYear);
+  if (expirationYearNumber < 2000 || expirationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  if (expirationDate < today) {
+    return 'A data de expiração não pode ser anterior a hoje.';
+  }
+
+  if (expirationDate <= publicationDate) {
+    return 'A data de expiração deve ser em um dia posterior à data de publicação.';
+  }
+
+  return null;
+};
+
 const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
   'Agendamentos': {
     ver_agendamentos:       'Ver agendamentos',
@@ -127,6 +214,7 @@ const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
 export function AdminDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
+  const todayDateInput = formatDateInput(new Date());
 
   // -- Estado: dados da API
   const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
@@ -139,7 +227,7 @@ export function AdminDashboard() {
 
   // -- Estado: campanhas
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [isDisparando, setIsDisparando] = useState(false);
+  const [disparandoCampaignId, setDisparandoCampaignId] = useState<string | number | null>(null);
   const [disparoResultado, setDisparoResultado] = useState<any>(null);
   const [globalStock, setGlobalStock] = useState<any[]>([]);
 
@@ -203,6 +291,9 @@ export function AdminDashboard() {
     data_publi: '',
     data_expiracao: '',
   });
+  const campaignExpirationMinDate = campaignForm.data_publi
+    ? addDaysToDateInput(campaignForm.data_publi, 1) || todayDateInput
+    : todayDateInput;
 
   // --- Guard ------------------------------------------------------------------
   useEffect(() => {
@@ -463,6 +554,13 @@ export function AdminDashboard() {
   // --- Campanhas (API) --------------------------------------------------------
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const campaignDateError = validateCampaignDates(campaignForm.data_publi, campaignForm.data_expiracao);
+    if (campaignDateError) {
+      toast.error(campaignDateError);
+      return;
+    }
+
     try {
       await api.post('/auth/campanhas', {
         titulo:         campaignForm.titulo,
@@ -518,17 +616,17 @@ export function AdminDashboard() {
   };
 
   const handleDispararCampaign = async (campanha: any) => {
-    setIsDisparando(true);
+    setDisparandoCampaignId(campanha.id);
     setDisparoResultado(null);
     try {
       const res = await api.post(`/auth/campanhas/${campanha.id}/disparar`);
-      setDisparoResultado(res.data);
+      setDisparoResultado({ ...res.data, campanha_id: res.data.campanha_id ?? campanha.id });
       toast.success(`Campanha disparada para ${res.data.total_disparado} doadores!`);
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Erro ao disparar campanha');
     } finally {
-      setIsDisparando(false);
+      setDisparandoCampaignId(null);
     }
   };
 
@@ -1463,8 +1561,20 @@ export function AdminDashboard() {
                           <Input
                             type="date"
                             required
+                            min={todayDateInput}
+                            max="2100-12-31"
                             value={campaignForm.data_publi}
-                            onChange={e => setCampaignForm({ ...campaignForm, data_publi: e.target.value })}
+                            onChange={e => {
+                              const dataPubli = normalizeDateInput(e.target.value);
+                              setCampaignForm({
+                                ...campaignForm,
+                                data_publi: dataPubli,
+                                data_expiracao:
+                                  campaignForm.data_expiracao && campaignForm.data_expiracao <= dataPubli
+                                    ? ''
+                                    : campaignForm.data_expiracao,
+                              });
+                            }}
                           />
                         </div>
                       </div>
@@ -1472,8 +1582,10 @@ export function AdminDashboard() {
                         <Label>Data de expiração</Label>
                         <Input
                           type="date"
+                          min={campaignExpirationMinDate}
+                          max="2100-12-31"
                           value={campaignForm.data_expiracao}
-                          onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: e.target.value })}
+                          onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: normalizeDateInput(e.target.value) })}
                         />
                       </div>
                       <div className="flex gap-2 justify-end pt-2">
@@ -1572,11 +1684,11 @@ export function AdminDashboard() {
                                 size="sm"
                                 variant="outline"
                                 className="h-8 text-red-600 border-red-200 hover:bg-red-50 gap-1 text-xs"
-                                disabled={isDisparando}
+                                disabled={disparandoCampaignId !== null}
                                 onClick={() => handleDispararCampaign(campaign)}
                               >
                                 <Send className="h-3 w-3" />
-                                {isDisparando ? 'Disparando...' : 'Disparar'}
+                                {disparandoCampaignId === campaign.id ? 'Disparando...' : 'Disparar'}
                               </Button>
                               <Button
                                 size="sm"

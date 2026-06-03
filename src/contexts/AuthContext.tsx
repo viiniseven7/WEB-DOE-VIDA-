@@ -29,6 +29,37 @@ const roleMap: Record<number, string> = {
   4: 'admin',
 };
 
+const normalizeRoleName = (role: any) => {
+  const raw = typeof role === 'string'
+    ? role
+    : role?.name || role?.nome || role?.slug || role?.role || '';
+
+  const normalized = String(raw)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (['staff', 'employee', 'colaborador', 'enfermeiro'].includes(normalized)) {
+    return 'funcionario';
+  }
+
+  return normalized;
+};
+
+const resolveRoles = (payload: any) => {
+  const userData = payload?.user ?? payload;
+  const roleId = Number(userData?.role_id ?? payload?.role_id);
+  const apiRoles = Array.isArray(payload?.roles) ? payload.roles : userData?.roles;
+  const normalizedRoles = Array.isArray(apiRoles)
+    ? apiRoles.map(normalizeRoleName).filter(Boolean)
+    : [];
+
+  if (normalizedRoles.length > 0) return normalizedRoles;
+  if (roleMap[roleId]) return [roleMap[roleId]];
+  return ['doador'];
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,12 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           const response = await api.get('/auth/me');
 
-          const roles =
-            response.data.roles?.length > 0
-              ? response.data.roles
-              : response.data.user.role_id
-              ? [roleMap[response.data.user.role_id]]
-              : ['doador'];
+          const roles = resolveRoles(response.data);
 
           const permissions = Array.isArray(response.data.permissions) ? response.data.permissions : [];
           setUser({
@@ -76,12 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('token', res.data.token);
       api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
 
-      const roles =
-        res.data.roles?.length > 0
-          ? res.data.roles
-          : res.data.user.role_id
-          ? [roleMap[res.data.user.role_id]]
-          : ['doador'];
+      const roles = resolveRoles(res.data);
 
       const permissions = Array.isArray(res.data.permissions) ? res.data.permissions : [];
       const userData = {
