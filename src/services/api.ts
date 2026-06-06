@@ -1,8 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "hgitgit add src/services/api.ts
-ttps://api-doe-vida-production.up.railway.app/api",
+  baseURL: import.meta.env.VITE_API_URL || "https://api-doe-vida-production.up.railway.app/api",
 });
 
 // 🔥 INTERCEPTOR (ESSENCIAL)
