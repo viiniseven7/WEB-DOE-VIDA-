@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -10,303 +11,238 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Switch } from '../ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../ui/dialog';
-import { 
-  Droplet, 
-  Users,
-  LogOut,
-  Bell,
-  Building2,
-  Shield,
-  Mail,
-  MessageSquare,
-  Send,
-  Plus,
-  Settings,
-  BarChart3,
-  Globe,
-  UserPlus,
-  Edit,
-  Trash2,
-  Activity,
-  Minus,
-  Search,
-  FileText,
-  Download,
-  Eye,
-  CheckCircle2,
-  XCircle,
-  Filter
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '../ui/dialog';
+import { buildDashboardNotifications } from '../../services/dashboard-notifications';
+import {
+  Droplet, Users, LogOut, Bell, Building2, Shield, Mail, MessageSquare,
+  Send, Plus, Settings, BarChart3, Globe, UserPlus, Edit, Trash2, Activity,
+  Minus, Search, Download, Eye, CheckCircle2, XCircle, Filter, Brain, Sparkles, AlertCircle
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { toast } from 'sonner';
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
-// Mock data
-const hemocentros = [
-  { id: 'hc-001', name: 'Hemepar', city: 'Curitiba', donations: 325, active: true },
-  { id: 'hc-002', name: 'Hospital Erasto Gaertner', city: 'Curitiba', donations: 198, active: true },
-  { id: 'hc-003', name: 'Hospital de Clínicas - UFPR', city: 'Curitiba', donations: 245, active: true },
-  { id: 'hc-004', name: 'Hospital do Trabalhador', city: 'Curitiba', donations: 176, active: true },
-];
+// --- Tipos -------------------------------------------------------------------
 
-const permissionGroups = [
-  { 
-    id: 'pg-001', 
-    name: 'Funcionário Padrão', 
-    description: 'Acesso básico ao sistema', 
-    permissions: ['view_donors', 'register_donations', 'view_schedule'],
-    users: 45
-  },
-  { 
-    id: 'pg-002', 
-    name: 'Enfermeiro', 
-    description: 'Acesso completo ao registro de doações', 
-    permissions: ['view_donors', 'register_donations', 'view_schedule', 'manage_stock'],
-    users: 18
-  },
-  { 
-    id: 'pg-003', 
-    name: 'Diretor', 
-    description: 'Gestão completa do hemocentro', 
-    permissions: ['all_hemocentro'],
-    users: 5
-  },
-];
+interface Hemocentro {
+  id: number;
+  nome: string;
+  cidade?: string;
+  uf?: string;
+  status: number; // 1 = ativo, 0 = inativo
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  numero?: string;
+  bairro?: string;
+  cep?: string;
+}
 
-const campaignsMock = [
-  { 
-    id: 'c-001', 
-    title: 'Campanha de Urgência - Tipo O-', 
-    subtitle: 'Precisamos urgentemente de doadores O-',
-    status: 'active',
-    sent: 2847,
-    opened: 1523,
-    clicks: 289,
-    date: '2026-03-05'
-  },
-  { 
-    id: 'c-002', 
-    title: 'Doação de Junho - Salve Vidas', 
-    subtitle: 'Sua doação pode salvar até 4 vidas',
-    status: 'scheduled',
-    date: '2026-06-01'
-  },
-  { 
-    id: 'c-003', 
-    title: 'Campanha de Natal 2025', 
-    subtitle: 'Doe sangue neste Natal',
-    status: 'completed',
-    sent: 3120,
-    opened: 1890,
-    clicks: 456,
-    date: '2025-12-20'
-  },
-];
+interface UserItem {
+  id: number;
+  name: string;
+  email: string;
+  role_id: number;
+  hemocentro_id?: number;
+  status: number;
+  cpf?: string;
+  telefone?: string;
+  hemocentro?: Hemocentro;
+}
+
 
 const systemStats = [
-  { month: 'Jan', total: 1245, hc1: 245, hc2: 198, hc3: 245, hc4: 176, hc5: 142 },
-  { month: 'Fev', total: 1389, hc1: 289, hc2: 212, hc3: 267, hc4: 189, hc5: 156 },
-  { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176, hc5: 142 },
+  { month: 'Jan', total: 1245, hc1: 245, hc2: 198, hc3: 245, hc4: 176 },
+  { month: 'Fev', total: 1389, hc1: 289, hc2: 212, hc3: 267, hc4: 189 },
+  { month: 'Mar', total: 1486, hc1: 325, hc2: 198, hc3: 245, hc4: 176 },
 ];
 
-const globalStockMock = [
-  { type: 'A+', current: 245, min: 150, max: 500, critical: false },
-  { type: 'A-', current: 78, min: 100, max: 300, critical: true },
-  { type: 'B+', current: 156, min: 125, max: 400, critical: false },
-  { type: 'B-', current: 42, min: 75, max: 250, critical: true },
-  { type: 'AB+', current: 89, min: 75, max: 200, critical: false },
-  { type: 'AB-', current: 28, min: 50, max: 150, critical: true },
-  { type: 'O+', current: 324, min: 200, max: 600, critical: false },
-  { type: 'O-', current: 91, min: 125, max: 350, critical: true },
-];
-
-const usersMock = [
-  { id: 'u-001', name: 'Dr. Roberto Silva', email: 'roberto@doavida.com', role: 'Diretor', hemocentro: 'Hemepar', status: 'online', lastLogin: '2026-03-28 14:30' },
-  { id: 'u-002', name: 'Ana Paula Santos', email: 'ana.santos@doavida.com', role: 'Funcionário', hemocentro: 'Hospital Erasto Gaertner', status: 'online', lastLogin: '2026-03-28 08:15' },
-  { id: 'u-003', name: 'Carlos Mendes', email: 'carlos.m@doavida.com', role: 'Diretor', hemocentro: 'Hospital de Clínicas - UFPR', status: 'offline', lastLogin: '2026-03-27 18:45' },
-  { id: 'u-004', name: 'Maria Oliveira', email: 'maria.o@doavida.com', role: 'Enfermeira', hemocentro: 'Hospital do Trabalhador', status: 'online', lastLogin: '2026-03-28 09:00' },
-  { id: 'u-005', name: 'João Pedro Costa', email: 'joao.costa@doavida.com', role: 'Funcionário', hemocentro: 'Hemepar', status: 'online', lastLogin: '2026-03-28 13:20' },
-];
-
-const stockDetailsByType: { [key: string]: any } = {
-  'A+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 82, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 56, percentage: 23 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 48, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 59, percentage: 24 },
-    ],
-    history: [
-      { date: '24/03', stock: 230, entries: 25, exits: 18 },
-      { date: '25/03', stock: 237, entries: 18, exits: 11 },
-      { date: '26/03', stock: 244, entries: 22, exits: 15 },
-      { date: '27/03', stock: 251, entries: 20, exits: 13 },
-      { date: '28/03', stock: 245, entries: 15, exits: 21 },
-    ],
-    stats: {
-      avgDailyConsumption: 16,
-      daysUntilCritical: 9,
-      lastDonation: '2026-03-28 13:45',
-      totalDonationsMonth: 87
-    }
-  },
-  'A-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 28, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 18, percentage: 23 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 14, percentage: 18 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 18, percentage: 23 },
-    ],
-    history: [
-      { date: '24/03', stock: 74, entries: 8, exits: 12 },
-      { date: '25/03', stock: 70, entries: 6, exits: 10 },
-      { date: '26/03', stock: 66, entries: 9, exits: 13 },
-      { date: '27/03', stock: 62, entries: 7, exits: 11 },
-      { date: '28/03', stock: 78, entries: 22, exits: 6 },
-    ],
-    stats: {
-      avgDailyConsumption: 10,
-      daysUntilCritical: 2,
-      lastDonation: '2026-03-28 10:20',
-      totalDonationsMonth: 34
-    }
-  },
-  'B+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 52, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 38, percentage: 24 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 31, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 35, percentage: 22 },
-    ],
-    history: [
-      { date: '24/03', stock: 148, entries: 14, exits: 11 },
-      { date: '25/03', stock: 151, entries: 12, exits: 9 },
-      { date: '26/03', stock: 154, entries: 15, exits: 12 },
-      { date: '27/03', stock: 157, entries: 11, exits: 8 },
-      { date: '28/03', stock: 156, entries: 10, exits: 11 },
-    ],
-    stats: {
-      avgDailyConsumption: 10,
-      daysUntilCritical: 3,
-      lastDonation: '2026-03-28 11:30',
-      totalDonationsMonth: 56
-    }
-  },
-  'B-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 15, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 11, percentage: 26 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 8, percentage: 19 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 8, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 46, entries: 5, exits: 8 },
-      { date: '25/03', stock: 43, entries: 4, exits: 7 },
-      { date: '26/03', stock: 40, entries: 3, exits: 6 },
-      { date: '27/03', stock: 37, entries: 6, exits: 9 },
-      { date: '28/03', stock: 42, entries: 10, exits: 5 },
-    ],
-    stats: {
-      avgDailyConsumption: 7,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-28 09:15',
-      totalDonationsMonth: 21
-    }
-  },
-  'AB+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 32, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 22, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 18, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 17, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 85, entries: 8, exits: 6 },
-      { date: '25/03', stock: 87, entries: 7, exits: 5 },
-      { date: '26/03', stock: 89, entries: 6, exits: 4 },
-      { date: '27/03', stock: 91, entries: 5, exits: 3 },
-      { date: '28/03', stock: 89, entries: 4, exits: 6 },
-    ],
-    stats: {
-      avgDailyConsumption: 5,
-      daysUntilCritical: 3,
-      lastDonation: '2026-03-27 16:45',
-      totalDonationsMonth: 28
-    }
-  },
-  'AB-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 10, percentage: 36 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 7, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 5, percentage: 18 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 6, percentage: 21 },
-    ],
-    history: [
-      { date: '24/03', stock: 30, entries: 3, exits: 4 },
-      { date: '25/03', stock: 29, entries: 2, exits: 3 },
-      { date: '26/03', stock: 28, entries: 3, exits: 4 },
-      { date: '27/03', stock: 27, entries: 2, exits: 3 },
-      { date: '28/03', stock: 28, entries: 3, exits: 2 },
-    ],
-    stats: {
-      avgDailyConsumption: 3,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-26 14:20',
-      totalDonationsMonth: 12
-    }
-  },
-  'O+': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 108, percentage: 33 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 82, percentage: 25 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 68, percentage: 21 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 66, percentage: 20 },
-    ],
-    history: [
-      { date: '24/03', stock: 310, entries: 32, exits: 28 },
-      { date: '25/03', stock: 314, entries: 28, exits: 24 },
-      { date: '26/03', stock: 318, entries: 30, exits: 26 },
-      { date: '27/03', stock: 322, entries: 26, exits: 22 },
-      { date: '28/03', stock: 324, entries: 24, exits: 22 },
-    ],
-    stats: {
-      avgDailyConsumption: 24,
-      daysUntilCritical: 5,
-      lastDonation: '2026-03-28 14:50',
-      totalDonationsMonth: 142
-    }
-  },
-  'O-': {
-    distribution: [
-      { hemocentro: 'Hemepar', stock: 32, percentage: 35 },
-      { hemocentro: 'Hospital Erasto Gaertner', stock: 24, percentage: 26 },
-      { hemocentro: 'Hospital de Clínicas - UFPR', stock: 18, percentage: 20 },
-      { hemocentro: 'Hospital do Trabalhador', stock: 17, percentage: 19 },
-    ],
-    history: [
-      { date: '24/03', stock: 95, entries: 12, exits: 18 },
-      { date: '25/03', stock: 89, entries: 10, exits: 16 },
-      { date: '26/03', stock: 83, entries: 14, exits: 20 },
-      { date: '27/03', stock: 77, entries: 11, exits: 17 },
-      { date: '28/03', stock: 91, entries: 25, exits: 11 },
-    ],
-    stats: {
-      avgDailyConsumption: 16,
-      daysUntilCritical: 1,
-      lastDonation: '2026-03-28 12:30',
-      totalDonationsMonth: 48
-    }
-  }
+const emptyAdminStats = {
+  total_hemocentros:      0,
+  total_usuarios:         0,
+  taxa_comparecimento:    0,
+  doacoes_por_hemocentro: [] as Array<{ hemocentro_id: number; hemocentro: string; total: number }>,
+  estoque_global:         {} as Record<string, number>,
+  doacoes_por_mes:        [] as Array<{ mes: string; total: number }>,
+  doacoes_por_tipo:       {} as Record<string, number>,
 };
 
+const roleLabels: Record<number, string> = { 1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin' };
+const roleNames: Record<string, string> = { '1': 'doador', '2': 'funcionario', '3': 'diretor', '4': 'admin' };
+const systemRoleNames = new Set(['doador', 'funcionario', 'diretor', 'admin', 'enfermeiro']);
+const ML_API_URL = import.meta.env.VITE_ML_URL ?? 'http://localhost:8001';
+
+const formatDateInput = (date: Date) => {
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateInput = (value?: string) => {
+  if (!value) return '';
+
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+
+  const parsed = new Date(value);
+  return formatDateInput(parsed);
+};
+
+const addDaysToDateInput = (dateInput: string, days: number) => {
+  const normalizedDate = normalizeDateInput(dateInput);
+  if (!normalizedDate) return '';
+
+  const date = new Date(`${normalizedDate}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return formatDateInput(date);
+};
+
+const validateCampaignDates = (dataPubli?: string, dataExpiracao?: string) => {
+  const publicationInput = String(dataPubli || '');
+  const expirationInput = String(dataExpiracao || '');
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(publicationInput)) {
+    return 'Informe a data de publicação no formato AAAA-MM-DD.';
+  }
+
+  const publicationDate = normalizeDateInput(dataPubli);
+  const expirationDate = normalizeDateInput(dataExpiracao);
+
+  if (!publicationDate) {
+    return 'Informe uma data de publicação válida.';
+  }
+
+  const publicationYear = publicationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(publicationYear)) {
+    return 'O ano da data de publicação deve ter exatamente 4 dígitos.';
+  }
+
+  const publicationYearNumber = Number(publicationYear);
+  if (publicationYearNumber < 2000 || publicationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  const today = formatDateInput(new Date());
+  if (publicationDate < today) {
+    return 'A data de publicação não pode ser anterior a hoje.';
+  }
+
+  if (!expirationInput) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expirationInput)) {
+    return 'Informe a data de expiração no formato AAAA-MM-DD.';
+  }
+
+  const expirationYear = expirationDate.slice(0, 4);
+  if (!/^\d{4}$/.test(expirationYear)) {
+    return 'O ano da data de expiração deve ter exatamente 4 dígitos.';
+  }
+
+  const expirationYearNumber = Number(expirationYear);
+  if (expirationYearNumber < 2000 || expirationYearNumber > 2100) {
+    return 'O ano informado deve estar entre 2000 e 2100.';
+  }
+
+  if (expirationDate < today) {
+    return 'A data de expiração não pode ser anterior a hoje.';
+  }
+
+  if (expirationDate <= publicationDate) {
+    return 'A data de expiração deve ser em um dia posterior à data de publicação.';
+  }
+
+  return null;
+};
+
+const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
+  'Agendamentos': {
+    ver_agendamentos:       'Ver agendamentos',
+    criar_agendamentos:     'Criar agendamentos',
+    confirmar_agendamentos: 'Confirmar / reabrir agendamentos',
+    cancelar_agendamentos:  'Cancelar agendamentos',
+  },
+  'Doações': {
+    ver_doacoes:       'Ver doações',
+    registrar_doacoes: 'Registrar doações',
+  },
+  'Triagem': {
+    ver_triagens:      'Ver triagens',
+    registrar_triagem: 'Registrar triagem clínica',
+  },
+  'Estoque': {
+    ver_estoque:       'Ver estoque',
+    gerenciar_estoque: 'Gerenciar estoque',
+  },
+  'Alertas Médicos': {
+    ver_alertas_medicos:       'Ver alertas médicos',
+    gerenciar_alertas_medicos: 'Criar / editar alertas médicos',
+  },
+  'Usuários': {
+    ver_usuarios:     'Ver usuários',
+    criar_usuarios:   'Criar usuários',
+    excluir_usuarios: 'Excluir usuários',
+  },
+  'Hemocentros': {
+    ver_hemocentros:       'Ver hemocentros',
+    gerenciar_hemocentros: 'Gerenciar hemocentros',
+  },
+  'Campanhas': {
+    ver_campanhas:       'Ver campanhas',
+    gerenciar_campanhas: 'Criar / editar campanhas',
+    disparar_campanhas:  'Disparar campanhas',
+  },
+  'Estatísticas': {
+    ver_estatisticas_hemocentro: 'Ver estatísticas do hemocentro',
+    ver_estatisticas_globais:    'Ver estatísticas globais',
+  },
+  'Relatórios': {
+    exportar_relatorios: 'Exportar relatórios PDF',
+  },
+};
+
+// --- Componente --------------------------------------------------------------
+
 export function AdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
-  
-  // Dialog states
+  const todayDateInput = formatDateInput(new Date());
+
+  // -- Estado: dados da API
+  const [hemocentros, setHemocentros] = useState<Hemocentro[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [doacoes, setDoacoes] = useState<any[]>([]);
+  const [stats, setStats] = useState(emptyAdminStats);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+
+  // -- Estado: campanhas
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [disparandoCampaignId, setDisparandoCampaignId] = useState<string | number | null>(null);
+  const [disparoResultado, setDisparoResultado] = useState<any>(null);
+  const [globalStock, setGlobalStock] = useState<any[]>([]);
+
+  // -- Estado: roles
+  const [roles, setRoles] = useState<any[]>([]);
+  const [allPermissions, setAllPermissions] = useState<Record<string, Record<string, string>>>(DEFAULT_PERMISSIONS);
+  const [showRoleDialog, setShowRoleDialog] = useState(false);
+  const [showEditRoleDialog, setShowEditRoleDialog] = useState(false);
+  const [showDeleteRoleDialog, setShowDeleteRoleDialog] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<any>(null);
+  const [roleToDelete, setRoleToDelete] = useState<any>(null);
+  const [roleForm, setRoleForm] = useState({ name: '', permissions: [] as string[] });
+
+  // -- Estado: dialogs
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showHemocentroDialog, setShowHemocentroDialog] = useState(false);
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [showStockDialog, setShowStockDialog] = useState(false);
@@ -316,419 +252,893 @@ export function AdminDashboard() {
   const [showDeleteUserDialog, setShowDeleteUserDialog] = useState(false);
   const [showViewHemocentroDialog, setShowViewHemocentroDialog] = useState(false);
   const [showEditHemocentroDialog, setShowEditHemocentroDialog] = useState(false);
-  const [showSettingsHemocentroDialog, setShowSettingsHemocentroDialog] = useState(false);
   const [showEditCampaignDialog, setShowEditCampaignDialog] = useState(false);
   const [showDeleteCampaignDialog, setShowDeleteCampaignDialog] = useState(false);
-  const [showEditPermissionDialog, setShowEditPermissionDialog] = useState(false);
-  const [showDeletePermissionDialog, setShowDeletePermissionDialog] = useState(false);
-  
-  // Data states
-  const [campaigns, setCampaigns] = useState(campaignsMock);
-  const [globalStock, setGlobalStock] = useState(globalStockMock);
-  const [users, setUsers] = useState(usersMock);
-  const [permissions, setPermissions] = useState(permissionGroups);
-  
-  // Form states
+
+  // -- Estado: formulários / seleções
   const [selectedBloodType, setSelectedBloodType] = useState('');
   const [selectedBloodTypeForDetails, setSelectedBloodTypeForDetails] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [userToDelete, setUserToDelete] = useState<any>(null);
-  const [selectedHemocentro, setSelectedHemocentro] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+  const [selectedHemocentro, setSelectedHemocentro] = useState<Hemocentro | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [campaignToDelete, setCampaignToDelete] = useState<any>(null);
-  const [selectedPermission, setSelectedPermission] = useState<any>(null);
-  const [permissionToDelete, setPermissionToDelete] = useState<any>(null);
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
-  const [selectedHemocentroForStock, setSelectedHemocentroForStock] = useState('');
   const [reportType, setReportType] = useState('');
-  const [reportFormat, setReportFormat] = useState('pdf');
+  const [reportPeriod, setReportPeriod] = useState('30');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportBloodType, setReportBloodType] = useState('todos');
+  const [chartPeriod, setChartPeriod] = useState('30');
+  const [chartStartDate, setChartStartDate] = useState('');
+  const [chartEndDate, setChartEndDate] = useState('');
+  const [chartBloodType, setChartBloodType] = useState('todos');
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const [mlRecsLoading, setMlRecsLoading] = useState(false);
+  const [mlRecs, setMlRecs] = useState<any[]>([]);
+  const [mlPreview, setMlPreview] = useState<any>(null);
+  const [mlStatus, setMlStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [userFilter, setUserFilter] = useState('all');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [userSearchPerformed, setUserSearchPerformed] = useState(false);
 
-  if (!user || user.role !== 'admin') {
-    navigate('/login');
-    return null;
-  }
+  // -- Formulário: novo hemocentro
+  const [hcForm, setHcForm] = useState({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    toast.success('Logout realizado com sucesso');
-  };
+  // -- Formulário: novo usuário
+  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
 
-  // Campaign handlers
-  const handleCreateCampaign = (e: React.FormEvent) => {
+  // -- Formulário: nova campanha
+  const [campaignForm, setCampaignForm] = useState({
+    titulo: '',
+    subtitulo: '',
+    descricao: '',
+    tipo_sangue: '',
+    data_publi: '',
+    data_expiracao: '',
+  });
+  const campaignExpirationMinDate = campaignForm.data_publi
+    ? addDaysToDateInput(campaignForm.data_publi, 1) || todayDateInput
+    : todayDateInput;
+
+  // --- Guard ------------------------------------------------------------------
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    } else if (user.role_id !== 4 && !user.roles?.includes('admin')) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
+
+  // --- Fetch inicial ----------------------------------------------------------
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const [hcRes, usersRes, doacoesRes, stockRes, statsRes, campanhasRes] = await Promise.all([
+        api.get('/hemocentros'),
+        api.get('/users'),
+        api.get('/doacoes'),
+        api.get('/estoque'),
+        api.get('/estatisticas/admin'),
+        api.get('/campanhas'),
+      ]);
+
+      setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+      setDoacoes(Array.isArray(doacoesRes.data) ? doacoesRes.data : doacoesRes.data.data ?? []);
+
+      // Agrega estoque globalmente
+      const allStock = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
+      const aggregated = allStock.reduce((acc: any[], curr: any) => {
+        const existing = acc.find((item: any) => item.tipo_sangue === curr.tipo_sangue);
+        if (existing) {
+          existing.quantidade += Number(curr.quantidade);
+          existing.quantidade_minima += Number(curr.quantidade_minima || 0);
+        } else {
+          acc.push({
+            tipo_sangue: curr.tipo_sangue,
+            quantidade: Number(curr.quantidade),
+            quantidade_minima: Number(curr.quantidade_minima || 0)
+          });
+        }
+        return acc;
+      }, []);
+
+      setGlobalStock(aggregated.map((s: any) => ({
+        type: s.tipo_sangue,
+        current: s.quantidade,
+        min: s.quantidade_minima,
+        critical: s.quantidade < s.quantidade_minima
+      })));
+      setStats({ ...emptyAdminStats, ...statsRes.data });
+      setCampaigns(
+        Array.isArray(campanhasRes.data)
+          ? campanhasRes.data
+          : campanhasRes.data?.data ?? []
+      );
+    } catch (err: any) {
+      console.error('Erro ao carregar dados:', err.response?.data);
+      toast.error('Erro ao carregar dados do painel');
+    } finally {
+      setIsLoading(false);
+    }
+
+    try {
+      const rolesRes = await api.get('/roles');
+      setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : rolesRes.data?.data ?? []);
+    } catch (err) {
+      console.warn('Roles não carregadas da API:', err);
+    }
+
+    try {
+      const permsRes = await api.get('/permissions');
+      setAllPermissions(permsRes.data ?? DEFAULT_PERMISSIONS);
+    } catch (err) {
+      console.warn('Permissões não carregadas da API, usando padrão:', err);
+      setAllPermissions(DEFAULT_PERMISSIONS);
+    }
+  }, [user]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  if (!user || (user.role_id !== 4 && !user.roles?.includes('admin'))) return null;
+
+  const handleLogoutClick = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
+
+  // --- Hemocentros ------------------------------------------------------------
+  const handleCreateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowCampaignDialog(false);
-    toast.success('Campanha criada e agendada com sucesso!');
-  };
-
-  const handleEditCampaign = (id: string) => {
-    const campaign = campaigns.find(c => c.id === id);
-    if (campaign) {
-      setSelectedCampaign(campaign);
-      setShowEditCampaignDialog(true);
+    try {
+      await api.post('/auth/hemocentros', { ...hcForm, status: 1 });
+      toast.success('Hemocentro criado com sucesso!');
+      setShowHemocentroDialog(false);
+      setHcForm({ nome: '', cidade: '', uf: 'PR', endereco: '', numero: '', bairro: '', cep: '', telefone: '', email: '' });
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao criar hemocentro');
     }
   };
 
-  const handleUpdateCampaign = (e: React.FormEvent) => {
+  const handleUpdateHemocentro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowEditCampaignDialog(false);
-    setSelectedCampaign(null);
-    toast.success('Campanha atualizada com sucesso!');
-  };
-
-  const handleDeleteCampaign = (id: string) => {
-    const campaign = campaigns.find(c => c.id === id);
-    if (campaign) {
-      setCampaignToDelete(campaign);
-      setShowDeleteCampaignDialog(true);
+    if (!selectedHemocentro) return;
+    try {
+      await api.put(`/auth/hemocentros/${selectedHemocentro.id}`, selectedHemocentro);
+      toast.success('Hemocentro atualizado!');
+      setShowEditHemocentroDialog(false);
+      setSelectedHemocentro(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar hemocentro');
     }
   };
 
-  const handleConfirmDeleteCampaign = () => {
-    if (campaignToDelete) {
-      setCampaigns(campaigns.filter(c => c.id !== campaignToDelete.id));
-      setShowDeleteCampaignDialog(false);
-      setCampaignToDelete(null);
-      toast.success('Campanha excluída com sucesso!');
+  const handleToggleHemocentroStatus = async (hc: Hemocentro) => {
+    try {
+      const novoStatus = hc.status === 1 ? 0 : 1;
+      await api.put(`/auth/hemocentros/${hc.id}`, { status: novoStatus });
+      toast.success(`Hemocentro ${novoStatus === 1 ? 'ativado' : 'desativado'}!`);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao alterar status');
     }
   };
 
-  // Permission handlers
-  const handleEditPermission = (permission: any) => {
-    setSelectedPermission(permission);
-    setShowEditPermissionDialog(true);
-  };
-
-  const handleUpdatePermission = (e: React.FormEvent) => {
+  // --- Usuários ---------------------------------------------------------------
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowEditPermissionDialog(false);
-    setSelectedPermission(null);
-    toast.success('Grupo de permissões atualizado com sucesso!');
-  };
+    try {
+      const selectedRoleObj = roles.find(r => String(r.id) === newUserForm.role_id);
+      const payload: any = {
+        ...newUserForm,
+        cpf: newUserForm.cpf.replace(/\D/g, ''),
+        role: selectedRoleObj?.name || roleNames[newUserForm.role_id],
+        role_id: Number(newUserForm.role_id)
+      };
+      if (newUserForm.hemocentro_id) payload.hemocentro_id = Number(newUserForm.hemocentro_id);
 
-  const handleDeletePermission = (permission: any) => {
-    setPermissionToDelete(permission);
-    setShowDeletePermissionDialog(true);
-  };
-
-  const handleConfirmDeletePermission = () => {
-    if (permissionToDelete) {
-      setPermissions(permissions.filter(p => p.id !== permissionToDelete.id));
-      setShowDeletePermissionDialog(false);
-      setPermissionToDelete(null);
-      toast.success('Grupo de permissões removido com sucesso!');
+      await api.post('/auth/users', payload);
+      toast.success('Usuário criado com sucesso!');
+      setShowUserDialog(false);
+      setNewUserForm({ name: '', email: '', password: '', cpf: '', role_id: '2', hemocentro_id: '' });
+      fetchData();
+    } catch (err: any) {
+      const erros = err.response?.data?.errors;
+      if (erros) {
+        toast.error(Object.values(erros).flat().join('\n'));
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao criar usuário');
+      }
     }
   };
 
-  // Permission handlers
-  const handleCreatePermissionGroup = (e: React.FormEvent) => {
+  const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowPermissionDialog(false);
-    toast.success('Grupo de permissões criado com sucesso!');
+    if (!selectedUser) return;
+    try {
+      const payload: any = {
+        name: selectedUser.name,
+        email: selectedUser.email,
+        role_id: selectedUser.role_id,
+        role: roles.find(r => r.id === selectedUser.role_id)?.name || roleNames[String(selectedUser.role_id)],
+        status: selectedUser.status
+      };
+      if (selectedUser.hemocentro_id) payload.hemocentro_id = selectedUser.hemocentro_id;
+
+      await api.put(`/users/${selectedUser.id}`, payload);
+      toast.success('Usuário atualizado!');
+      setShowEditUserDialog(false);
+      setSelectedUser(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar usuário');
+    }
   };
 
-  // Hemocentro handlers
-  const handleCreateHemocentro = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowHemocentroDialog(false);
-    toast.success('Hemocentro criado com sucesso!');
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      await api.delete(`/users/${userToDelete.id}`);
+      toast.success('Usuário removido!');
+      setShowDeleteUserDialog(false);
+      setUserToDelete(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao remover usuário');
+    }
   };
 
-  // Stock handlers
+  const handleToggleUserStatus = async (userItem: UserItem) => {
+    try {
+      const novoStatus = userItem.status === 1 ? 0 : 1;
+      await api.put(`/users/${userItem.id}`, { status: novoStatus });
+      toast.success('Status atualizado!');
+      fetchData();
+    } catch {
+      toast.error('Erro ao alterar status');
+    }
+  };
+
+  const handleSearchUsers = () => {
+    const hasSearch = userSearchTerm.trim().length > 0;
+    const hasRoleFilter = userRoleFilter !== 'all';
+    const hasStatusFilter = userStatusFilter !== 'all';
+
+    if (!hasSearch && !hasRoleFilter && !hasStatusFilter) {
+      setUserSearchPerformed(false);
+      return;
+    }
+
+    setUserSearchPerformed(true);
+  };
+
+  const handleClearUserSearch = () => {
+    setUserSearchTerm('');
+    setUserRoleFilter('all');
+    setUserStatusFilter('all');
+    setUserSearchPerformed(false);
+  };
+
+  // --- Estoque (API) ----------------------------------------------------------
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
     setStockAction('add');
     setStockAmount('');
-    setSelectedHemocentroForStock('all');
     setShowStockDialog(true);
   };
 
-  const handleOpenStockDetails = (bloodType: string) => {
-    setSelectedBloodTypeForDetails(bloodType);
-    setShowStockDetailsDialog(true);
-  };
-
-  const handleUpdateStock = () => {
-    if (!stockAmount || parseInt(stockAmount) <= 0) {
-      toast.error('Digite uma quantidade válida');
-      return;
-    }
-
+  const handleUpdateStock = async () => {
+    if (!stockAmount || parseInt(stockAmount) <= 0) { toast.error('Digite uma quantidade válida'); return; }
     const amount = parseInt(stockAmount);
-    setGlobalStock(prev =>
-      prev.map(item => {
-        if (item.type === selectedBloodType) {
-          const newCurrent = stockAction === 'add' 
-            ? Math.min(item.current + amount, item.max)
-            : Math.max(item.current - amount, 0);
-          const newCritical = newCurrent < item.min;
-          
-          return {
-            ...item,
-            current: newCurrent,
-            critical: newCritical
-          };
-        }
-        return item;
-      })
-    );
+    const valueToSend = stockAction === 'add' ? amount : -amount;
 
-    toast.success(
-      stockAction === 'add'
-        ? `${amount} bolsas adicionadas ao estoque global de ${selectedBloodType}`
-        : `${amount} bolsas removidas do estoque global de ${selectedBloodType}`
-    );
-    setShowStockDialog(false);
-  };
+    // Admin usa o primeiro hemocentro se não houver um vinculado
+    const targetHemocentroId = user.hemocentro_id || (hemocentros.length > 0 ? hemocentros[0].id : null);
 
-  // User handlers
-  const handleCreateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowUserDialog(false);
-    toast.success('Usuário criado com sucesso!');
-  };
-
-  const handleEditUser = (user: any) => {
-    setSelectedUser(user);
-    setShowEditUserDialog(true);
-  };
-
-  const handleUpdateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    setUsers(prev =>
-      prev.map(u => u.id === selectedUser.id ? selectedUser : u)
-    );
-    setShowEditUserDialog(false);
-    setSelectedUser(null);
-    toast.success('Usuário atualizado com sucesso!');
-  };
-
-  const handleOpenDeleteUser = (user: any) => {
-    setUserToDelete(user);
-    setShowDeleteUserDialog(true);
-  };
-
-  const handleConfirmDeleteUser = () => {
-    if (userToDelete) {
-      setUsers(users.filter(u => u.id !== userToDelete.id));
-      setShowDeleteUserDialog(false);
-      setUserToDelete(null);
-      toast.success('Usuário removido com sucesso!');
-    }
-  };
-
-  const handleToggleUserStatus = (id: string) => {
-    setUsers(prev =>
-      prev.map(u => u.id === id ? { ...u, status: u.status === 'online' ? 'offline' : 'online' } : u)
-    );
-    toast.success('Status do usuário atualizado!');
-  };
-
-  // Hemocentro handlers
-  const handleViewHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowViewHemocentroDialog(true);
-  };
-
-  const handleEditHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowEditHemocentroDialog(true);
-  };
-
-  const handleUpdateHemocentro = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Aqui você atualizaria no backend/estado
-    setShowEditHemocentroDialog(false);
-    setSelectedHemocentro(null);
-    toast.success('Hemocentro atualizado com sucesso!');
-  };
-
-  const handleSettingsHemocentro = (hemocentro: any) => {
-    setSelectedHemocentro(hemocentro);
-    setShowSettingsHemocentroDialog(true);
-  };
-
-  const handleSaveHemocentroSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowSettingsHemocentroDialog(false);
-    setSelectedHemocentro(null);
-    toast.success('Configurações do hemocentro salvas com sucesso!');
-  };
-
-  const handleSaveSettings = () => {
-    toast.success('Configurações do sistema salvas com sucesso!');
-  };
-
-  // Report handlers
-  const handleExportReport = () => {
-    if (!reportType) {
-      toast.error('Selecione um tipo de relatório');
+    if (!targetHemocentroId) {
+      toast.error('Nenhum hemocentro disponível para atualizar estoque');
       return;
     }
 
-    const reportNames: { [key: string]: string } = {
-      donations: 'Relatório de Doações',
-      stock: 'Relatório de Estoque Global',
-      users: 'Relatório de Usuários',
-      campaigns: 'Relatório de Campanhas',
-      hemocentros: 'Relatório de Hemocentros'
+    try {
+      await api.post('/auth/estoque', {
+        hemocentro_id: targetHemocentroId,
+        tipo_sangue: selectedBloodType,
+        quantidade: valueToSend,
+      });
+
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} - ${selectedBloodType}`);
+      setShowStockDialog(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar estoque: ' + (err.response?.data?.message || 'Tente novamente'));
+    }
+  };
+
+
+  // --- Campanhas (API) --------------------------------------------------------
+  const handleCreateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const campaignDateError = validateCampaignDates(campaignForm.data_publi, campaignForm.data_expiracao);
+    if (campaignDateError) {
+      toast.error(campaignDateError);
+      return;
+    }
+
+    try {
+      await api.post('/auth/campanhas', {
+        titulo:         campaignForm.titulo,
+        subtitulo:      campaignForm.subtitulo || undefined,
+        descricao:      campaignForm.descricao || undefined,
+        tipo_sangue:    campaignForm.tipo_sangue || undefined,
+        data_publi:     campaignForm.data_publi,
+        data_expiracao: campaignForm.data_expiracao || undefined,
+      });
+      toast.success('Campanha criada com sucesso!');
+      setShowCampaignDialog(false);
+      setCampaignForm({ titulo: '', subtitulo: '', descricao: '', tipo_sangue: '', data_publi: '', data_expiracao: '' });
+      fetchData();
+    } catch (err: any) {
+      const erros = err.response?.data?.errors;
+      toast.error(erros ? Object.values(erros).flat().join('\n') : 'Erro ao criar campanha');
+    }
+  };
+
+  const handleUpdateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCampaign) return;
+    try {
+      await api.put(`/auth/campanhas/${selectedCampaign.id}`, {
+        titulo:         selectedCampaign.titulo,
+        subtitulo:      selectedCampaign.subtitulo,
+        descricao:      selectedCampaign.descricao,
+        tipo_sangue:    selectedCampaign.tipo_sangue,
+        data_publi:     selectedCampaign.data_publi,
+        data_expiracao: selectedCampaign.data_expiracao,
+        status:         selectedCampaign.status,
+      });
+      toast.success('Campanha atualizada!');
+      setShowEditCampaignDialog(false);
+      setSelectedCampaign(null);
+      fetchData();
+    } catch {
+      toast.error('Erro ao atualizar campanha');
+    }
+  };
+
+  const handleConfirmDeleteCampaign = async () => {
+    if (!campaignToDelete) return;
+    try {
+      await api.delete(`/auth/campanhas/${campaignToDelete.id}`);
+      toast.success('Campanha removida!');
+      setShowDeleteCampaignDialog(false);
+      setCampaignToDelete(null);
+      fetchData();
+    } catch {
+      toast.error('Erro ao remover campanha');
+    }
+  };
+
+  const handleDispararCampaign = async (campanha: any) => {
+    setDisparandoCampaignId(campanha.id);
+    setDisparoResultado(null);
+    try {
+      const res = await api.post(`/auth/campanhas/${campanha.id}/disparar`);
+      setDisparoResultado({ ...res.data, campanha_id: res.data.campanha_id ?? campanha.id });
+      toast.success(`Campanha disparada para ${res.data.total_disparado} doadores!`);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao disparar campanha');
+    } finally {
+      setDisparandoCampaignId(null);
+    }
+  };
+
+  const handleBuscarRecomendacoesMl = async () => {
+    setMlStatus('loading');
+    setMlRecsLoading(true);
+    try {
+      let doadores: any[] = [];
+      try {
+        const doadoresRes = await api.get('/auth/doadores/perfil-rfmt');
+        doadores = Array.isArray(doadoresRes.data?.data)
+          ? doadoresRes.data.data
+          : Array.isArray(doadoresRes.data)
+          ? doadoresRes.data
+          : [];
+      } catch (err: any) {
+        if (err.response?.status !== 404) {
+          throw err;
+        }
+
+        const doadoresRes = await api.get('/users');
+        const todosUsers = Array.isArray(doadoresRes.data)
+          ? doadoresRes.data
+          : doadoresRes.data?.data ?? [];
+        doadores = todosUsers
+          .filter((u: any) => u.role_id === 1 || u.roles?.includes('doador'))
+          .map((u: any) => ({
+            ...u,
+            recencia_meses:              6,
+            frequencia_doacoes:          1,
+            volume_total_cc:             450,
+            tempo_desde_primeira_doacao: 12,
+            risco_inatividade:           'Atencao',
+          }));
+      }
+
+      if (doadores.length === 0) {
+        toast.error('Nenhum doador encontrado para análise.');
+        setMlStatus('error');
+        return;
+      }
+
+      const BATCH = 20;
+      const resultados: any[] = [];
+      for (let i = 0; i < Math.min(doadores.length, 100); i += BATCH) {
+        const lote = doadores.slice(i, i + BATCH);
+        const promises = lote.map(async (d: any) => {
+          const toNum = (v: any, fallback: number) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0) ? n : fallback;
+          };
+          const payload = {
+            recencia_meses:               toNum(d.recencia_meses,              6),
+            frequencia_doacoes:           toNum(d.frequencia_doacoes,          1),
+            volume_total_cc:              toNum(d.volume_total_cc,             450),
+            tempo_desde_primeira_doacao:  toNum(d.tempo_desde_primeira_doacao, 12),
+            risco_inatividade:            ['Ativo','Atencao','Em_Risco','Inativo'].includes(d.risco_inatividade)
+                                          ? d.risco_inatividade
+                                          : 'Atencao',
+          };
+
+          try {
+            const [retRes, volRes] = await Promise.all([
+              fetch(`${ML_API_URL}/predizer/retorno`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }).then(r => r.json()),
+              fetch(`${ML_API_URL}/predizer/volume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }).then(r => r.json()),
+            ]);
+
+            return { doador: d, retorno: retRes, volume: volRes };
+          } catch {
+            return null;
+          }
+        });
+        const loteRes = await Promise.all(promises);
+        resultados.push(...loteRes.filter(Boolean));
+      }
+
+      const elegiveis = resultados.length;
+      const vaiRetornar = resultados.filter(r => r.retorno?.vai_retornar).length;
+      const volumeTotal = resultados
+        .filter(r => r.retorno?.vai_retornar)
+        .reduce((acc, r) => acc + (r.volume?.volume_estimado_cc ?? 450), 0);
+
+      setMlPreview({
+        total_elegiveis: elegiveis,
+        segmentados_ml: vaiRetornar,
+        pct_ml: elegiveis > 0 ? Math.round((vaiRetornar / elegiveis) * 100) : 0,
+        retorno_estimado: vaiRetornar,
+        volume_estimado_litros: Math.round(volumeTotal / 1000),
+      });
+
+      const campanhasParticipadas = campaigns
+        .filter(c => c.total_disparado > 0)
+        .map(c => c.titulo);
+
+      const recRes = await fetch(`${ML_API_URL}/recomendar/campanhas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campanhas_participadas: campanhasParticipadas,
+          n_recomendacoes: 3,
+        }),
+      }).then(r => r.json());
+
+      const recsEnriquecidas = (recRes.recomendacoes ?? []).map((rec: any) => {
+        const contextMap: Record<string, { motivo: string; estimativa: number }> = {
+          Campanha_Urgencia_O_Negativo: { motivo: 'Estoque crítico detectado', estimativa: Math.floor(vaiRetornar * 0.15) },
+          Campanha_Doacao_Regular_Mensal: { motivo: 'Doadores frequentes disponíveis', estimativa: Math.floor(vaiRetornar * 0.35) },
+          Campanha_Semana_do_Doador: { motivo: 'Alta taxa de engajamento esperada', estimativa: Math.floor(vaiRetornar * 0.28) },
+          Campanha_Doacao_Hospitais_Publicos: { motivo: 'Demanda hospitalar identificada', estimativa: Math.floor(vaiRetornar * 0.22) },
+          Campanha_Reativacao_Inativos: { motivo: `${resultados.filter(r => !r.retorno?.vai_retornar).length} doadores inativos identificados`, estimativa: Math.floor(vaiRetornar * 0.12) },
+          Campanha_Primeira_Doacao: { motivo: 'Novos cadastros sem doação', estimativa: Math.floor(vaiRetornar * 0.10) },
+          Campanha_Doador_VIP_Exclusiva: { motivo: 'Perfis VIP com alta frequência', estimativa: Math.floor(vaiRetornar * 0.08) },
+          Campanha_Tipo_A_Positivo: { motivo: 'Tipo A+ com doadores elegíveis', estimativa: Math.floor(vaiRetornar * 0.18) },
+        };
+        const ctx = contextMap[rec.campanha] ?? { motivo: 'Perfil dos doadores compatível', estimativa: Math.floor(vaiRetornar * 0.15) };
+
+        return {
+          ...rec,
+          nome_legivel: rec.campanha.replace('Campanha_', '').replace(/_/g, ' '),
+          motivo: ctx.motivo,
+          estimativa_doacoes: ctx.estimativa,
+          score_pct: Math.round(rec.score_relevancia * 100),
+        };
+      });
+
+      setMlRecs(recsEnriquecidas);
+      setMlStatus('ready');
+      toast.success('Análise ML concluída!');
+    } catch (err) {
+      console.error('Erro ML:', err);
+      setMlStatus('error');
+      toast.error('Não foi possível conectar com a API de ML. Verifique se o servidor está rodando.');
+    } finally {
+      setMlRecsLoading(false);
+    }
+  };
+
+  const handleUsarRecomendacao = (rec: any) => {
+    setCampaignForm({
+      titulo: rec.nome_legivel,
+      subtitulo: rec.motivo,
+      descricao: `Campanha recomendada pelo sistema de inteligência artificial com base no perfil atual dos doadores. Score de relevância: ${rec.score_pct}%.`,
+      tipo_sangue: '',
+      data_publi: new Date().toISOString().split('T')[0],
+      data_expiracao: '',
+    });
+    setShowCampaignDialog(true);
+  };
+
+  const formatDatePt = (date: Date) => date.toLocaleDateString('pt-BR');
+
+  const resolvePeriodFilter = (period: string, startDate?: string, endDate?: string) => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const startOfToday = new Date(today);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    if (period === 'all') {
+      return { start: null as Date | null, end: null as Date | null, label: 'Período completo' };
+    }
+
+    if (period === 'previous_month') {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth(), 0);
+      end.setHours(23, 59, 59, 999);
+      return { start, end, label: `Mês anterior (${formatDatePt(start)} a ${formatDatePt(end)})` };
+    }
+
+    if (period === 'custom' && startDate && endDate) {
+      const start = new Date(`${startDate}T00:00:00`);
+      const end = new Date(`${endDate}T23:59:59`);
+      return { start, end, label: `${formatDatePt(start)} a ${formatDatePt(end)}` };
+    }
+
+    const days = Number(period) || 30;
+    const start = new Date(startOfToday);
+    start.setDate(start.getDate() - days);
+    return { start, end: today, label: `Últimos ${days} dias (${formatDatePt(start)} a ${formatDatePt(today)})` };
+  };
+
+  const isDateInPeriod = (value: any, periodInfo: { start: Date | null; end: Date | null }) => {
+    if (!periodInfo.start && !periodInfo.end) return true;
+    if (!value) return false;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return false;
+    if (periodInfo.start && date < periodInfo.start) return false;
+    if (periodInfo.end && date > periodInfo.end) return false;
+    return true;
+  };
+
+
+  // --- Roles (API) ------------------------------------------------------------
+  const togglePermission = (permName: string, currentPerms: string[], setter: (p: string[]) => void) => {
+    setter(
+      currentPerms.includes(permName)
+        ? currentPerms.filter(p => p !== permName)
+        : [...currentPerms, permName]
+    );
+  };
+
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const roleName = roleForm.name.trim().toLowerCase();
+    if (systemRoleNames.has(roleName)) {
+      toast.error('Este cargo é padrão do sistema e não pode ser criado pelo dashboard');
+      return;
+    }
+
+    try {
+      await api.post('/auth/roles', { name: roleName, permissions: roleForm.permissions });
+      toast.success('Cargo criado com sucesso!');
+      setShowRoleDialog(false);
+      setRoleForm({ name: '', permissions: [] });
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao criar cargo');
+    }
+  };
+
+  const handleUpdateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole) return;
+    if (selectedRole.sistema || systemRoleNames.has(selectedRole.name)) {
+      toast.error('Cargos padrão do sistema não podem ser alterados');
+      return;
+    }
+
+    try {
+      await api.put(`/auth/roles/${selectedRole.id}`, {
+        name: selectedRole.name.trim().toLowerCase(),
+        permissions: selectedRole.permissions ?? [],
+      });
+      toast.success('Cargo atualizado!');
+      setShowEditRoleDialog(false);
+      setSelectedRole(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao atualizar cargo');
+    }
+  };
+
+  const handleConfirmDeleteRole = async () => {
+    if (!roleToDelete) return;
+    if (roleToDelete.sistema || systemRoleNames.has(roleToDelete.name)) {
+      toast.error('Cargos padrão do sistema não podem ser removidos');
+      return;
+    }
+
+    try {
+      await api.delete(`/auth/roles/${roleToDelete.id}`);
+      toast.success('Cargo removido!');
+      setShowDeleteRoleDialog(false);
+      setRoleToDelete(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao remover cargo');
+    }
+  };
+
+  // --- Relatório ---------------------------------------------------------------
+  const handleExportReport = async () => {
+    if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
+    if (reportPeriod === 'custom' && (!reportStartDate || !reportEndDate)) {
+      toast.error('Informe a data inicial e final do período');
+      return;
+    }
+
+    const endpoints: Record<string, string> = {
+      doacoes:      '/relatorios/doacoes/pdf',
+      estoque:      '/relatorios/estoque/pdf',
+      doadores:     '/relatorios/doadores/pdf',
+      agendamentos: '/relatorios/agendamentos/pdf',
+      triagens:     '/relatorios/triagens/pdf',
+      desempenho:   '/relatorios/desempenho/pdf',
     };
 
-    const formatExt = reportFormat === 'pdf' ? 'PDF' : reportFormat === 'excel' ? 'Excel' : 'CSV';
-    
-    toast.success(`${reportNames[reportType]} exportado em ${formatExt} com sucesso!`);
-    setShowReportDialog(false);
-    setReportType('');
-    setReportFormat('pdf');
+    const nomes: Record<string, string> = {
+      doacoes:      'doacoes',
+      estoque:      'estoque',
+      doadores:     'doadores',
+      agendamentos: 'agendamentos',
+      triagens:     'triagens',
+      desempenho:   'desempenho',
+    };
+
+    const endpoint = endpoints[reportType];
+    if (!endpoint) { toast.error('Tipo não disponível'); return; }
+    const reportPeriodInfo = resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate);
+    const params = new URLSearchParams();
+    params.set('periodo', reportPeriod);
+    params.set('periodo_label', reportPeriodInfo.label);
+    if (reportPeriodInfo.start) params.set('data_inicio', formatDateInput(reportPeriodInfo.start));
+    if (reportPeriodInfo.end) params.set('data_fim', formatDateInput(reportPeriodInfo.end));
+    if (reportBloodType !== 'todos') params.set('tipo_sangue', reportBloodType);
+
+    setIsDownloadingReport(true);
+    toast.info('Gerando relatório PDF...');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:8000/api${endpoint}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `relatorio-${nomes[reportType]}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Relatório gerado com sucesso!');
+      setShowReportDialog(false);
+      setReportType('');
+    } catch {
+      toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+    } finally {
+      setIsDownloadingReport(false);
+    }
   };
 
-  const totalDonations = hemocentros.reduce((acc, hc) => acc + hc.donations, 0);
-  const totalDonors = 12847;
-  
+  // --- Computados -------------------------------------------------------------
+  const hemocentrosAtivos = hemocentros.filter(h => h.status === 1);
+  const totalDonors = users.filter(u => Number(u.role_id) === 1).length;
+  const hemocentroNomeResolvido =
+    user?.hemocentro?.nome ||
+    user?.hemocentroName ||
+    hemocentros.find((hemocentro) => Number(hemocentro.id) === Number(user?.hemocentro_id))?.nome ||
+    '';
+  const hemocentroNome = hemocentroNomeResolvido
+    ? `Hemocentro ${hemocentroNomeResolvido}`
+    : 'Todos os hemocentros';
+  const notifications = useMemo(() => buildDashboardNotifications({
+    hemocentroId: user?.hemocentro_id ? Number(user.hemocentro_id) : null,
+    doacoes,
+    users,
+    hemocentros,
+  }), [user?.hemocentro_id, doacoes, users, hemocentros]);
+  const notificationsKey = notifications.map((notification) => `${notification.id}:${notification.timeLabel}`).join('|');
+
+  useEffect(() => {
+    setHasUnreadNotifications(notifications.length > 0);
+  }, [notificationsKey]);
+
   const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                         u.email.toLowerCase().includes(userSearchTerm.toLowerCase());
-    const matchesFilter = userFilter === 'all' || 
-                         (userFilter === 'online' && u.status === 'online') ||
-                         (userFilter === 'offline' && u.status === 'offline') ||
-                         u.role === userFilter;
-    return matchesSearch && matchesFilter;
+    const normalizedSearch = userSearchTerm.trim().toLowerCase();
+    const cleanCpfSearch = userSearchTerm.replace(/\D/g, '');
+    const matchesSearch =
+      normalizedSearch.length === 0 ||
+      u.name?.toLowerCase().includes(normalizedSearch) ||
+      u.email?.toLowerCase().includes(normalizedSearch) ||
+      (cleanCpfSearch.length > 0 && (u.cpf || '').replace(/\D/g, '').includes(cleanCpfSearch));
+    const matchesRole =
+      userRoleFilter === 'all' || String(u.role_id) === userRoleFilter;
+    const matchesStatus =
+      userStatusFilter === 'all' ||
+      (userStatusFilter === 'ativo' && Number(u.status) === 1) ||
+      (userStatusFilter === 'inativo' && Number(u.status) === 0);
+
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const stockDistribution = globalStock.map(item => ({
+  const chartPeriodInfo = resolvePeriodFilter(chartPeriod, chartStartDate, chartEndDate);
+  const selectedBloodTypeLabel = chartBloodType === 'todos' ? 'Todos os tipos sanguíneos' : chartBloodType;
+  const filteredDoacoesForCharts = doacoes.filter((d: any) => {
+    const matchesDate = isDateInPeriod(d.data_hora_doacao || d.data_doacao || d.created_at, chartPeriodInfo);
+    const matchesType = chartBloodType === 'todos' || d.tipo_sangue === chartBloodType || d.tipo_sang === chartBloodType;
+    return matchesDate && matchesType;
+  });
+
+  const doacoesPorTipoData = Object.entries(stats.doacoes_por_tipo || {})
+    .map(([tipo, total]) => ({ tipo, total: Number(total) }))
+    .filter(d => chartBloodType === 'todos' || d.tipo === chartBloodType)
+    .sort((a, b) => b.total - a.total);
+
+  const estoqueBarData = globalStock
+    .filter(s => chartBloodType === 'todos' || s.type === chartBloodType)
+    .map(s => ({ tipo: s.type, atual: s.current, minimo: s.min, critico: s.critical }));
+
+  const stockDistribution = globalStock
+    .filter(item => chartBloodType === 'todos' || item.type === chartBloodType)
+    .map(item => ({
     name: item.type,
     value: item.current,
-    color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A'
+    color: item.critical ? '#DC2626' : item.current < item.min * 1.5 ? '#EA580C' : '#16A34A',
   }));
+  const donationsByHemocentro = filteredDoacoesForCharts.length
+    ? Object.values(filteredDoacoesForCharts.reduce((acc: Record<string, { hemocentro: string; total: number }>, item: any) => {
+        const nome = item.hemocentro?.nome || item.hemocentro || `Hemocentro ${item.hemocentro_id ?? 'N/D'}`;
+        acc[nome] = acc[nome] || { hemocentro: nome, total: 0 };
+        acc[nome].total += 1;
+        return acc;
+      }, {}))
+    : [];
+  const monthlySystemStats = filteredDoacoesForCharts.length
+    ? Object.values(filteredDoacoesForCharts.reduce((acc: Record<string, { month: string; total: number }>, item: any) => {
+        const rawDate = item.data_hora_doacao || item.data_doacao || item.created_at;
+        const date = rawDate ? new Date(rawDate) : null;
+        if (!date || Number.isNaN(date.getTime())) return acc;
+        const month = `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+        acc[month] = acc[month] || { month, total: 0 };
+        acc[month].total += 1;
+        return acc;
+      }, {}))
+    : [];
+  const monthlyAreaData = (stats.doacoes_por_mes || []).length > 0
+    ? (stats.doacoes_por_mes || []).map((item: any) => ({ mes: item.mes, total: item.total }))
+    : monthlySystemStats.map((item: any) => ({ mes: item.month, total: item.total }));
+  const doacoesMesAtual = stats.doacoes_por_mes.length
+    ? stats.doacoes_por_mes[stats.doacoes_por_mes.length - 1].total
+    : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-green-600 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
-                <p className="text-xs text-gray-600">Painel do Administrador</p>
-              </div>
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-green-600 p-2 rounded-lg cursor-pointer" onClick={() => navigate('/')}>
+              <Droplet className="h-6 w-6 text-white" />
             </div>
-
-            <div className="flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowReportDialog(true)}
-                className="gap-2"
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden md:inline">Exportar</span>
-              </Button>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-green-600 rounded-full"></span>
-              </Button>
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarFallback className="bg-green-100 text-green-600">
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:block">
-                  <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-600">Administrador do Sistema</p>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
+              <p className="text-xs text-gray-600">Painel do Administrador</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <Popover
+              open={notificationsOpen}
+              onOpenChange={(open) => {
+                setNotificationsOpen(open);
+                if (open) {
+                  setHasUnreadNotifications(false);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {hasUnreadNotifications && notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-green-600 text-white rounded-full text-[10px] flex items-center justify-center">
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="border-b px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-900">Atualizações recentes</p>
+                  <p className="text-xs text-gray-500">{hemocentroNome}</p>
                 </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Sair</span>
-              </Button>
+                <div className="divide-y">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-gray-500">
+                      Nenhuma atualização recente disponível.
+                    </div>
+                  ) : notifications.map((notification) => (
+                    <div key={notification.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                          <p className="text-sm text-gray-600">{notification.description}</p>
+                        </div>
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">{notification.timeLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button variant="ghost" size="sm" onClick={() => setShowReportDialog(true)} className="gap-2">
+              <Download className="h-4 w-4" /><span className="hidden md:inline">Exportar</span>
+            </Button>
+            <Avatar>
+              <AvatarFallback className="bg-green-100 text-green-600">
+                {user.name?.split(' ').map((n: string) => n[0]).join('')}
+              </AvatarFallback>
+            </Avatar>
+            <div className="hidden md:block">
+              <p className="text-sm font-semibold">{user.name}</p>
+              <p className="text-xs text-gray-600">{hemocentroNome}</p>
             </div>
+            <Button variant="outline" size="sm" onClick={handleLogoutClick} className="gap-2">
+              <LogOut className="h-4 w-4" /><span className="hidden md:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Olá, {user.name.split(' ')[0]}! 👋
-          </h2>
-          <p className="text-gray-600">
-            Visão global do sistema DoaVida - Gerenciamento completo de todos os hemocentros
-          </p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! </h2>
+          <p className="text-gray-600">Visão global do sistema DoaVida</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Total de Hemocentros</CardDescription>
-              <CardTitle className="text-3xl">{hemocentros.length}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Building2 className="h-4 w-4 text-green-600" />
-                <span>Todos ativos</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-blue-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Doações Este Mês</CardDescription>
-              <CardTitle className="text-3xl">{totalDonations}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-green-600">
-                <BarChart3 className="h-4 w-4" />
-                <span>+12% vs mês anterior</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Total de Doadores</CardDescription>
-              <CardTitle className="text-3xl">{totalDonors.toLocaleString()}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="h-4 w-4 text-purple-600" />
-                <span>Cadastrados no sistema</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-orange-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Campanhas Ativas</CardDescription>
-              <CardTitle className="text-3xl">{campaigns.filter(c => c.status === 'active').length}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Mail className="h-4 w-4 text-orange-600" />
-                <span>Em andamento</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7 lg:w-auto">
+          <TabsList className="grid w-full grid-cols-4 md:grid-cols-7 lg:w-auto h-auto">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="stock">Estoque Global</TabsTrigger>
             <TabsTrigger value="users">Usuários</TabsTrigger>
@@ -738,132 +1148,224 @@ export function AdminDashboard() {
             <TabsTrigger value="settings">Configurações</TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
+          {/* -- Overview -- */}
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Donations Chart */}
+            <div className="flex flex-wrap items-center gap-3 px-1 mb-4">
+              <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5" />Filtros
+              </span>
+              <Select value={chartPeriod} onValueChange={setChartPeriod}>
+                <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">Últimos 30 dias</SelectItem>
+                  <SelectItem value="90">Últimos 90 dias</SelectItem>
+                  <SelectItem value="previous_month">Mês anterior</SelectItem>
+                  <SelectItem value="all">Período completo</SelectItem>
+                  <SelectItem value="custom">Intervalo personalizado</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={chartBloodType} onValueChange={setChartBloodType}>
+                <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os tipos</SelectItem>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {chartPeriod === 'custom' && (
+                <>
+                  <Input type="date" value={chartStartDate} onChange={e => setChartStartDate(e.target.value)} className="h-8 w-[140px] text-xs" />
+                  <Input type="date" value={chartEndDate} onChange={e => setChartEndDate(e.target.value)} className="h-8 w-[140px] text-xs" />
+                </>
+              )}
+              <span className="text-[11px] text-gray-400 ml-auto hidden md:block">{chartPeriodInfo.label} · {selectedBloodTypeLabel}</span>
+            </div>
+
+            {/* KPIs — 6 cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { label: 'Hemocentros ativos', value: hemocentrosAtivos.length, sub: `de ${hemocentros.length} cadastrados`, color: 'border-l-green-500', Icon: Building2 },
+                { label: 'Doações este mês', value: stats.doacoes_por_mes?.slice(-1)[0]?.total ?? doacoesMesAtual, sub: 'último mês fechado', color: 'border-l-blue-500', Icon: Droplet },
+                { label: 'Total de doadores', value: users.filter(u => Number(u.role_id) === 1).length, sub: 'cadastrados', color: 'border-l-purple-500', Icon: Users },
+                { label: 'Comparecimento', value: `${stats.taxa_comparecimento ?? 0}%`, sub: 'agendamentos → doações', color: 'border-l-emerald-500', Icon: Activity },
+                { label: 'Estoque crítico', value: globalStock.filter(s => s.critical).length, sub: 'tipos abaixo do mínimo', color: globalStock.filter(s => s.critical).length > 0 ? 'border-l-red-500' : 'border-l-gray-200', Icon: AlertCircle },
+                { label: 'Campanhas ativas', value: campaigns.filter((c: any) => c.status === true || c.status === 1).length, sub: 'em andamento', color: 'border-l-orange-500', Icon: Mail },
+              ].map(({ label, value, sub, color, Icon }) => (
+                <Card key={label} className={`border-l-4 ${color}`}>
+                  <CardContent className="px-4 py-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-gray-500 leading-tight">{label}</p>
+                      <Icon className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                    </div>
+                    <p className="text-xl font-bold text-gray-900">{isLoading ? '—' : value}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Gráficos — linha 1 */}
+            <div className="grid lg:grid-cols-2 gap-4">
               <Card>
-                <CardHeader>
-                  <CardTitle>Doações por Hemocentro</CardTitle>
-                  <CardDescription>Comparativo de performance - Este Mês</CardDescription>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Doações por Hemocentro</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: tabela doacao · filtrada por período · {chartPeriodInfo.label}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={systemStats}>
+                  {donationsByHemocentro.length === 0 ? (
+                    <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhuma doação no período selecionado.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={donationsByHemocentro} layout="vertical" margin={{ left: 8, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="hemocentro" tick={{ fontSize: 11 }} width={120} />
+                        <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="total" fill="#16A34A" radius={[0, 4, 4, 0]} name="Doações" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Doações por Tipo Sanguíneo</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: estatisticas/admin → doacoes_por_tipo · histórico completo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {doacoesPorTipoData.length === 0 ? (
+                    <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhum dado disponível.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={doacoesPorTipoData} margin={{ left: 0, right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]} name="Total">
+                          {doacoesPorTipoData.map((_: any, i: number) => (
+                            <Cell key={i} fill={['#DC2626','#B91C1C','#2563EB','#1D4ED8','#7C3AED','#6D28D9','#059669','#047857'][i % 8]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Gráfico — evolução mensal AreaChart */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-semibold">Evolução de Doações — Últimos 12 meses</CardTitle>
+                    <CardDescription className="text-[11px]">Fonte: estatisticas/admin → doacoes_por_mes · agrupado por mês</CardDescription>
+                  </div>
+                  {monthlyAreaData.length > 1 && (() => {
+                    const last = monthlyAreaData[monthlyAreaData.length - 1]?.total ?? 0;
+                    const prev = monthlyAreaData[monthlyAreaData.length - 2]?.total ?? 0;
+                    const diff = prev > 0 ? Math.round(((last - prev) / prev) * 100) : 0;
+                    return (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${diff >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {diff >= 0 ? '+' : ''}{diff}% vs mês anterior
+                      </span>
+                    );
+                  })()}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthlyAreaData.length === 0 ? (
+                  <div className="h-[220px] flex items-center justify-center text-xs text-gray-400">Nenhum dado mensal disponível.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={monthlyAreaData} margin={{ left: 0, right: 8, top: 4 }}>
+                      <defs>
+                        <linearGradient id="colorDoacoes" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#16A34A" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#16A34A" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="hc1" fill="#16A34A" name="SP Central" />
-                      <Bar dataKey="hc2" fill="#2563EB" name="Zona Leste" />
-                      <Bar dataKey="hc3" fill="#9333EA" name="Zona Sul" />
-                      <Bar dataKey="hc4" fill="#EA580C" name="Campinas" />
-                      <Bar dataKey="hc5" fill="#DC2626" name="Santos" />
+                      <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: any) => [`${v} doações`, 'Total']} contentStyle={{ fontSize: 12 }} />
+                      <Area type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={2.5} fill="url(#colorDoacoes)" dot={{ r: 3, fill: '#16A34A' }} name="Doações" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Gráficos — linha 2: estoque */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Estoque Global por Tipo Sanguíneo</CardTitle>
+                  <CardDescription className="text-[11px]">
+                    Fonte: tabela estoque agregada globalmente · posição atual em bolsas
+                    {globalStock.filter(s => s.critical).length > 0 && (
+                      <span className="ml-2 text-red-600 font-medium">⚠ {globalStock.filter(s => s.critical).length} tipo(s) crítico(s)</span>
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={estoqueBarData} margin={{ left: 0, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: any, n: string) => [`${v} bolsas`, n === 'atual' ? 'Estoque atual' : 'Mínimo exigido']} contentStyle={{ fontSize: 12 }} />
+                      <Legend formatter={(v) => v === 'atual' ? 'Estoque atual' : 'Mínimo exigido'} />
+                      <Bar dataKey="atual" name="atual" radius={[4, 4, 0, 0]}>
+                        {estoqueBarData.map((e: any, i: number) => (
+                          <Cell key={i} fill={e.critico ? '#DC2626' : e.atual < e.minimo * 1.5 ? '#EA580C' : '#16A34A'} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="minimo" name="minimo" fill="#E5E7EB" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
-              {/* Stock Distribution */}
               <Card>
-                <CardHeader>
-                  <CardTitle>Distribuição de Estoque Global</CardTitle>
-                  <CardDescription>Bolsas disponíveis por tipo sanguíneo</CardDescription>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Distribuição Percentual do Estoque</CardTitle>
+                  <CardDescription className="text-[11px]">Fonte: tabela estoque · proporção de cada tipo no total atual</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie
-                        data={stockDistribution}
-                        cx="50%"
-                        cy="50%"
+                        data={stockDistribution.filter((s: any) => s.value > 0)}
+                        cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={90}
+                        paddingAngle={2} dataKey="value"
+                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                         labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
                       >
-                        {stockDistribution.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        {stockDistribution.filter((s: any) => s.value > 0).map((_: any, i: number) => (
+                          <Cell key={i} fill={stockDistribution.filter((s: any) => s.value > 0)[i].color} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(v: any) => [`${v} bolsas`, 'Estoque atual']} contentStyle={{ fontSize: 12 }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
             </div>
-
-            {/* Evolution Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Evolução Total do Sistema</CardTitle>
-                <CardDescription>Doações acumuladas - Últimos 3 meses</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={systemStats}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="total" stroke="#16A34A" strokeWidth={3} name="Total de Doações" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Quick Stats */}
-            <div className="grid md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Taxa de Comparecimento</CardDescription>
-                  <CardTitle className="text-3xl">87%</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="h-2 rounded-full bg-green-600" style={{ width: '87%' }} />
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">Em todos os hemocentros</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Usuários Online</CardDescription>
-                  <CardTitle className="text-3xl">{users.filter(u => u.status === 'online').length}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">de {users.length} usuários totais</p>
-                  <p className="text-sm text-green-600 mt-1">Sistema operacional</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription>Estoque Crítico</CardDescription>
-                  <CardTitle className="text-3xl text-red-600">{globalStock.filter(s => s.critical).length}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">tipos sanguíneos abaixo do mínimo</p>
-                  <p className="text-sm text-red-600 mt-1">Requer atenção urgente</p>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
 
-          {/* Stock Tab */}
+          {/* -- Estoque Global -- */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Estoque Global de Sangue</CardTitle>
-                    <CardDescription>
-                      Monitoramento consolidado de todos os hemocentros
-                    </CardDescription>
+                    <CardDescription>Monitoramento consolidado - dados simulados</CardDescription>
                   </div>
                   <Badge variant="outline" className="text-red-600 border-red-600">
                     {globalStock.filter(s => s.critical).length} Críticos
@@ -873,64 +1375,35 @@ export function AdminDashboard() {
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {globalStock.map((stock) => {
-                    const percentage = (stock.current / stock.max) * 100;
-                    const status = stock.critical 
-                      ? { label: 'Crítico', color: 'bg-red-600', textColor: 'text-red-600', bgColor: 'bg-red-100' }
-                      : percentage < 50 
-                      ? { label: 'Baixo', color: 'bg-orange-600', textColor: 'text-orange-600', bgColor: 'bg-orange-100' }
-                      : percentage < 80
-                      ? { label: 'Normal', color: 'bg-blue-600', textColor: 'text-blue-600', bgColor: 'bg-blue-100' }
-                      : { label: 'Ótimo', color: 'bg-green-600', textColor: 'text-green-600', bgColor: 'bg-green-100' };
-                    
                     return (
                       <div key={stock.type} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-red-100 p-2 rounded-lg">
-                              <Droplet className="h-5 w-5 text-red-600" />
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold">{stock.type}</p>
-                              <p className="text-sm text-gray-600">Tipo sanguíneo</p>
-                            </div>
+                            <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
+                            <div><p className="text-2xl font-bold">{stock.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
                           </div>
-                          <Badge className={`${status.bgColor} ${status.textColor}`}>
-                            {status.label}
+                          <Badge className={stock.critical ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}>
+                            {stock.critical ? 'Crítico' : 'Normal'}
                           </Badge>
                         </div>
-                        
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Estoque atual</span>
+                            <span className="text-gray-600">Total em rede</span>
                             <span className="font-semibold">{stock.current} bolsas</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${status.color}`}
-                              style={{ width: `${Math.min(percentage, 100)}%` }}
-                            />
+                          <div className="w-full bg-gray-100 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${stock.critical ? 'bg-red-600' : stock.current < stock.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                              style={{ width: `${Math.min((stock.current / stock.max) * 100, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Mín: {stock.min}</span>
-                            <span>Máx: {stock.max}</span>
+                            <span>Mín: {stock.min}</span><span>Máx: {stock.max}</span>
                           </div>
                         </div>
-
                         <div className="mt-3 pt-3 border-t flex gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="flex-1"
-                            onClick={() => handleOpenUpdateStock(stock.type)}
-                          >
-                            <Activity className="h-4 w-4 mr-2" />
-                            Atualizar
+                          <Button size="sm" variant="outline" className="flex-1" onClick={() => handleOpenUpdateStock(stock.type)}>
+                            <Activity className="h-4 w-4 mr-2" />Atualizar
                           </Button>
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => handleOpenStockDetails(stock.type)}
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => { setSelectedBloodTypeForDetails(stock.type); setShowStockDetailsDialog(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
                         </div>
@@ -942,555 +1415,620 @@ export function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Users Tab */}
+          {/* -- Usuários -- */}
           <TabsContent value="users" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Gerenciar Usuários do Sistema</CardTitle>
-                    <CardDescription>
-                      Todos os usuários cadastrados em todos os hemocentros
-                    </CardDescription>
+                    <CardTitle>Gerenciar Usuários</CardTitle>
+                    <CardDescription>Todos os usuários do sistema</CardDescription>
                   </div>
-                  <Button 
-                    onClick={() => setShowUserDialog(true)}
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    Novo Usuário
+                  <Button onClick={() => setShowUserDialog(true)} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <UserPlus className="h-4 w-4" />Novo Usuário
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-4 mb-4">
-                  <div className="flex-1 relative">
+                <div className="space-y-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_220px_180px] gap-4">
+                    <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="Buscar por nome ou email..."
+                      placeholder="Buscar por nome, email ou CPF..."
                       value={userSearchTerm}
-                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                      onChange={e => setUserSearchTerm(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSearchUsers();
+                        }
+                      }}
                       className="pl-10"
                     />
                   </div>
-                  <Select value={userFilter} onValueChange={setUserFilter}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={userRoleFilter} onValueChange={setUserRoleFilter}>
+                    <SelectTrigger><SelectValue placeholder="Tipo de usuario" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todos os usuários</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="offline">Offline</SelectItem>
-                      <SelectItem value="Diretor">Diretores</SelectItem>
-                      <SelectItem value="Funcionário">Funcionários</SelectItem>
-                      <SelectItem value="Enfermeira">Enfermeiras</SelectItem>
+                      <SelectItem value="all">Todos os tipos</SelectItem>
+                      <SelectItem value="1">Doadores</SelectItem>
+                      <SelectItem value="2">Funcionários</SelectItem>
+                      <SelectItem value="3">Diretores</SelectItem>
+                      <SelectItem value="4">Administradores</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={userStatusFilter} onValueChange={setUserStatusFilter}>
+                    <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos status</SelectItem>
+                      <SelectItem value="ativo">Ativos</SelectItem>
+                      <SelectItem value="inativo">Inativos</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="space-y-3">
-                  {filteredUsers.map((userItem) => (
-                    <div
-                      key={userItem.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <Avatar>
-                          <AvatarFallback className="bg-purple-100 text-purple-600">
-                            {userItem.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">{userItem.name}</p>
-                            <Badge className={userItem.status === 'online' ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-600"}>
-                              <div className={`h-2 w-2 ${userItem.status === 'online' ? 'bg-green-600' : 'bg-gray-600'} rounded-full mr-2`}></div>
-                              {userItem.status === 'online' ? 'Online' : 'Offline'}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-600">{userItem.email}</p>
-                          <p className="text-xs text-gray-500">{userItem.role} • {userItem.hemocentro}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-right mr-4">
-                          <p className="text-xs text-gray-600">Último acesso</p>
-                          <p className="text-sm font-semibold">{userItem.lastLogin}</p>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleToggleUserStatus(userItem.id)}
-                        >
-                          {userItem.status === 'online' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleEditUser(userItem)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleOpenDeleteUser(userItem)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button onClick={handleSearchUsers} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Search className="h-4 w-4" />
+                    Pesquisar
+                  </Button>
+                  <Button variant="outline" onClick={handleClearUserSearch} className="gap-2">
+                    <Filter className="h-4 w-4" />
+                    Limpar
+                  </Button>
+                </div>
+
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando usuários...</div>
+                ) : !userSearchPerformed ? (
+                  <div className="text-center py-10 text-gray-500 border-dashed border-2 rounded-lg">
+                    <Users className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+                    <p>Pesquise por nome, email ou CPF e use os filtros para listar usuarios.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">Resultados da busca</p>
+                        <p className="text-sm text-gray-500">{filteredUsers.length} usuario(s) encontrado(s)</p>
                       </div>
                     </div>
-                  ))}
+                    {filteredUsers.map(u => (
+                      <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 gap-4">
+                        <div className="flex items-center gap-4">
+                          <Avatar>
+                            <AvatarFallback className="bg-purple-100 text-purple-600">
+                              {u.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-gray-900">{u.name}</p>
+                              <Badge className={u.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-gray-100 text-gray-600 border-none'}>
+                                {u.status === 1 ? 'Ativo' : 'Inativo'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600">{u.email}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-[10px] h-5">{roleLabels[u.role_id] || 'Usuário'}</Badge>
+                              {u.hemocentro && <span className="text-[10px] text-gray-400">• {u.hemocentro.nome}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => handleToggleUserStatus(u)}
+                            title={u.status === 1 ? 'Desativar' : 'Ativar'}>
+                            {u.status === 1 ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedUser(u); setShowEditUserDialog(true); }}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => { setUserToDelete(u); setShowDeleteUserDialog(true); }}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {filteredUsers.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhum usuário encontrado.</div>
+                    )}
+                  </div>
+                )}
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Hemocentros Tab */}
+          {/* -- Hemocentros -- */}
           <TabsContent value="hemocentros" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Gerenciar Hemocentros</CardTitle>
-                    <CardDescription>Todos os hemocentros cadastrados no sistema</CardDescription>
+                    <CardDescription>Hemocentros cadastrados no sistema</CardDescription>
                   </div>
-                  <Button 
-                    onClick={() => setShowHemocentroDialog(true)}
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Novo Hemocentro
+                  <Button onClick={() => setShowHemocentroDialog(true)} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Plus className="h-4 w-4" />Novo Hemocentro
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {hemocentros.map((hc) => (
-                    <div
-                      key={hc.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="bg-green-100 p-3 rounded-lg">
-                          <Building2 className="h-6 w-6 text-green-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">{hc.name}</p>
-                            {hc.active && (
-                              <Badge className="bg-green-100 text-green-600">Ativo</Badge>
-                            )}
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando hemocentros...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {hemocentros.map(hc => (
+                      <div key={hc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="bg-green-100 p-3 rounded-lg"><Building2 className="h-6 w-6 text-green-600" /></div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-gray-900">{hc.nome}</p>
+                              <Badge className={hc.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-red-100 text-red-600 border-none'}>
+                                {hc.status === 1 ? 'Ativo' : 'Inativo'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600">{hc.cidade}{hc.uf ? ` - ${hc.uf}` : ''} • ID: {hc.id}</p>
                           </div>
-                          <p className="text-sm text-gray-600">{hc.city} • ID: {hc.id}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">Doações este mês</p>
-                          <p className="text-xl font-bold text-green-600">{hc.donations}</p>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleViewHemocentro(hc)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedHemocentro(hc); setShowViewHemocentroDialog(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditHemocentro(hc)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedHemocentro({ ...hc }); setShowEditHemocentroDialog(true); }}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleSettingsHemocentro(hc)}
-                          >
-                            <Settings className="h-4 w-4" />
+                          <Button variant="outline" size="sm" onClick={() => handleToggleHemocentroStatus(hc)}
+                            title={hc.status === 1 ? 'Desativar' : 'Ativar'}>
+                            {hc.status === 1 ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {hemocentros.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhum hemocentro cadastrado.</div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Permissions Tab */}
+          {/* -- Roles / Permissões -- */}
           <TabsContent value="permissions" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Grupos de Permissões</CardTitle>
-                    <CardDescription>Gerencie os níveis de acesso ao sistema</CardDescription>
+                    <CardTitle>Cargos e Permissões</CardTitle>
+                    <CardDescription>Crie cargos personalizados para usuários novos sem alterar os cargos padrão</CardDescription>
                   </div>
-                  <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700">
-                        <Plus className="h-4 w-4" />
-                        Novo Grupo
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Criar Grupo de Permissões</DialogTitle>
-                        <DialogDescription>
-                          Defina um novo grupo de permissões para os usuários
-                        </DialogDescription>
-                      </DialogHeader>
-                      <form onSubmit={handleCreatePermissionGroup} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Nome do Grupo</Label>
-                          <Input placeholder="Ex: Técnico de Laboratório" required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Descrição</Label>
-                          <Textarea placeholder="Descreva as responsabilidades deste grupo" />
-                        </div>
-                        <div className="space-y-3">
-                          <Label>Permissões</Label>
-                          <div className="grid grid-cols-2 gap-3">
-                            {[
-                              'Visualizar Doadores',
-                              'Registrar Doações',
-                              'Gerenciar Estoque',
-                              'Ver Agenda',
-                              'Editar Perfis',
-                              'Gerar Relatórios',
-                              'Gerenciar Campanhas',
-                              'Configurações do Sistema'
-                            ].map((perm) => (
-                              <div key={perm} className="flex items-center space-x-2">
-                                <Switch id={perm} />
-                                <Label htmlFor={perm} className="text-sm">{perm}</Label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex gap-2 justify-end">
-                          <Button type="button" variant="outline" onClick={() => setShowPermissionDialog(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                            Criar Grupo
-                          </Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
+                  <Button onClick={() => { setRoleForm({ name: '', permissions: [] }); setShowRoleDialog(true); }} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Plus className="h-4 w-4" />Novo Cargo
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {permissions.map((group) => (
-                    <div
-                      key={group.id}
-                      className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
-                          <div className="bg-purple-100 p-3 rounded-lg">
-                            <Shield className="h-6 w-6 text-purple-600" />
+                {isLoading ? (
+                  <div className="text-center py-8 animate-pulse text-gray-500">Carregando cargos...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {roles.map((role: any) => (
+                      <div key={role.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-purple-100 p-2 rounded-lg">
+                            <Settings className="h-5 w-5 text-purple-600" />
                           </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="font-semibold">{group.name}</p>
-                              <Badge variant="outline">{group.users} usuários</Badge>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-gray-900">{role.name}</p>
+                              {role.sistema && (
+                                <Badge variant="outline" className="text-xs text-gray-500">sistema</Badge>
+                              )}
                             </div>
-                            <p className="text-sm text-gray-600 mb-3">{group.description}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {group.permissions.map((perm) => (
-                                <Badge key={perm} variant="outline" className="bg-green-50 text-green-700">
-                                  {perm.replace(/_/g, ' ')}
-                                </Badge>
-                              ))}
-                            </div>
+                            <p className="text-sm text-gray-500">
+                              {role.users_count} usuário{role.users_count !== 1 ? 's' : ''} vinculado{role.users_count !== 1 ? 's' : ''}
+                            </p>
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
-                            onClick={() => handleEditPermission(group)}
+                            disabled={role.sistema}
+                            onClick={() => { setSelectedRole({ ...role }); setShowEditRoleDialog(true); }}
+                            title={role.sistema ? 'Cargos padrão do sistema não podem ser editados' : 'Editar'}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
-                            onClick={() => handleDeletePermission(group)}
+                            disabled={role.sistema || role.users_count > 0}
+                            onClick={() => { setRoleToDelete(role); setShowDeleteRoleDialog(true); }}
+                            title={role.sistema ? 'Cargos padrão do sistema não podem ser removidos' : role.users_count > 0 ? 'Remova os usuários antes de excluir' : 'Excluir'}
                           >
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {roles.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">Nenhum cargo encontrado.</div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Campaigns Tab */}
+          {/* -- Campanhas (local) -- */}
           <TabsContent value="campaigns" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Campanhas de Doação</CardTitle>
-                    <CardDescription>Gerencie e crie campanhas para doadores via email e WhatsApp</CardDescription>
-                  </div>
-                  <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2 bg-green-600 hover:bg-green-700">
-                        <Plus className="h-4 w-4" />
-                        Nova Campanha
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                      <DialogHeader>
-                        <DialogTitle>Criar Nova Campanha</DialogTitle>
-                        <DialogDescription>
-                          Configure uma campanha de doação para engajar doadores
-                        </DialogDescription>
-                      </DialogHeader>
-                      <form onSubmit={handleCreateCampaign} className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Título da Campanha</Label>
-                            <Input placeholder="Ex: Campanha de Urgência - Tipo O-" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Subtítulo</Label>
-                            <Input placeholder="Ex: Precisamos urgentemente de doadores" />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Mensagem da Campanha</Label>
-                          <Textarea 
-                            placeholder="Digite a mensagem completa que será enviada aos doadores..." 
-                            rows={5}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Campanhas de doação</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Gerencie e dispare campanhas segmentadas pelo ML</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+                  onClick={handleBuscarRecomendacoesMl}
+                  disabled={mlRecsLoading}
+                >
+                  <Brain className="h-4 w-4" />
+                  {mlRecsLoading ? 'Analisando...' : 'Recomendações ML'}
+                </Button>
+                <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 bg-red-600 hover:bg-red-700">
+                      <Plus className="h-4 w-4" />Nova campanha
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader><DialogTitle>Criar Nova Campanha</DialogTitle></DialogHeader>
+                    <form onSubmit={handleCreateCampaign} className="space-y-4">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Título *</Label>
+                          <Input
                             required
+                            value={campaignForm.titulo}
+                            onChange={e => setCampaignForm({ ...campaignForm, titulo: e.target.value })}
                           />
                         </div>
-
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Tipo Sanguíneo Alvo</Label>
-                            <Select>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all">Todos</SelectItem>
-                                <SelectItem value="O+">O+</SelectItem>
-                                <SelectItem value="O-">O-</SelectItem>
-                                <SelectItem value="A+">A+</SelectItem>
-                                <SelectItem value="A-">A-</SelectItem>
-                                <SelectItem value="B+">B+</SelectItem>
-                                <SelectItem value="B-">B-</SelectItem>
-                                <SelectItem value="AB+">AB+</SelectItem>
-                                <SelectItem value="AB-">AB-</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Hemocentro</Label>
-                            <Select>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all">Todos os Hemocentros</SelectItem>
-                                {hemocentros.map(hc => (
-                                  <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                          <Label>Canais de Envio</Label>
-                          <div className="space-y-2">
-                            <div className="flex items-center space-x-2">
-                              <Switch id="email" defaultChecked />
-                              <Label htmlFor="email" className="flex items-center gap-2">
-                                <Mail className="h-4 w-4" />
-                                Email
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch id="whatsapp" defaultChecked />
-                              <Label htmlFor="whatsapp" className="flex items-center gap-2">
-                                <MessageSquare className="h-4 w-4" />
-                                WhatsApp
-                              </Label>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Data de Envio</Label>
-                            <Input type="date" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Horário de Envio</Label>
-                            <Input type="time" defaultValue="09:00" required />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 justify-end pt-4">
-                          <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                            <Send className="h-4 w-4 mr-2" />
-                            Criar e Agendar
-                          </Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {campaigns.map((campaign) => (
-                    <div
-                      key={campaign.id}
-                      className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold">{campaign.title}</p>
-                            <Badge className={
-                              campaign.status === 'active' 
-                                ? 'bg-green-100 text-green-600' 
-                                : campaign.status === 'scheduled'
-                                ? 'bg-blue-100 text-blue-600'
-                                : 'bg-gray-100 text-gray-600'
-                            }>
-                              {campaign.status === 'active' ? 'Ativa' : campaign.status === 'scheduled' ? 'Agendada' : 'Concluída'}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-600">{campaign.subtitle}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(campaign.date).toLocaleDateString('pt-BR')}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditCampaign(campaign.id)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleDeleteCampaign(campaign.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                        <div>
+                          <Label>Subtítulo</Label>
+                          <Input
+                            value={campaignForm.subtitulo}
+                            onChange={e => setCampaignForm({ ...campaignForm, subtitulo: e.target.value })}
+                          />
                         </div>
                       </div>
+                      <div>
+                        <Label>Mensagem / Descrição *</Label>
+                        <Textarea
+                          required
+                          rows={4}
+                          value={campaignForm.descricao}
+                          onChange={e => setCampaignForm({ ...campaignForm, descricao: e.target.value })}
+                          placeholder="Texto que será enviado por e-mail aos doadores..."
+                        />
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Tipo sanguíneo alvo</Label>
+                          <Select
+                            value={campaignForm.tipo_sangue || 'todos'}
+                            onValueChange={v => setCampaignForm({ ...campaignForm, tipo_sangue: v === 'todos' ? '' : v })}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todos os tipos</SelectItem>
+                              {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Data de publicação *</Label>
+                          <Input
+                            type="date"
+                            required
+                            min={todayDateInput}
+                            max="2100-12-31"
+                            value={campaignForm.data_publi}
+                            onChange={e => {
+                              const dataPubli = normalizeDateInput(e.target.value);
+                              setCampaignForm({
+                                ...campaignForm,
+                                data_publi: dataPubli,
+                                data_expiracao:
+                                  campaignForm.data_expiracao && campaignForm.data_expiracao <= dataPubli
+                                    ? ''
+                                    : campaignForm.data_expiracao,
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Data de expiração</Label>
+                        <Input
+                          type="date"
+                          min={campaignExpirationMinDate}
+                          max="2100-12-31"
+                          value={campaignForm.data_expiracao}
+                          onChange={e => setCampaignForm({ ...campaignForm, data_expiracao: normalizeDateInput(e.target.value) })}
+                        />
+                      </div>
+                      <div className="flex gap-2 justify-end pt-2">
+                        <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
+                          Cancelar
+                        </Button>
+                        <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                          <Send className="h-4 w-4 mr-2" />Criar Campanha
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
 
-                      {campaign.sent && (
-                        <div className="grid grid-cols-3 gap-4 pt-3 border-t">
-                          <div>
-                            <p className="text-xs text-gray-600">Enviados</p>
-                            <p className="text-lg font-semibold">{campaign.sent.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Abertos</p>
-                            <p className="text-lg font-semibold text-blue-600">
-                              {campaign.opened?.toLocaleString()} ({Math.round((campaign.opened! / campaign.sent) * 100)}%)
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Cliques</p>
-                            <p className="text-lg font-semibold text-green-600">
-                              {campaign.clicks?.toLocaleString()} ({Math.round((campaign.clicks! / campaign.sent) * 100)}%)
-                            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Campanhas ativas', value: campaigns.filter(c => c.status).length, sub: `${campaigns.filter(c => !c.status).length} inativas` },
+                { label: 'Total disparado', value: campaigns.reduce((a, c) => a + (c.total_disparado || 0), 0).toLocaleString(), sub: 'todos os tempos' },
+                { label: 'Segmentados pelo ML', value: mlPreview ? `${mlPreview.pct_ml}%` : '-', sub: mlPreview ? `de ${mlPreview.total_elegiveis} doadores` : 'rode a análise ML' },
+                { label: 'Retorno estimado', value: mlPreview ? `~${mlPreview.retorno_estimado}` : '-', sub: mlPreview ? `~${mlPreview.volume_estimado_litros}L de sangue` : 'rode a análise ML' },
+              ].map(({ label, value, sub }) => (
+                <Card key={label} className="bg-gray-50 border-0">
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-gray-500 mb-1">{label}</p>
+                    <p className="text-2xl font-semibold text-gray-900">{value}</p>
+                    <p className="text-xs text-gray-400 mt-1">{sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Campanhas</CardTitle>
+                  <CardDescription>{campaigns.filter(c => c.status).length} ativas · {campaigns.filter(c => !c.status).length} inativas</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {campaigns.length === 0 ? (
+                    <div className="text-center py-12 text-gray-400 px-6">
+                      <Send className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">Nenhuma campanha criada ainda.</p>
+                      <p className="text-xs mt-1">Use "Recomendações ML" para receber sugestões de campanhas baseadas no perfil dos doadores.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {campaigns.map((campaign: any) => (
+                        <div key={campaign.id} className="p-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-medium text-sm text-gray-900 truncate">{campaign.titulo}</span>
+                                {campaign.tipo_sangue && (
+                                  <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px]">{campaign.tipo_sangue}</Badge>
+                                )}
+                                <Badge className={campaign.status ? 'bg-green-50 text-green-700 border-green-200 text-[10px]' : 'bg-gray-100 text-gray-500 border-gray-200 text-[10px]'}>
+                                  {campaign.status ? 'Ativa' : 'Inativa'}
+                                </Badge>
+                                {campaign.total_disparado > 0 && (
+                                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-[10px]">ML ativo</Badge>
+                                )}
+                              </div>
+                              {campaign.subtitulo && (
+                                <p className="text-xs text-gray-500 truncate">{campaign.subtitulo}</p>
+                              )}
+                              <div className="flex gap-4 mt-2 flex-wrap">
+                                {campaign.total_disparado > 0 && (
+                                  <span className="text-xs text-gray-500">Disparado: <span className="font-medium text-gray-700">{campaign.total_disparado.toLocaleString()}</span></span>
+                                )}
+                                {campaign.data_publi && (
+                                  <span className="text-xs text-gray-500">Publicação: <span className="font-medium text-gray-700">{new Date(campaign.data_publi).toLocaleDateString('pt-BR')}</span></span>
+                                )}
+                                {campaign.data_expiracao && (
+                                  <span className="text-xs text-gray-500">Expira: <span className="font-medium text-gray-700">{new Date(campaign.data_expiracao).toLocaleDateString('pt-BR')}</span></span>
+                                )}
+                              </div>
+                              {campaign.total_disparado > 0 && (
+                                <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-red-500 rounded-full"
+                                    style={{ width: `${Math.min((campaign.total_disparado / 500) * 100, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                              {disparoResultado?.campanha_id === campaign.id && (
+                                <div className="mt-2 p-2 bg-green-50 rounded-md text-xs text-green-700">
+                                  Último disparo: {disparoResultado.total_disparado} doadores atingidos
+                                  {disparoResultado.segmentacao === 'ml' && ' · segmentado pelo ML'}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-1.5 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-red-600 border-red-200 hover:bg-red-50 gap-1 text-xs"
+                                disabled={disparandoCampaignId !== null}
+                                onClick={() => handleDispararCampaign(campaign)}
+                              >
+                                <Send className="h-3 w-3" />
+                                {disparandoCampaignId === campaign.id ? 'Disparando...' : 'Disparar'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={() => { setSelectedCampaign({ ...campaign }); setShowEditCampaignDialog(true); }}
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={() => { setCampaignToDelete(campaign); setShowDeleteCampaignDialog(true); }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="flex flex-col gap-4">
+                <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="h-4 w-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-900">Inteligência de campanhas</span>
+                  </div>
+                  <p className="text-xs text-purple-700 leading-relaxed mb-3">
+                    O modelo RFMT analisa o perfil de todos os doadores e sugere quais campanhas lançar agora com maior probabilidade de retorno e volume estimado.
+                  </p>
+                  <Button
+                    className="w-full gap-2 bg-purple-700 hover:bg-purple-800 text-white text-xs h-9"
+                    onClick={handleBuscarRecomendacoesMl}
+                    disabled={mlRecsLoading}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {mlRecsLoading ? 'Analisando doadores...' : 'Receber recomendações do ML'}
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
+
+                {mlStatus === 'idle' && (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <Brain className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm text-gray-400">Aguardando análise</p>
+                      <p className="text-xs text-gray-400 mt-1">Clique no botão acima para o ML analisar os perfis dos doadores.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'loading' && (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <div className="animate-spin h-6 w-6 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-3" />
+                      <p className="text-sm text-gray-600">Segmentando perfis via ML...</p>
+                      <p className="text-xs text-gray-400 mt-1">Isso pode levar alguns segundos</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'error' && (
+                  <Card>
+                    <CardContent className="py-6 text-center">
+                      <AlertCircle className="h-6 w-6 mx-auto mb-2 text-red-400" />
+                      <p className="text-sm text-gray-600">API ML indisponível</p>
+                      <p className="text-xs text-gray-400 mt-1">Verifique se o servidor FastAPI está rodando na porta 8001.</p>
+                      <Button variant="outline" size="sm" className="mt-3 text-xs" onClick={handleBuscarRecomendacoesMl}>
+                        Tentar novamente
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'ready' && mlRecs.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm">Campanhas recomendadas</CardTitle>
+                        <Badge className="bg-green-50 text-green-700 border-green-200 text-[10px]">{mlRecs.length} sugestões</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="divide-y">
+                        {mlRecs.map((rec: any, i: number) => (
+                          <div key={i} className="p-3 flex gap-3">
+                            <div className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-medium flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {rec.rank}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-xs font-medium text-gray-900 capitalize">{rec.nome_legivel}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">{rec.motivo}</p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${rec.score_pct}%` }} />
+                                </div>
+                                <span className="text-[10px] font-medium text-purple-700">{rec.score_pct}%</span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-6 text-[11px] border-purple-200 text-purple-700 hover:bg-purple-50"
+                                onClick={() => handleUsarRecomendacao(rec)}
+                              >
+                                Usar como base
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mlStatus === 'ready' && mlPreview && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Estimativa do próximo disparo</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {[
+                        { label: 'Doadores elegíveis', value: mlPreview.total_elegiveis, color: '' },
+                        { label: 'Segmentados pelo ML', value: `${mlPreview.segmentados_ml} (${mlPreview.pct_ml}%)`, color: 'text-purple-700' },
+                        { label: 'Retorno estimado', value: `~${mlPreview.retorno_estimado} doações`, color: 'text-green-700' },
+                        { label: 'Volume estimado', value: `~${mlPreview.volume_estimado_litros} litros`, color: 'text-green-700' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500">{label}</span>
+                          <span className={`font-medium ${color || 'text-gray-900'}`}>{value}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
           </TabsContent>
 
-          {/* Settings Tab */}
+          {/* -- Configurações -- */}
           <TabsContent value="settings" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Configurações do Sistema</CardTitle>
-                <CardDescription>Gerencie configurações globais do DoaVida</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
+              <CardHeader><CardTitle>Configurações do Sistema</CardTitle><CardDescription>Configurações globais do DoaVida</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                {[
+                  { icon: Globe, label: 'Sistema Ativo', desc: 'Todos os hemocentros operacionais' },
+                  { icon: Mail, label: 'Notificações por Email', desc: 'Emails automáticos aos doadores' },
+                  { icon: MessageSquare, label: 'Notificações por WhatsApp', desc: 'Mensagens via WhatsApp' },
+                  { icon: UserPlus, label: 'Cadastro Aberto', desc: 'Permitir novos cadastros de doadores' },
+                ].map(({ icon: Icon, label, desc }) => (
+                  <div key={label} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center gap-3">
-                      <Globe className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Sistema Ativo</p>
-                        <p className="text-sm text-gray-600">Todos os hemocentros operacionais</p>
-                      </div>
+                      <Icon className="h-5 w-5 text-gray-600" />
+                      <div><p className="font-semibold">{label}</p><p className="text-sm text-gray-600">{desc}</p></div>
                     </div>
                     <Switch defaultChecked />
                   </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Mail className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Notificações por Email</p>
-                        <p className="text-sm text-gray-600">Enviar emails automáticos aos doadores</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Notificações por WhatsApp</p>
-                        <p className="text-sm text-gray-600">Enviar mensagens via WhatsApp</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <UserPlus className="h-5 w-5 text-gray-600" />
-                      <div>
-                        <p className="font-semibold">Cadastro Aberto</p>
-                        <p className="text-sm text-gray-600">Permitir novos cadastros de doadores</p>
-                      </div>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t">
-                  <Button onClick={handleSaveSettings} className="bg-green-600 hover:bg-green-700">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Salvar Configurações
+                ))}
+                <div className="pt-4">
+                  <Button onClick={() => toast.success('Configurações salvas!')} className="bg-green-600 hover:bg-green-700">
+                    <Settings className="h-4 w-4 mr-2" />Salvar Configurações
                   </Button>
                 </div>
               </CardContent>
@@ -1499,284 +2037,212 @@ export function AdminDashboard() {
         </Tabs>
       </main>
 
-      {/* Update Stock Dialog */}
-      <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Atualizar Estoque Global - {selectedBloodType}</DialogTitle>
-            <DialogDescription>
-              Gerencie o estoque consolidado de todos os hemocentros
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Hemocentro</Label>
-              <Select value={selectedHemocentroForStock} onValueChange={setSelectedHemocentroForStock}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Hemocentros (Global)</SelectItem>
-                  {hemocentros.map(hc => (
-                    <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Ação</Label>
-              <Select value={stockAction} onValueChange={(value) => setStockAction(value as 'add' | 'remove')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="add">
-                    <div className="flex items-center gap-2">
-                      <Plus className="h-4 w-4 text-green-600" />
-                      <span>Adicionar ao estoque</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="remove">
-                    <div className="flex items-center gap-2">
-                      <Minus className="h-4 w-4 text-red-600" />
-                      <span>Remover do estoque</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="amount">Quantidade (bolsas)</Label>
-              <Input
-                id="amount"
-                type="number"
-                min="1"
-                placeholder="Digite a quantidade"
-                value={stockAmount}
-                onChange={(e) => setStockAmount(e.target.value)}
-              />
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
-              <p>
-                Estoque global de <strong>{selectedBloodType}</strong>:{' '}
-                <strong>
-                  {globalStock.find(s => s.type === selectedBloodType)?.current} bolsas
-                </strong>
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowStockDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleUpdateStock}
-              className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
-            >
-              {stockAction === 'add' ? (
-                <>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar
-                </>
-              ) : (
-                <>
-                  <Minus className="h-4 w-4 mr-2" />
-                  Remover
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* --- DIALOGS ----------------------------------------------------------- */}
 
-      {/* Add Hemocentro Dialog */}
+      {/* Criar Hemocentro */}
       <Dialog open={showHemocentroDialog} onOpenChange={setShowHemocentroDialog}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Adicionar Novo Hemocentro</DialogTitle>
-            <DialogDescription>
-              Cadastre um novo hemocentro no sistema DoaVida
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Adicionar Novo Hemocentro</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateHemocentro} className="space-y-4">
-            <div>
-              <Label>Nome do Hemocentro</Label>
-              <Input placeholder="Ex: Hemocentro Belo Horizonte" required />
-            </div>
+            <div><Label>Nome *</Label><Input value={hcForm.nome} onChange={e => setHcForm({ ...hcForm, nome: e.target.value })} required /></div>
             <div className="grid grid-cols-2 gap-4">
+              <div><Label>Cidade *</Label><Input value={hcForm.cidade} onChange={e => setHcForm({ ...hcForm, cidade: e.target.value })} required /></div>
               <div>
-                <Label>Cidade</Label>
-                <Input placeholder="Ex: Belo Horizonte" required />
-              </div>
-              <div>
-                <Label>Estado</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="UF" />
-                  </SelectTrigger>
+                <Label>UF *</Label>
+                <Select value={hcForm.uf} onValueChange={v => setHcForm({ ...hcForm, uf: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="SP">SP</SelectItem>
-                    <SelectItem value="RJ">RJ</SelectItem>
-                    <SelectItem value="MG">MG</SelectItem>
-                    <SelectItem value="PR">PR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Endereço Completo</Label>
-              <Input placeholder="Rua, número, bairro" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Telefone</Label>
-                <Input placeholder="(00) 0000-0000" required />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input type="email" placeholder="contato@hemocentro.com" required />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowHemocentroDialog(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                <Plus className="h-4 w-4 mr-2" />
-                Criar Hemocentro
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add User Dialog */}
-      <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Adicionar Novo Usuário</DialogTitle>
-            <DialogDescription>
-              Cadastre um novo usuário para o sistema
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateUser} className="space-y-4">
-            <div>
-              <Label>Nome Completo</Label>
-              <Input placeholder="Digite o nome completo" required />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" placeholder="email@exemplo.com" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Cargo</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Diretor">Diretor</SelectItem>
-                    <SelectItem value="Funcionário">Funcionário</SelectItem>
-                    <SelectItem value="Enfermeira">Enfermeira</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Hemocentro</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {hemocentros.map(hc => (
-                      <SelectItem key={hc.id} value={hc.id}>{hc.name}</SelectItem>
+                    {['PR', 'SP', 'RJ', 'MG', 'RS', 'SC', 'BA', 'DF'].map(uf => (
+                      <SelectItem key={uf} value={uf}>{uf}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div>
-              <Label>Senha Temporária</Label>
-              <Input type="password" placeholder="Mínimo 8 caracteres" required />
+            <div><Label>Endereço *</Label><Input value={hcForm.endereco} onChange={e => setHcForm({ ...hcForm, endereco: e.target.value })} required /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Número *</Label><Input value={hcForm.numero} onChange={e => setHcForm({ ...hcForm, numero: e.target.value })} required /></div>
+              <div><Label>CEP *</Label><Input value={hcForm.cep} onChange={e => setHcForm({ ...hcForm, cep: e.target.value.replace(/\D/g, '') })} maxLength={8} required /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Telefone</Label><Input value={hcForm.telefone} onChange={e => setHcForm({ ...hcForm, telefone: e.target.value })} /></div>
+              <div><Label>Email</Label><Input type="email" value={hcForm.email} onChange={e => setHcForm({ ...hcForm, email: e.target.value })} /></div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowUserDialog(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Criar Usuário
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowHemocentroDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white"><Plus className="h-4 w-4 mr-2" />Criar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
-      <Dialog open={showEditUserDialog} onOpenChange={setShowEditUserDialog}>
+      {/* Ver Hemocentro */}
+      <Dialog open={showViewHemocentroDialog} onOpenChange={setShowViewHemocentroDialog}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Editar Usuário</DialogTitle>
-            <DialogDescription>
-              Atualize as informações do usuário
-            </DialogDescription>
-          </DialogHeader>
-          {selectedUser && (
-            <form onSubmit={handleUpdateUser} className="space-y-4">
+          <DialogHeader><DialogTitle>Detalhes do Hemocentro</DialogTitle></DialogHeader>
+          {selectedHemocentro && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label className="text-gray-500">Nome</Label><p className="font-semibold text-gray-900">{selectedHemocentro.nome}</p></div>
+                <div><Label className="text-gray-500">ID</Label><p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded inline-block">{selectedHemocentro.id}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label className="text-gray-500">Cidade / UF</Label><p>{selectedHemocentro.cidade} {selectedHemocentro.uf}</p></div>
+                <div><Label className="text-gray-500">Status</Label>
+                  <Badge className={selectedHemocentro.status === 1 ? 'bg-green-100 text-green-600 border-none' : 'bg-red-100 text-red-600 border-none'}>
+                    {selectedHemocentro.status === 1 ? 'Ativo' : 'Inativo'}
+                  </Badge>
+                </div>
+              </div>
+              {selectedHemocentro.telefone && <div><Label className="text-gray-500">Telefone</Label><p>{selectedHemocentro.telefone}</p></div>}
+              {selectedHemocentro.email && <div><Label className="text-gray-500">Email</Label><p>{selectedHemocentro.email}</p></div>}
+              {selectedHemocentro.endereco && <div><Label className="text-gray-500">Endereço</Label><p>{selectedHemocentro.endereco}, {selectedHemocentro.numero} - {selectedHemocentro.bairro}</p></div>}
+            </div>
+          )}
+          <DialogFooter><Button variant="outline" onClick={() => setShowViewHemocentroDialog(false)}>Fechar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Hemocentro */}
+      <Dialog open={showEditHemocentroDialog} onOpenChange={setShowEditHemocentroDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Hemocentro</DialogTitle></DialogHeader>
+          {selectedHemocentro && (
+            <form onSubmit={handleUpdateHemocentro} className="space-y-4">
+              <div><Label>Nome *</Label>
+                <Input value={selectedHemocentro.nome} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, nome: e.target.value })} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Cidade</Label>
+                  <Input value={selectedHemocentro.cidade || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, cidade: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={String(selectedHemocentro.status)} onValueChange={v => setSelectedHemocentro({ ...selectedHemocentro, status: Number(v) })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Ativo</SelectItem>
+                      <SelectItem value="0">Inativo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Telefone</Label>
+                  <Input value={selectedHemocentro.telefone || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, telefone: e.target.value })} />
+                </div>
+                <div><Label>Email</Label>
+                  <Input type="email" value={selectedHemocentro.email || ''} onChange={e => setSelectedHemocentro({ ...selectedHemocentro, email: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowEditHemocentroDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Criar Usuário */}
+      <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Adicionar Novo Usuário</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateUser} className="space-y-4">
+            <div><Label>Nome Completo *</Label>
+              <Input value={newUserForm.name} onChange={e => setNewUserForm({ ...newUserForm, name: e.target.value })} required />
+            </div>
+            <div><Label>Email *</Label>
+              <Input type="email" value={newUserForm.email} onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>CPF *</Label>
+                <Input value={newUserForm.cpf} onChange={e => setNewUserForm({ ...newUserForm, cpf: e.target.value.replace(/\D/g, '') })} maxLength={11} required />
+              </div>
+              <div><Label>Senha *</Label>
+                <Input type="password" value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} minLength={6} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Nome Completo</Label>
-                <Input 
-                  placeholder="Digite o nome completo" 
-                  value={selectedUser.name}
-                  onChange={(e) => setSelectedUser({...selectedUser, name: e.target.value})}
-                  required 
-                />
+                <Label>Perfil *</Label>
+                <Select value={newUserForm.role_id} onValueChange={v => setNewUserForm({ ...newUserForm, role_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {(roles.length ? roles : [
+                      { id: 2, name: 'funcionario' },
+                      { id: 3, name: 'diretor' },
+                      { id: 4, name: 'admin' },
+                    ])
+                      .filter(r => r.name !== 'doador')
+                      .map(r => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {roleLabels[r.id] || r.name}
+                        </SelectItem>
+                      ))
+                    }
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label>Email</Label>
-                <Input 
-                  type="email" 
-                  placeholder="email@exemplo.com" 
-                  value={selectedUser.email}
-                  onChange={(e) => setSelectedUser({...selectedUser, email: e.target.value})}
-                  required 
-                />
+                <Label>Hemocentro</Label>
+                <Select value={newUserForm.hemocentro_id} onValueChange={v => setNewUserForm({ ...newUserForm, hemocentro_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
+                  <SelectContent>
+                    {hemocentros.map(hc => (
+                      <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowUserDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white"><UserPlus className="h-4 w-4 mr-2" />Criar Usuário</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Usuário */}
+      <Dialog open={showEditUserDialog} onOpenChange={setShowEditUserDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Editar Usuário</DialogTitle></DialogHeader>
+          {selectedUser && (
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div><Label>Nome *</Label>
+                <Input value={selectedUser.name} onChange={e => setSelectedUser({ ...selectedUser, name: e.target.value })} required />
+              </div>
+              <div><Label>Email *</Label>
+                <Input type="email" value={selectedUser.email} onChange={e => setSelectedUser({ ...selectedUser, email: e.target.value })} required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Cargo</Label>
-                  <Select 
-                    value={selectedUser.role}
-                    onValueChange={(value) => setSelectedUser({...selectedUser, role: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
+                  <Label>Perfil</Label>
+                  <Select value={String(selectedUser.role_id)} onValueChange={v => setSelectedUser({ ...selectedUser, role_id: Number(v) })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Diretor">Diretor</SelectItem>
-                      <SelectItem value="Funcionário">Funcionário</SelectItem>
-                      <SelectItem value="Enfermeira">Enfermeira</SelectItem>
+                      {(roles.length ? roles : [
+                        { id: 1, name: 'doador' },
+                        { id: 2, name: 'funcionario' },
+                        { id: 3, name: 'diretor' },
+                        { id: 4, name: 'admin' },
+                      ]).map(r => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {roleLabels[r.id] || r.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label>Hemocentro</Label>
-                  <Select
-                    value={selectedUser.hemocentro}
-                    onValueChange={(value) => setSelectedUser({...selectedUser, hemocentro: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
+                  <Select value={selectedUser.hemocentro_id ? String(selectedUser.hemocentro_id) : ''} onValueChange={v => setSelectedUser({ ...selectedUser, hemocentro_id: v ? Number(v) : undefined })}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">Nenhum</SelectItem>
                       {hemocentros.map(hc => (
-                        <SelectItem key={hc.id} value={hc.name}>{hc.name}</SelectItem>
+                        <SelectItem key={hc.id} value={String(hc.id)}>{hc.nome}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1784,394 +2250,141 @@ export function AdminDashboard() {
               </div>
               <div>
                 <Label>Status</Label>
-                <Select
-                  value={selectedUser.status}
-                  onValueChange={(value) => setSelectedUser({...selectedUser, status: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={String(selectedUser.status)} onValueChange={v => setSelectedUser({ ...selectedUser, status: Number(v) })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="offline">Offline</SelectItem>
+                    <SelectItem value="1">Ativo</SelectItem>
+                    <SelectItem value="0">Inativo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditUserDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowEditUserDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white"><CheckCircle2 className="h-4 w-4 mr-2" />Salvar</Button>
               </DialogFooter>
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Confirmation Dialog */}
+      {/* Confirmar Excluir Usuário */}
       <Dialog open={showDeleteUserDialog} onOpenChange={setShowDeleteUserDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-red-600"><Trash2 className="h-5 w-5" />Confirmar Exclusão</DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita e removerá permanentemente o usuário do sistema.</DialogDescription>
           </DialogHeader>
           {userToDelete && (
-            <div className="space-y-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-gray-700 mb-3">
-                  Você está prestes a excluir o seguinte usuário:
-                </p>
-                <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
-                  <Avatar>
-                    <AvatarFallback className="bg-red-100 text-red-600">
-                      {userToDelete.name.split(' ').map((n: string) => n[0]).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-semibold">{userToDelete.name}</p>
-                    <p className="text-sm text-gray-600">{userToDelete.email}</p>
-                    <p className="text-xs text-gray-500">{userToDelete.role} • {userToDelete.hemocentro}</p>
-                  </div>
-                </div>
-              </div>
-              <p className="text-sm text-gray-600">
-                Tem certeza que deseja excluir este usuário do sistema?
-              </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="font-semibold text-gray-900">{userToDelete.name}</p>
+              <p className="text-sm text-gray-600">{userToDelete.email}</p>
+              <Badge variant="outline" className="mt-2">{roleLabels[userToDelete.role_id]}</Badge>
             </div>
           )}
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => setShowDeleteUserDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              type="button"
-              variant="destructive"
-              onClick={handleConfirmDeleteUser}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Sim, Excluir
+            <Button variant="outline" onClick={() => setShowDeleteUserDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteUser} className="gap-2"><Trash2 className="h-4 w-4" />Excluir Usuário</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Atualizar Estoque */}
+      <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader><DialogTitle>Atualizar Estoque Global - {selectedBloodType}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Ação</Label>
+              <Select value={stockAction} onValueChange={(v) => setStockAction(v as 'add' | 'remove')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add"><div className="flex items-center gap-2"><Plus className="h-4 w-4 text-green-600" />Adicionar</div></SelectItem>
+                  <SelectItem value="remove"><div className="flex items-center gap-2"><Minus className="h-4 w-4 text-red-600" />Remover</div></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Quantidade (bolsas)</Label>
+              <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
+            </div>
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+              Estoque atual de <strong>{selectedBloodType}</strong>: <strong>{globalStock.find(s => s.type === selectedBloodType)?.current} bolsas</strong>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStockDialog(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateStock} className={stockAction === 'add' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
+              {stockAction === 'add' ? 'Confirmar Adição' : 'Confirmar Remoção'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Hemocentro Dialog */}
-      <Dialog open={showViewHemocentroDialog} onOpenChange={setShowViewHemocentroDialog}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5 text-purple-600" />
-              Detalhes do Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Visualize as informações completas do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Nome</Label>
-                  <p className="font-semibold text-lg">{selectedHemocentro.name}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-gray-500">ID</Label>
-                  <p className="font-mono text-sm bg-gray-100 px-3 py-2 rounded">{selectedHemocentro.id}</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Cidade</Label>
-                  <p className="font-semibold">{selectedHemocentro.city}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-gray-500">Status</Label>
-                  <Badge className={selectedHemocentro.active ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}>
-                    {selectedHemocentro.active ? 'Ativo' : 'Inativo'}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <Label className="text-gray-500 mb-2 block">Doações Este Mês</Label>
-                <p className="text-3xl font-bold text-purple-600">{selectedHemocentro.donations}</p>
-                <p className="text-sm text-gray-600 mt-1">+12% vs mês anterior</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Doadores Ativos</p>
-                  <p className="text-2xl font-bold text-blue-600">1.245</p>
-                </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Estoque Total</p>
-                  <p className="text-2xl font-bold text-green-600">856</p>
-                </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                  <p className="text-sm text-gray-600">Agendamentos</p>
-                  <p className="text-2xl font-bold text-amber-600">78</p>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowViewHemocentroDialog(false)}>
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Hemocentro Dialog */}
-      <Dialog open={showEditHemocentroDialog} onOpenChange={setShowEditHemocentroDialog}>
+      {/* Editar Campanha */}
+      <Dialog open={showEditCampaignDialog} onOpenChange={setShowEditCampaignDialog}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Atualize as informações do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <form onSubmit={handleUpdateHemocentro} className="space-y-4">
+          <DialogHeader><DialogTitle>Editar Campanha</DialogTitle></DialogHeader>
+          {selectedCampaign && (
+            <form onSubmit={handleUpdateCampaign} className="space-y-4">
               <div>
-                <Label>Nome do Hemocentro</Label>
-                <Input 
-                  value={selectedHemocentro.name}
-                  onChange={(e) => setSelectedHemocentro({...selectedHemocentro, name: e.target.value})}
-                  required 
+                <Label>Título *</Label>
+                <Input
+                  required
+                  value={selectedCampaign?.titulo || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, titulo: e.target.value })}
                 />
               </div>
-              
+              <div>
+                <Label>Subtítulo</Label>
+                <Input
+                  value={selectedCampaign?.subtitulo || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, subtitulo: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Descrição</Label>
+                <Textarea
+                  rows={3}
+                  value={selectedCampaign?.descricao || ''}
+                  onChange={e => setSelectedCampaign({ ...selectedCampaign, descricao: e.target.value })}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Cidade</Label>
-                  <Input 
-                    value={selectedHemocentro.city}
-                    onChange={(e) => setSelectedHemocentro({...selectedHemocentro, city: e.target.value})}
-                    required 
-                  />
+                  <Label>Tipo sanguíneo alvo</Label>
+                  <Select
+                    value={selectedCampaign?.tipo_sangue || 'todos'}
+                    onValueChange={v => setSelectedCampaign({ ...selectedCampaign, tipo_sangue: v === 'todos' ? '' : v })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os tipos</SelectItem>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Status</Label>
                   <Select
-                    value={selectedHemocentro.active ? 'active' : 'inactive'}
-                    onValueChange={(value) => setSelectedHemocentro({...selectedHemocentro, active: value === 'active'})}
+                    value={selectedCampaign?.status ? '1' : '0'}
+                    onValueChange={v => setSelectedCampaign({ ...selectedCampaign, status: v === '1' })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Ativo</SelectItem>
-                      <SelectItem value="inactive">Inativo</SelectItem>
+                      <SelectItem value="1">Ativa</SelectItem>
+                      <SelectItem value="0">Inativa</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-
-              <div>
-                <Label>Endereço</Label>
-                <Textarea 
-                  placeholder="Digite o endereço completo"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Telefone</Label>
-                  <Input placeholder="(XX) XXXXX-XXXX" />
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <Input type="email" placeholder="contato@hemocentro.com" />
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditHemocentroDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings Hemocentro Dialog */}
-      <Dialog open={showSettingsHemocentroDialog} onOpenChange={setShowSettingsHemocentroDialog}>
-        <DialogContent className="sm:max-w-[550px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-gray-600" />
-              Configurações do Hemocentro
-            </DialogTitle>
-            <DialogDescription>
-              Gerencie as configurações operacionais do hemocentro
-            </DialogDescription>
-          </DialogHeader>
-          {selectedHemocentro && (
-            <form onSubmit={handleSaveHemocentroSettings} className="space-y-6">
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Horários de Funcionamento</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Abertura</Label>
-                    <Input type="time" defaultValue="08:00" />
-                  </div>
-                  <div>
-                    <Label>Fechamento</Label>
-                    <Input type="time" defaultValue="18:00" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Capacidade</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Doações por Dia</Label>
-                    <Input type="number" defaultValue="50" />
-                  </div>
-                  <div>
-                    <Label>Estoque Máximo</Label>
-                    <Input type="number" defaultValue="1000" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Notificações</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Alertas de Estoque Baixo</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Notificações de Agendamento</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Relatórios Diários</Label>
-                    <Switch />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="font-semibold text-sm text-gray-700">Permissões</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Permitir Agendamentos Online</Label>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="cursor-pointer">Aceitar Novos Doadores</Label>
-                    <Switch defaultChecked />
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowSettingsHemocentroDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Configurações
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Campaign Dialog */}
-      <Dialog open={showEditCampaignDialog} onOpenChange={setShowEditCampaignDialog}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Campanha
-            </DialogTitle>
-            <DialogDescription>
-              Atualize as informações da campanha de doação
-            </DialogDescription>
-          </DialogHeader>
-          {selectedCampaign && (
-            <form onSubmit={handleUpdateCampaign} className="space-y-4">
-              <div>
-                <Label>Título da Campanha</Label>
-                <Input 
-                  value={selectedCampaign.title}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, title: e.target.value})}
-                  required 
-                />
-              </div>
-              
-              <div>
-                <Label>Subtítulo</Label>
-                <Input 
-                  value={selectedCampaign.subtitle}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, subtitle: e.target.value})}
-                  required 
-                />
-              </div>
-
-              <div>
-                <Label>Status</Label>
-                <Select
-                  value={selectedCampaign.status}
-                  onValueChange={(value) => setSelectedCampaign({...selectedCampaign, status: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Ativa</SelectItem>
-                    <SelectItem value="scheduled">Agendada</SelectItem>
-                    <SelectItem value="completed">Concluída</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>Data</Label>
-                <Input 
-                  type="date"
-                  value={selectedCampaign.date}
-                  onChange={(e) => setSelectedCampaign({...selectedCampaign, date: e.target.value})}
-                  required 
-                />
-              </div>
-
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowEditCampaignDialog(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
+                <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                  Salvar alterações
                 </Button>
               </DialogFooter>
             </form>
@@ -2179,459 +2392,294 @@ export function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Campaign Dialog */}
+      {/* Excluir Campanha */}
       <Dialog open={showDeleteCampaignDialog} onOpenChange={setShowDeleteCampaignDialog}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <Trash2 className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><Trash2 className="h-5 w-5" />Excluir Campanha</DialogTitle></DialogHeader>
           {campaignToDelete && (
-            <div className="py-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Tem certeza que deseja excluir a campanha:
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="font-semibold text-gray-900">{campaignToDelete.title}</p>
-                <p className="text-sm text-gray-600">{campaignToDelete.subtitle}</p>
-                {campaignToDelete.sent && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    {campaignToDelete.sent.toLocaleString()} doadores impactados
-                  </p>
-                )}
-              </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="font-semibold text-gray-900">{campaignToDelete.titulo}</p>
+              <p className="text-sm text-gray-600">{campaignToDelete.subtitulo}</p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteCampaignDialog(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleConfirmDeleteCampaign}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir Campanha
-            </Button>
+            <Button variant="outline" onClick={() => setShowDeleteCampaignDialog(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmDeleteCampaign} className="bg-red-600 hover:bg-red-700 text-white">Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Permission Dialog */}
-      <Dialog open={showEditPermissionDialog} onOpenChange={setShowEditPermissionDialog}>
-        <DialogContent className="sm:max-w-[550px]">
+      {/* Exportar Relatório */}
+      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+        <DialogContent className="sm:max-w-[560px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Editar Grupo de Permissões
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Download className="h-4 w-4" />Gerar Relatório PDF
             </DialogTitle>
-            <DialogDescription>
-              Atualize as informações do grupo de permissões
+            <DialogDescription className="text-xs">
+              Selecione o tipo, período e filtros. O arquivo será baixado automaticamente.
             </DialogDescription>
           </DialogHeader>
-          {selectedPermission && (
-            <form onSubmit={handleUpdatePermission} className="space-y-4">
-              <div>
-                <Label>Nome do Grupo</Label>
-                <Input 
-                  value={selectedPermission.name}
-                  onChange={(e) => setSelectedPermission({...selectedPermission, name: e.target.value})}
-                  required 
-                />
+          <div className="space-y-4 pt-1">
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Tipo de relatório</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'doacoes',      label: 'Doações',      desc: 'Coletas e volume',    icon: '🩸' },
+                  { value: 'estoque',      label: 'Estoque',       desc: 'Níveis e alertas',    icon: '📦' },
+                  { value: 'doadores',     label: 'Doadores',      desc: 'Cadastros e perfil',  icon: '👥' },
+                  { value: 'agendamentos', label: 'Agendamentos',  desc: 'Status e taxa',       icon: '📅' },
+                  { value: 'triagens',     label: 'Triagens',      desc: 'Aptidão e motivos',   icon: '🏥' },
+                  { value: 'desempenho',   label: 'Desempenho',    desc: 'Performance mensal',  icon: '📈' },
+                ].map(({ value, label, desc, icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setReportType(value)}
+                    className={`text-left p-2.5 rounded-lg border-2 transition-all ${
+                      reportType === value ? 'border-red-400 bg-red-50' : 'border-gray-100 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">{icon}</div>
+                    <div className="text-xs font-medium text-gray-900">{label}</div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">{desc}</div>
+                  </button>
+                ))}
               </div>
-              
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Descrição</Label>
-                <Textarea 
-                  value={selectedPermission.description}
-                  onChange={(e) => setSelectedPermission({...selectedPermission, description: e.target.value})}
-                  rows={3}
-                  required 
-                />
+                <Label className="text-xs">Período</Label>
+                <Select value={reportPeriod} onValueChange={setReportPeriod}>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                    <SelectItem value="90">Últimos 90 dias</SelectItem>
+                    <SelectItem value="previous_month">Mês anterior</SelectItem>
+                    <SelectItem value="all">Período completo</SelectItem>
+                    <SelectItem value="custom">Intervalo personalizado</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-
               <div>
-                <Label className="mb-3 block">Permissões</Label>
-                <div className="border rounded-lg p-4 space-y-2 max-h-48 overflow-y-auto">
-                  {['view_donors', 'register_donations', 'view_schedule', 'manage_stock', 'view_reports', 'manage_users', 'all_hemocentro', 'system_admin'].map((perm) => (
-                    <div key={perm} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`edit-${perm}`}
-                        checked={selectedPermission.permissions.includes(perm)}
-                        onChange={(e) => {
-                          const newPerms = e.target.checked
-                            ? [...selectedPermission.permissions, perm]
-                            : selectedPermission.permissions.filter((p: string) => p !== perm);
-                          setSelectedPermission({...selectedPermission, permissions: newPerms});
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`edit-${perm}`} className="text-sm cursor-pointer">
-                        {perm.replace(/_/g, ' ')}
-                      </Label>
-                    </div>
-                  ))}
+                <Label className="text-xs">Tipo sanguíneo</Label>
+                <Select value={reportBloodType} onValueChange={setReportBloodType}>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os tipos</SelectItem>
+                    {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {reportPeriod === 'custom' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Data inicial</Label>
+                  <Input type="date" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} className="h-8 text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-xs">Data final</Label>
+                  <Input type="date" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} className="h-8 text-xs mt-1" />
                 </div>
               </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditPermissionDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Salvar Alterações
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Permission Dialog */}
-      <Dialog open={showDeletePermissionDialog} onOpenChange={setShowDeletePermissionDialog}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <Trash2 className="h-5 w-5" />
-              Confirmar Exclusão
-            </DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          {permissionToDelete && (
-            <div className="py-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Tem certeza que deseja excluir o grupo de permissões:
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="font-semibold text-gray-900">{permissionToDelete.name}</p>
-                <p className="text-sm text-gray-600">{permissionToDelete.description}</p>
-                <p className="text-xs text-red-600 font-semibold mt-2">
-                  ⚠️ {permissionToDelete.users} usuários atualmente neste grupo
-                </p>
+            )}
+            {reportType && (
+              <div className="bg-gray-50 rounded-lg px-3 py-2 text-[11px] text-gray-500 flex items-center gap-2">
+                <Download className="h-3 w-3 flex-shrink-0" />
+                <span>
+                  <strong className="text-gray-700 capitalize">{reportType}</strong>
+                  {' · '}{resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate).label}
+                  {reportBloodType !== 'todos' && ` · ${reportBloodType}`}
+                </span>
               </div>
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-xs text-yellow-800">
-                  <strong>Atenção:</strong> Os usuários deste grupo perderão suas permissões. Reatribua-os a outro grupo antes de excluir.
-                </p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeletePermissionDialog(false)}>
+            )}
+          </div>
+          <DialogFooter className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowReportDialog(false); setReportType(''); }}>
               Cancelar
             </Button>
-            <Button 
-              onClick={handleConfirmDeletePermission}
-              className="bg-red-600 hover:bg-red-700"
+            <Button
+              size="sm"
+              onClick={handleExportReport}
+              disabled={!reportType || isDownloadingReport}
+              className="bg-red-600 hover:bg-red-700 text-white gap-2"
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir Grupo
+              <Download className="h-4 w-4" />
+              {isDownloadingReport ? 'Gerando...' : 'Baixar PDF'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Stock Details Dialog */}
+      {/* Detalhes Estoque - mantido simples, dados locais */}
       <Dialog open={showStockDetailsDialog} onOpenChange={setShowStockDetailsDialog}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="bg-red-100 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-red-600" />
-              </div>
-              Detalhes do Estoque - Tipo {selectedBloodTypeForDetails}
+            <DialogTitle className="flex items-center gap-2">
+              <Droplet className="h-5 w-5 text-red-600" />Detalhes Global - Tipo {selectedBloodTypeForDetails}
             </DialogTitle>
-            <DialogDescription>
-              Informações detalhadas sobre distribuição, histórico e estatísticas
-            </DialogDescription>
           </DialogHeader>
-
-          {selectedBloodTypeForDetails && stockDetailsByType[selectedBloodTypeForDetails] && (
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Consumo Diário</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">{stockDetailsByType[selectedBloodTypeForDetails].stats.avgDailyConsumption}</p>
-                    <p className="text-xs text-gray-600">bolsas/dia</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Dias até Crítico</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className={`text-2xl font-bold ${stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical <= 2 ? 'text-red-600' : 'text-green-600'}`}>
-                      {stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical}
-                    </p>
-                    <p className="text-xs text-gray-600">dias restantes</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Doações/Mês</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-blue-600">{stockDetailsByType[selectedBloodTypeForDetails].stats.totalDonationsMonth}</p>
-                    <p className="text-xs text-gray-600">este mês</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">Última Doação</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm font-bold">{stockDetailsByType[selectedBloodTypeForDetails].stats.lastDonation.split(' ')[1]}</p>
-                    <p className="text-xs text-gray-600">{stockDetailsByType[selectedBloodTypeForDetails].stats.lastDonation.split(' ')[0]}</p>
-                  </CardContent>
-                </Card>
+          {selectedBloodTypeForDetails && (() => {
+            const stock = globalStock.find(s => s.type === selectedBloodTypeForDetails);
+            if (!stock) return null;
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Atual</p><p className="text-2xl font-bold">{stock.current}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Mínimo</p><p className="text-2xl font-bold text-orange-600">{stock.min}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Máximo</p><p className="text-2xl font-bold text-green-600">{stock.max}</p></div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">Nível de preenchimento</span>
+                    <span>{Math.round((stock.current / stock.max) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div className={`h-3 rounded-full ${stock.critical ? 'bg-red-600' : stock.current < stock.min * 1.5 ? 'bg-orange-500' : 'bg-green-600'}`}
+                      style={{ width: `${Math.min((stock.current / stock.max) * 100, 100)}%` }} />
+                  </div>
+                </div>
+                {stock.critical && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-red-700 text-sm">
+                    <XCircle className="h-4 w-4" />Atenção: Estoque global abaixo do nível de segurança!
+                  </div>
+                )}
               </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStockDetailsDialog(false)}>Fechar</Button>
+            <Button onClick={() => { setShowStockDetailsDialog(false); handleOpenUpdateStock(selectedBloodTypeForDetails); }} className="bg-green-600 hover:bg-green-700 text-white gap-2">
+              <Activity className="h-4 w-4" />Ajustar Estoque
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-              {/* Distribution by Hemocentro */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-green-600" />
-                  Distribuição por Hemocentro
-                </h3>
-                <div className="space-y-2">
-                  {stockDetailsByType[selectedBloodTypeForDetails].distribution.map((item: any, index: number) => (
-                    <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="font-semibold text-sm">{item.hemocentro}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold">{item.stock} bolsas</span>
-                            <Badge variant="outline" className="text-xs">{item.percentage}%</Badge>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="h-2 rounded-full bg-green-600"
-                            style={{ width: `${item.percentage}%` }}
+      {/* Criar Cargo */}
+      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+        <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>Novo Cargo</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateRole} className="flex flex-col flex-1 min-h-0 gap-4">
+            <div>
+              <Label>Nome do cargo *</Label>
+              <Input
+                required
+                placeholder="ex: marketing_campanhas"
+                value={roleForm.name}
+                onChange={e => setRoleForm({ ...roleForm, name: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">Use letras minúsculas, números e underscores. Cargos padrão do sistema ficam bloqueados.</p>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-1">
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Permissões</Label>
+              <div className="space-y-4">
+                {Object.entries(allPermissions).map(([categoria, perms]) => (
+                  <div key={categoria}>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{categoria}</p>
+                    <div className="grid grid-cols-2 gap-1.5 pl-1">
+                      {Object.entries(perms).map(([permName, permLabel]) => (
+                        <label key={permName} className="flex items-center gap-2 text-sm cursor-pointer hover:text-gray-900 text-gray-700 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={roleForm.permissions.includes(permName)}
+                            onChange={() => togglePermission(permName, roleForm.permissions, p => setRoleForm({ ...roleForm, permissions: p }))}
+                            className="w-4 h-4 rounded accent-green-600"
                           />
-                        </div>
+                          {permLabel}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <DialogFooter className="pt-2 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowRoleDialog(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                Criar Cargo ({roleForm.permissions.length} permissão{roleForm.permissions.length !== 1 ? 'ões' : ''})
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Cargo */}
+      <Dialog open={showEditRoleDialog} onOpenChange={setShowEditRoleDialog}>
+        <DialogContent className="sm:max-w-[580px] max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>Editar Cargo</DialogTitle></DialogHeader>
+          {selectedRole && (
+            <form onSubmit={handleUpdateRole} className="flex flex-col flex-1 min-h-0 gap-4">
+              <div>
+                <Label>Nome do cargo *</Label>
+                <Input
+                  required
+                  disabled={selectedRole.sistema}
+                  value={selectedRole.name}
+                  onChange={e => setSelectedRole({ ...selectedRole, name: e.target.value })}
+                />
+                {selectedRole.sistema && (
+                  <p className="text-xs text-amber-600 mt-1">Cargos padrão do sistema não podem ser alterados pelo dashboard.</p>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto pr-1">
+                <Label className="text-sm font-semibold text-gray-700 mb-2 block">Permissões</Label>
+                <div className="space-y-4">
+                  {Object.entries(allPermissions).map(([categoria, perms]) => (
+                    <div key={categoria}>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{categoria}</p>
+                      <div className="grid grid-cols-2 gap-1.5 pl-1">
+                        {Object.entries(perms).map(([permName, permLabel]) => (
+                          <label key={permName} className="flex items-center gap-2 text-sm cursor-pointer hover:text-gray-900 text-gray-700 py-0.5">
+                            <input
+                              type="checkbox"
+                              checked={(selectedRole.permissions ?? []).includes(permName)}
+                              onChange={() => togglePermission(
+                                permName,
+                                selectedRole.permissions ?? [],
+                                p => setSelectedRole({ ...selectedRole, permissions: p })
+                              )}
+                              className="w-4 h-4 rounded accent-green-600"
+                            />
+                            {permLabel}
+                          </label>
+                        ))}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* History Chart */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-blue-600" />
-                  Histórico dos Últimos 5 Dias
-                </h3>
-                <Card>
-                  <CardContent className="pt-6">
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={stockDetailsByType[selectedBloodTypeForDetails].history}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="stock" stroke="#16A34A" strokeWidth={2} name="Estoque" />
-                        <Line type="monotone" dataKey="entries" stroke="#2563EB" strokeWidth={2} name="Entradas" />
-                        <Line type="monotone" dataKey="exits" stroke="#DC2626" strokeWidth={2} name="Saídas" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Historical Data Table */}
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-purple-600" />
-                  Movimentação Detalhada
-                </h3>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Data</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Estoque</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Entradas</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Saídas</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Variação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {stockDetailsByType[selectedBloodTypeForDetails].history.map((item: any, index: number) => {
-                        const variation = item.entries - item.exits;
-                        return (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm">{item.date}</td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold">{item.stock}</td>
-                            <td className="px-4 py-3 text-sm text-right text-green-600">+{item.entries}</td>
-                            <td className="px-4 py-3 text-sm text-right text-red-600">-{item.exits}</td>
-                            <td className={`px-4 py-3 text-sm text-right font-semibold ${variation >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {variation >= 0 ? '+' : ''}{variation}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Alerts */}
-              {stockDetailsByType[selectedBloodTypeForDetails].stats.daysUntilCritical <= 2 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-red-900">Alerta de Estoque Crítico</p>
-                      <p className="text-sm text-red-700 mt-1">
-                        Este tipo sanguíneo está próximo do nível crítico. 
-                        Recomenda-se iniciar campanha de doação urgente para o tipo {selectedBloodTypeForDetails}.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+              <DialogFooter className="pt-2 border-t">
+                <Button type="button" variant="outline" onClick={() => setShowEditRoleDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-green-600 hover:bg-green-700">Salvar alterações</Button>
+              </DialogFooter>
+            </form>
           )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowStockDetailsDialog(false)}
-            >
-              Fechar
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setShowStockDetailsDialog(false);
-                handleOpenUpdateStock(selectedBloodTypeForDetails);
-              }}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Activity className="h-4 w-4 mr-2" />
-              Atualizar Estoque
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Export Report Dialog */}
-      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-        <DialogContent className="sm:max-w-[425px]">
+      {/* Excluir Cargo */}
+      <Dialog open={showDeleteRoleDialog} onOpenChange={setShowDeleteRoleDialog}>
+        <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Exportar Relatório do Sistema</DialogTitle>
-            <DialogDescription>
-              Selecione o tipo e formato do relatório para exportação
-            </DialogDescription>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />Excluir Cargo
+            </DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Tipo de Relatório</Label>
-              <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="donations">
-                    <div className="flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Relatório de Doações</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="stock">
-                    <div className="flex items-center gap-2">
-                      <Droplet className="h-4 w-4" />
-                      <span>Relatório de Estoque Global</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="users">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>Relatório de Usuários</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="campaigns">
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      <span>Relatório de Campanhas</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="hemocentros">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      <span>Relatório de Hemocentros</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+          {roleToDelete && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="font-semibold text-gray-900">{roleToDelete.name}</p>
+              <p className="text-sm text-gray-500">{roleToDelete.users_count} usuários vinculados</p>
             </div>
-            <div>
-              <Label>Formato de Exportação</Label>
-              <Select value={reportFormat} onValueChange={setReportFormat}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-red-600" />
-                      <span>PDF</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="excel">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-green-600" />
-                      <span>Excel (.xlsx)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="csv">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-blue-600" />
-                      <span>CSV</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg text-sm text-gray-600">
-              <p>
-                O relatório será gerado com os dados atualizados até o momento e baixado automaticamente.
-              </p>
-            </div>
-          </div>
+          )}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowReportDialog(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleExportReport}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Exportar Relatório
+            <Button variant="outline" onClick={() => setShowDeleteRoleDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteRole} className="gap-2">
+              <Trash2 className="h-4 w-4" />Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2639,3 +2687,4 @@ export function AdminDashboard() {
     </div>
   );
 }
+

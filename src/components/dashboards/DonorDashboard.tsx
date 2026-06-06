@@ -1,603 +1,654 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
+import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { Calendar } from '../ui/calendar';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { 
-  Droplet, 
-  Calendar as CalendarIcon, 
-  Award, 
-  Clock, 
-  MapPin, 
-  Heart,
+import {
+  Droplet,
+  Calendar as CalendarIcon,
   LogOut,
-  User,
-  Bell,
+  User as UserIcon,
+  Heart,
+  Award,
   CheckCircle2,
+  Clock,
+  MapPin,
   AlertCircle,
-  Edit
+  Edit,
+  Mail,
+  Phone,
+  History as HistoryIcon,
+  XCircle,
+  Save
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { format } from 'date-fns';
+import { format, isAfter, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Mock data
-const upcomingAppointment = {
-  id: '1',
-  date: '2026-03-15',
-  time: '09:00',
-  location: 'Hemocentro São Paulo Central',
-  address: 'Av. Dr. Enéas de Carvalho Aguiar, 155',
-  confirmed: false
+const timeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+
+function extractAppointments(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.data)) return payload.data.data;
+  if (Array.isArray(payload?.agendamentos)) return payload.agendamentos;
+  if (Array.isArray(payload?.historico)) return payload.historico;
+  return [];
+}
+
+const getStatus = (item: any) => String(item?.status_agendamento || item?.status || '').toUpperCase();
+
+const isCompletedAppointment = (item: any) =>
+  ['FIN', 'DOA', 'REALIZADA', 'CONCLUIDO', 'CONCLUÍDO', 'FINALIZADO'].includes(getStatus(item)) ||
+  !!item?.doacao_id ||
+  !!item?.doacao;
+
+const isActiveAppointment = (item: any) => {
+  const status = getStatus(item);
+  const isConcluded = isCompletedAppointment(item);
+  const isCancelled = ['CAN', 'EXC', 'CANCELADO', 'EXCLUIDO'].includes(status);
+  
+  return ['AGE', 'CON', 'PENDENTE', 'CONFIRMADO'].includes(status) && !isConcluded && !isCancelled;
 };
 
-const donationHistory = [
-  { id: '1', date: '2025-12-15', location: 'Hemocentro São Paulo Central', bloodAmount: '450ml', status: 'Concluída' },
-  { id: '2', date: '2025-09-10', location: 'Hemocentro São Paulo Central', bloodAmount: '450ml', status: 'Concluída' },
-  { id: '3', date: '2025-06-05', location: 'Hemocentro Zona Leste', bloodAmount: '450ml', status: 'Concluída' },
-  { id: '4', date: '2025-03-01', location: 'Hemocentro São Paulo Central', bloodAmount: '450ml', status: 'Concluída' },
-  { id: '5', date: '2024-12-10', location: 'Hemocentro Zona Sul', bloodAmount: '450ml', status: 'Concluída' },
-];
-
 export function DonorDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [appointmentConfirmed, setAppointmentConfirmed] = useState(upcomingAppointment.confirmed);
-  
-  // Reagendamento states
+
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointmentHistory, setAppointmentHistory] = useState<any[]>([]);
+  const [hemocentros, setHemocentros] = useState<any[]>([]);
+  const [donations, setDonations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Estados dos Modais
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>();
+  const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleLocation, setRescheduleLocation] = useState('');
-  
-  // Edit Profile states
+
   const [editProfileDialogOpen, setEditProfileDialogOpen] = useState(false);
   const [profileData, setProfileData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: user?.phone || ''
+    name: '',
+    email: '',
+    telefone: '',
+    numero: '',
+    tipo_sang: '',
+    sexo: ''
   });
 
-  const bloodCenters = [
-    { value: "hemepar", label: "Hemepar - Centro de Hematologia e Hemoterapia do Paraná" },
-    { value: "erasto-gaertner", label: "Hospital Erasto Gaertner - Banco de Sangue" },
-    { value: "hc-ufpr", label: "Hospital de Clínicas - UFPR" },
-    { value: "hc-trabalhador", label: "Hospital do Trabalhador - Banco de Sangue" }
-  ];
+  const [certificatesDialogOpen, setCertificatesDialogOpen] = useState(false);
+  const [certificates, setCertificates] = useState<any[]>([]);
+  const [isLoadingCertificates, setIsLoadingCertificates] = useState(false);
 
-  const timeSlots = [
-    "08:00", "08:30", "09:00", "09:30", "10:00", "10:30", 
-    "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", 
-    "15:00", "15:30", "16:00", "16:30", "17:00"
-  ];
+  const handleOpenCertificates = async () => {
+    setCertificatesDialogOpen(true);
+    setIsLoadingCertificates(true);
+    try {
+      const res = await api.get('/certificados');
+      const list = extractAppointments(res.data); // Usa o fallback se a estrutura variar
+      setCertificates(list);
+    } catch (err) {
+      toast.error('Erro ao carregar certificados.');
+    } finally {
+      setIsLoadingCertificates(false);
+    }
+  };
 
-  if (!user || user.role !== 'donor') {
-    navigate('/login');
-    return null;
-  }
+  const handleDownloadCertificate = (id: string) => {
+    toast.info("Gerando certificado...");
+    api.get(`/certificados/${id}/pdf`, { responseType: 'blob' })
+      .then((response) => {
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `certificado-${id}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      })
+      .catch(() => toast.error('Erro ao baixar certificado.'));
+  };
+
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const [agendRes, historyRes, hemocentrosRes, donRes] = await Promise.all([
+        api.get('/agendamentos'),
+        api.get('/agendamentos/historico'),
+        api.get('/hemocentros'),
+        api.get('/doacoes')
+      ]);
+
+      setAppointments(extractAppointments(agendRes.data));
+      setAppointmentHistory(extractAppointments(historyRes.data));
+      setHemocentros(extractAppointments(hemocentrosRes.data));
+      setDonations(extractAppointments(donRes.data));
+    } catch (err: any) {
+      console.error('Erro ao carregar dados:', err.response?.data);
+      if (err.response?.status === 401) {
+        logout();
+        navigate('/login');
+      } else {
+        toast.error('Erro ao carregar dados do painel');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, logout, navigate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        email: user.email || '',
+        telefone: user.telefone || user.phone || '',
+        numero: user.numero || '',
+        tipo_sang: user.tipo_sang || '',
+        sexo: user.sexo || ''
+      });
+    }
+  }, [user]);
 
   const handleLogout = () => {
     logout();
-    navigate('/');
-    toast.success('Logout realizado com sucesso');
+    navigate('/login');
+    toast.success('Sessão encerrada');
   };
 
-  const handleConfirmAppointment = () => {
-    setAppointmentConfirmed(true);
-    toast.success('Doação confirmada com sucesso!');
-  };
-
-  const handleReschedule = () => {
-    setRescheduleDialogOpen(true);
-  };
-
-  const handleRescheduleConfirm = () => {
-    if (!rescheduleDate || !rescheduleTime || !rescheduleLocation) {
-      toast.error('Preencha todos os campos para reagendar');
+  const handleScheduleClick = () => {
+    if (isRestricted) {
+      toast.warning(`Você está inelegível temporariamente. Nova doação disponível em ${format(parseISO(user.tempo_restricao!), 'dd/MM/yyyy')}.`);
       return;
     }
-    toast.info('Funcionalidade de reagendamento em desenvolvimento');
-    setRescheduleDialogOpen(false);
+    navigate('/cadastro-doacao');
   };
 
-  const handleEditProfile = () => {
-    setEditProfileDialogOpen(true);
+  const upcomingAppointment = appointments.find(isActiveAppointment);
+
+  // Histórico = agendamentos concluídos, finalizados, cancelados ou excluídos
+  const history = appointmentHistory.filter(
+    (a: any) => isCompletedAppointment(a) || ['CAN', 'EXC', 'CANCELADO', 'EXCLUIDO'].includes(getStatus(a))
+  );
+
+  const daysUntilNextDonation = (() => {
+    if (!user?.tempo_restricao) return 0;
+    try {
+      const restricao = parseISO(user.tempo_restricao);
+      const diff = Math.ceil((restricao.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      return diff > 0 ? diff : 0;
+    } catch { return 0; }
+  })();
+
+  const isRestricted = daysUntilNextDonation > 0;
+
+  const formatDataHora = (agendamento: any) => {
+    const campo = agendamento.data_hora_doacao || agendamento.data;
+    if (!campo) return { data: '-', hora: '-' };
+    try {
+      const d = parseISO(campo.includes('T') ? campo : campo.replace(' ', 'T'));
+      return {
+        data: format(d, "dd 'de' MMMM", { locale: ptBR }),
+        hora: format(d, 'HH:mm'),
+      };
+    } catch {
+      return { data: campo, hora: agendamento.horario || '-' };
+    }
   };
 
-  const handleEditProfileConfirm = () => {
-    toast.info('Funcionalidade de edição de perfil em desenvolvimento');
-    setEditProfileDialogOpen(false);
+  const handleCancelAppointment = async () => {
+    if (!upcomingAppointment) return;
+    if (!window.confirm('Deseja realmente cancelar este agendamento?')) return;
+    try {
+      await api.post(`/auth/agendamentos/${upcomingAppointment.id}/cancelar`);
+      toast.success('Agendamento cancelado!');
+      fetchData();
+    } catch {
+      toast.error('Erro ao cancelar agendamento');
+    }
   };
 
-  const nextDonationDate = new Date('2026-06-15');
-  const daysUntilNextDonation = Math.ceil((nextDonationDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const handleRescheduleConfirm = async () => {
+    if (!rescheduleDate || !rescheduleTime || !rescheduleLocation) {
+      toast.error('Preencha todos os campos');
+      return;
+    }
+    try {
+      // Passo 1: cancelar o agendamento atual
+      await api.post(`/auth/agendamentos/${upcomingAppointment.id}/cancelar`);
+
+      // Passo 2: criar novo agendamento
+      await api.post('/auth/agendamentos', {
+        hemocentro_id:    Number(rescheduleLocation),
+        data_hora_doacao: `${rescheduleDate} ${rescheduleTime}:00`,
+      });
+
+      toast.success('Reagendado com sucesso!');
+      setRescheduleDialogOpen(false);
+      setRescheduleDate('');
+      setRescheduleTime('');
+      setRescheduleLocation('');
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao reagendar: ' + (err.response?.data?.message || err.response?.data?.mensagem || 'Tente novamente'));
+    }
+  };
+
+  const handleEditProfileConfirm = async () => {
+    try {
+      const payload = {
+        ...profileData,
+        telefone: profileData.telefone.replace(/\D/g, '')
+      };
+      await api.put(`/users/${user.id}`, payload);
+      toast.success('Perfil atualizado!');
+      setEditProfileDialogOpen(false);
+      // O ideal seria atualizar o contexto ou forçar um refresh
+      window.location.reload();
+    } catch (err: any) {
+      toast.error('Erro ao atualizar perfil');
+    }
+  };
+
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-red-600 p-2 rounded-lg cursor-pointer" onClick={() => navigate('/')}>
+              <Droplet className="h-6 w-6 text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
+          </div>
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="bg-red-600 p-2 rounded-lg">
-                <Droplet className="h-6 w-6 text-white" />
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-gray-900">{user.name}</p>
+                <p className="text-xs text-gray-500 uppercase">Doador {user.tipo_sang ? `• ${user.tipo_sang}` : ''}</p>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
-                <p className="text-xs text-gray-600">Painel do Doador</p>
-              </div>
+              <Avatar className="border-2 border-red-100">
+                <AvatarFallback className="bg-red-600 text-white">
+                  {user.name?.substring(0,2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
             </div>
-
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-red-600 rounded-full"></span>
-              </Button>
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarFallback className="bg-red-100 text-red-600">
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:block">
-                  <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-600">{user.email}</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Sair</span>
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+              <LogOut className="h-4 w-4" /> <span className="hidden md:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Olá, {user.name.split(' ')[0]}! 👋
-          </h2>
-          <p className="text-gray-600">
-            Bem-vindo ao seu painel de doador. Aqui você pode acompanhar suas doações e agendar novas.
-          </p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border-l-4 border-l-red-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Total de Doações</CardDescription>
-              <CardTitle className="text-3xl">{user.donationCount || 0}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Droplet className="h-4 w-4 text-red-600" />
-                <span>Aproximadamente {((user.donationCount || 0) * 450)}ml doados</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card className="md:col-span-2 bg-red-600 text-white border-none shadow-lg overflow-hidden relative">
+            <div className="absolute right-0 bottom-0 opacity-10">
+              <Heart className="w-48 h-48 -mr-10 -mb-10" />
+            </div>
+            <CardContent className="p-8 relative z-10">
+              <h2 className="text-3xl font-bold mb-2">Olá, {user.name?.split(' ')[0]}! 👋</h2>
+              <p className="text-red-100 text-lg mb-6">
+                {isRestricted 
+                  ? `Sua próxima doação estará disponível em ${format(parseISO(user.tempo_restricao!), 'dd/MM/yyyy')}.`
+                  : "Você está apto para salvar vidas hoje! Sua doação pode salvar até 4 vidas."}
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <Button
+                  onClick={handleScheduleClick}
+                  className="bg-white text-red-600 hover:bg-red-50 font-bold px-6"
+                >
+                  <Droplet className="w-4 h-4 mr-2" /> Agendar Doação
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleOpenCertificates}
+                  className="border-white bg-transparent text-white hover:bg-white hover:text-red-600"
+                >
+                  <Award className="w-4 h-4 mr-2" /> Meus Certificados
+                </Button>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-blue-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Tipo Sanguíneo</CardDescription>
-              <CardTitle className="text-3xl">{user.bloodType}</CardTitle>
+          <Card className="shadow-md border border-red-100 bg-red-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-red-800 uppercase tracking-wider">Resumo do Doador</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Heart className="h-4 w-4 text-blue-600" />
-                <span>Compatível com {user.bloodType === 'O+' ? '8 tipos' : '4 tipos'}</span>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-red-700">Tipo Sanguíneo</span>
+                <Badge className="bg-red-200 text-red-800 hover:bg-red-200 text-lg px-3 border-none">{user.tipo_sang || '?'}</Badge>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Vidas Impactadas</CardDescription>
-              <CardTitle className="text-3xl">{(user.donationCount || 0) * 4}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Award className="h-4 w-4 text-green-600" />
-                <span>Cada doação pode salvar até 4 vidas</span>
+              <div className="flex items-center justify-between">
+                <span className="text-red-700">Doações Realizadas</span>
+                <span className="font-bold text-xl text-red-900">{donations.length}</span>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3">
-              <CardDescription>Próxima Doação</CardDescription>
-              <CardTitle className="text-3xl">{daysUntilNextDonation}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Clock className="h-4 w-4 text-purple-600" />
-                <span>dias restantes</span>
+              <div className="pt-4 border-t border-red-200">
+                <p className="text-xs text-red-500 mb-1">Próxima doação disponível em:</p>
+                <p className={`font-semibold flex items-center gap-1 ${!isRestricted ? 'text-green-700' : 'text-amber-700'}`}>
+                  <CheckCircle2 className="w-4 h-4" />
+                  {!isRestricted ? 'Já disponível!' : `${daysUntilNextDonation} dias`}
+                </p>
               </div>
+              {isRestricted && (
+                <div className="pt-2 border-t border-red-200 text-xs text-orange-700 flex gap-1 items-center">
+                  <AlertCircle className="w-3 h-3" /> Em período de carência
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Tabs */}
-        <Tabs defaultValue="appointments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-auto">
-            <TabsTrigger value="appointments">Agendamentos</TabsTrigger>
-            <TabsTrigger value="history">Histórico</TabsTrigger>
-            <TabsTrigger value="profile">Perfil</TabsTrigger>
-          </TabsList>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <Tabs defaultValue="proximos" className="w-full">
+              <TabsList className="bg-white border mb-4">
+                <TabsTrigger value="proximos" className="data-[state=active]:bg-red-50 data-[state=active]:text-red-600">Próxima Doação</TabsTrigger>
+                <TabsTrigger value="historico" className="data-[state=active]:bg-red-50 data-[state=active]:text-red-600">Histórico</TabsTrigger>
+                <TabsTrigger value="doacoes" className="data-[state=active]:bg-red-50 data-[state=active]:text-red-600">Minhas Coletas</TabsTrigger>
+              </TabsList>
 
-          {/* Appointments Tab */}
-          <TabsContent value="appointments" className="space-y-6">
-            {/* Upcoming Appointment */}
-            {upcomingAppointment && (
-              <Card className="border-2 border-red-200 bg-red-50/50">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <CalendarIcon className="h-5 w-5 text-red-600" />
-                        Próxima Doação Agendada
-                      </CardTitle>
-                      <CardDescription className="mt-1">
-                        Confirme sua presença até 1 dia antes
-                      </CardDescription>
-                    </div>
-                    {appointmentConfirmed ? (
-                      <Badge className="bg-green-600">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Confirmada
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="border-orange-600 text-orange-600">
-                        <AlertCircle className="h-3 w-3 mr-1" />
-                        Pendente
-                      </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-lg">
-                          <CalendarIcon className="h-5 w-5 text-red-600" />
+              <TabsContent value="proximos">
+                {isLoading ? (
+                  <Card className="p-8 text-center animate-pulse"><p>Carregando...</p></Card>
+                ) : upcomingAppointment ? (
+                  <Card className="border-l-4 border-l-red-600 shadow-md">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-red-50 rounded-xl text-red-600"><CalendarIcon className="w-8 h-8" /></div>
+                          <div>
+                            <h3 className="font-bold text-xl text-gray-900">
+                              {formatDataHora(upcomingAppointment).data}
+                            </h3>
+                            <p className="text-gray-500 flex items-center gap-1">
+                              <Clock className="w-4 h-4" /> {formatDataHora(upcomingAppointment).hora}
+                            </p>
+                            <p className="text-gray-700 font-medium mt-2 flex items-center gap-1">
+                              <MapPin className="w-4 h-4 text-red-600" />
+                              {upcomingAppointment.hemocentro?.nome || 'Hemocentro Selecionado'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Data e Hora</p>
-                          <p className="font-semibold">
-                            {new Date(upcomingAppointment.date).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'long',
-                              year: 'numeric'
-                            })} às {upcomingAppointment.time}
-                          </p>
+                        <div className="flex gap-2">
+                          <Button variant="outline" onClick={() => setRescheduleDialogOpen(true)}>Reagendar</Button>
+                          <Button variant="destructive" onClick={handleCancelAppointment}>Cancelar</Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-lg">
-                          <MapPin className="h-5 w-5 text-red-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Local</p>
-                          <p className="font-semibold">{upcomingAppointment.location}</p>
-                          <p className="text-sm text-gray-600">{upcomingAppointment.address}</p>
-                        </div>
+                      <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-100 flex gap-3 text-amber-800 text-sm">
+                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                        <p>Lembre-se de levar um documento original com foto e estar bem alimentado.</p>
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      {!appointmentConfirmed && (
-                        <Button
-                          onClick={handleConfirmAppointment}
-                          className="w-full bg-green-600 hover:bg-green-700"
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Confirmar Presença
-                        </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="p-12 text-center border-dashed border-2 bg-white">
+                    <p className="text-gray-500 mb-4">Você não possui agendamentos ativos.</p>
+                    <Button onClick={handleScheduleClick} className="bg-red-600">Agendar agora</Button>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="historico">
+                <Card className="shadow-md">
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {history.length > 0 ? (
+                        history.map((h) => (
+                          <div key={h.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center font-bold text-xs">
+                                <HistoryIcon className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-gray-900">{h.hemocentro?.nome || 'Agendamento'}</p>
+                                <p className="text-xs text-gray-500 uppercase font-medium">
+                                  {formatDataHora(h).data} às {formatDataHora(h).hora}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge className={
+                              (h.status_agendamento || h.status) === 'CAN'
+                                ? "bg-red-100 text-red-700 border-none"
+                                : "bg-gray-100 text-gray-600 border-none"
+                            }>
+                              {(h.status_agendamento || h.status) === 'CAN' ? 'Cancelado' : 'Substituído'}
+                            </Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-8 text-center text-gray-500">Nenhum histórico encontrado.</div>
                       )}
-                      <Button
-                        onClick={handleReschedule}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        <Clock className="h-4 w-4 mr-2" />
-                        Reagendar
-                      </Button>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-            {/* Schedule New */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Agendar Nova Doação</CardTitle>
-                <CardDescription>
-                  Selecione uma data disponível para sua próxima doação
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row gap-6">
-                  <div className="flex justify-center">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      className="rounded-md border"
-                      disabled={(date) => date < new Date() || date.getDay() === 0}
-                    />
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <div>
-                      <h4 className="font-semibold mb-2">Horários Disponíveis</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {timeSlots.map((time) => (
-                          <Button key={time} variant="outline" size="sm">
-                            {time}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    <Button className="w-full bg-red-600 hover:bg-red-700">
-                      Confirmar Agendamento
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* History Tab */}
-          <TabsContent value="history">
-            <Card>
-              <CardHeader>
-                <CardTitle>Histórico de Doações</CardTitle>
-                <CardDescription>
-                  Todas as suas doações realizadas
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {donationHistory.map((donation) => (
-                    <div
-                      key={donation.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="bg-red-100 p-3 rounded-lg">
-                          <Droplet className="h-5 w-5 text-red-600" />
+              <TabsContent value="doacoes">
+                <Card className="shadow-md">
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {donations.length > 0 ? (
+                        donations.map((d) => (
+                          <div key={d.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center">
+                                <Droplet className="w-6 h-6 fill-current" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-gray-900">{d.hemocentro?.nome || 'Doação realizada'}</p>
+                                <p className="text-sm text-gray-500">{format(parseISO(d.data_hora_doacao), "dd/MM/yyyy")}</p>
+                                <p className="text-xs font-bold text-red-600">{d.quantidade}ml coletados</p>
+                              </div>
+                            </div>
+                            <Badge className="bg-green-600 text-white">Sucesso</Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-12 text-center text-gray-500">
+                          <Droplet className="w-12 h-12 text-gray-200 mx-auto mb-2" />
+                          <p>Nenhuma bolsa de sangue coletada ainda.</p>
                         </div>
-                        <div>
-                          <p className="font-semibold">
-                            {new Date(donation.date).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'long',
-                              year: 'numeric'
-                            })}
-                          </p>
-                          <p className="text-sm text-gray-600">{donation.location}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-red-600">{donation.bloodAmount}</p>
-                        <Badge variant="outline" className="mt-1 border-green-600 text-green-600">
-                          {donation.status}
-                        </Badge>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
 
-          {/* Profile Tab */}
-          <TabsContent value="profile">
-            <Card>
+          <div className="space-y-6">
+            <Card className="shadow-md border border-blue-100 bg-blue-50/50">
               <CardHeader>
-                <CardTitle>Informações Pessoais</CardTitle>
-                <CardDescription>
-                  Seus dados cadastrais
-                </CardDescription>
+                <CardTitle className="text-lg text-blue-900">Dicas Pré-Doação</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center gap-4 pb-6 border-b">
-                  <Avatar className="h-20 w-20">
-                    <AvatarFallback className="bg-red-100 text-red-600 text-2xl">
-                      {user.name.split(' ').map(n => n[0]).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h3 className="text-xl font-semibold">{user.name}</h3>
-                    <p className="text-gray-600">{user.email}</p>
-                    <Badge className="mt-2 bg-red-600">Doador Ativo</Badge>
-                  </div>
+              <CardContent className="space-y-4">
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-blue-200 rounded flex items-center justify-center text-blue-700 shrink-0 font-bold">1</div>
+                  <p className="text-blue-800">Beba bastante água nas 24h anteriores.</p>
                 </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-600">CPF</p>
-                      <p className="font-semibold">{user.cpf}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Telefone</p>
-                      <p className="font-semibold">{user.phone}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Tipo Sanguíneo</p>
-                      <p className="font-semibold">{user.bloodType}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Total de Doações</p>
-                      <p className="font-semibold">{user.donationCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Última Doação</p>
-                      <p className="font-semibold">
-                        {new Date(user.lastDonation || '').toLocaleDateString('pt-BR')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Cadastro desde</p>
-                      <p className="font-semibold">Janeiro 2024</p>
-                    </div>
-                  </div>
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-orange-200 rounded flex items-center justify-center text-orange-700 shrink-0 font-bold">2</div>
+                  <p className="text-blue-800">Evite alimentos gordurosos 3h antes da doação.</p>
                 </div>
-
-                <div className="pt-6 border-t">
-                  <Button variant="outline" className="gap-2" onClick={handleEditProfile}>
-                    <User className="h-4 w-4" />
-                    Editar Perfil
-                  </Button>
+                <div className="flex gap-3 text-sm items-start">
+                  <div className="w-6 h-6 bg-purple-200 rounded flex items-center justify-center text-purple-700 shrink-0 font-bold">3</div>
+                  <p className="text-blue-800">Durma pelo menos 6h na noite anterior.</p>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+
+            <Card className="shadow-md border border-gray-200 bg-gray-50">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-lg font-bold text-gray-900">Meu Perfil</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setEditProfileDialogOpen(true)} className="text-red-600 hover:bg-red-50">
+                  <Edit className="w-4 h-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-3 text-sm text-gray-700"><Mail className="w-4 h-4 text-gray-400" /> {user.email}</div>
+                <div className="flex items-center gap-3 text-sm text-gray-700"><Phone className="w-4 h-4 text-gray-400" /> {user.telefone || 'Não informado'}</div>
+                <div className="flex items-center gap-3 text-sm text-gray-700"><UserIcon className="w-4 h-4 text-gray-400" /> CPF: {user.cpf || 'Não informado'}</div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </main>
 
-      {/* Reschedule Dialog */}
+      {/* Dialog Reagendar */}
       <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Reagendar Doação</DialogTitle>
-            <DialogDescription>
-              Selecione uma nova data e horário para sua doação
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <Calendar
-                mode="single"
-                selected={rescheduleDate}
-                onSelect={setRescheduleDate}
-                className="rounded-md border"
-                disabled={(date) => date < new Date() || date.getDay() === 0}
-              />
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reagendar Doação</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Nova Data</Label>
+              <Input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)} min={new Date().toISOString().split('T')[0]} />
             </div>
             <div>
-              <Label htmlFor="time">Horário</Label>
-              <Select
-                value={rescheduleTime}
-                onValueChange={setRescheduleTime}
-              >
-                <SelectTrigger id="time">
-                  <SelectValue placeholder="Selecione um horário" />
-                </SelectTrigger>
-                <SelectContent>
-                  {timeSlots.map((time) => (
-                    <SelectItem key={time} value={time}>
-                      {time}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Horário</Label>
+              <select className="w-full border rounded-md p-2" value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)}>
+                <option value="">Selecione</option>
+                {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </div>
             <div>
-              <Label htmlFor="location">Local</Label>
-              <Select
-                value={rescheduleLocation}
-                onValueChange={setRescheduleLocation}
-              >
-                <SelectTrigger id="location">
-                  <SelectValue placeholder="Selecione um local" />
-                </SelectTrigger>
-                <SelectContent>
-                  {bloodCenters.map((center) => (
-                    <SelectItem key={center.value} value={center.value}>
-                      {center.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Hemocentro</Label>
+              <select className="w-full border rounded-md p-2" value={rescheduleLocation} onChange={e => setRescheduleLocation(e.target.value)}>
+                <option value="">Selecione</option>
+                {hemocentros.map((h: any) => (
+                  <option key={h.id} value={h.id}>{h.nome}</option>
+                ))}
+              </select>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRescheduleDialogOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleRescheduleConfirm}
-            >
-              Reagendar
+            <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleRescheduleConfirm} className="bg-red-600 hover:bg-red-700 text-white">Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Editar Perfil */}
+      <Dialog open={editProfileDialogOpen} onOpenChange={setEditProfileDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Editar Perfil</DialogTitle>
+            <DialogDescription>Atualize suas informações cadastrais.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Nome Completo</Label>
+              <Input value={profileData.name} onChange={e => setProfileData({...profileData, name: e.target.value})} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>E-mail</Label>
+                <Input type="email" value={profileData.email} onChange={e => setProfileData({...profileData, email: e.target.value})} />
+              </div>
+              <div>
+                <Label>Telefone</Label>
+                <Input placeholder="(XX) XXXXX-XXXX" value={profileData.telefone} onChange={e => setProfileData({...profileData, telefone: e.target.value})} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Tipo Sanguíneo</Label>
+                <Select value={profileData.tipo_sang} onValueChange={v => setProfileData({...profileData, tipo_sang: v})}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Sexo</Label>
+                <Select value={profileData.sexo} onValueChange={v => setProfileData({...profileData, sexo: v})}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Masculino</SelectItem>
+                    <SelectItem value="F">Feminino</SelectItem>
+                    <SelectItem value="Outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditProfileDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleEditProfileConfirm} className="bg-red-600 hover:bg-red-700 text-white">
+              <Save className="w-4 h-4 mr-2" /> Salvar Alterações
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Profile Dialog */}
-      <Dialog open={editProfileDialogOpen} onOpenChange={setEditProfileDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+      {/* Dialog Meus Certificados */}
+      <Dialog open={certificatesDialogOpen} onOpenChange={setCertificatesDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Editar Perfil</DialogTitle>
+            <DialogTitle>Meus Certificados</DialogTitle>
             <DialogDescription>
-              Atualize suas informações pessoais
+              Baixe os certificados das suas doações concluídas.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="name">Nome</Label>
-              <Input
-                id="name"
-                value={profileData.name}
-                onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                value={profileData.email}
-                onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="phone">Telefone</Label>
-              <Input
-                id="phone"
-                value={profileData.phone}
-                onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-              />
-            </div>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            {isLoadingCertificates ? (
+              <div className="text-center py-4 text-gray-500">Carregando certificados...</div>
+            ) : certificates.length > 0 ? (
+              <div className="space-y-3">
+                {certificates.map((cert) => (
+                  <div key={cert.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-50 text-red-600 rounded-full flex items-center justify-center">
+                        <Award className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">
+                          {cert.hemocentro?.nome || cert.nome_hemocentro || 'Doação'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {cert.data_hora_doacao ? format(parseISO(cert.data_hora_doacao), "dd/MM/yyyy") : cert.data_doacao}
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleDownloadCertificate(cert.id)}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      Baixar PDF
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Award className="w-12 h-12 text-gray-200 mx-auto mb-2" />
+                <p>Nenhum certificado disponível.</p>
+                <p className="text-xs mt-1">Realize uma doação para gerar certificados.</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setEditProfileDialogOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleEditProfileConfirm}
-            >
-              Salvar
-            </Button>
+            <Button variant="outline" onClick={() => setCertificatesDialogOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

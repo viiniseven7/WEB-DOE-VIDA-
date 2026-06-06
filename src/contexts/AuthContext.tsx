@@ -1,150 +1,150 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-
-export type UserRole = 'donor' | 'staff' | 'director' | 'admin';
+import api from '../services/api';
 
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
-  role: UserRole;
-  bloodType?: string;
-  phone?: string;
-  cpf?: string;
-  donationCount?: number;
-  lastDonation?: string;
-  hemocenterId?: string;
-  hemocentroName?: string;
+  role_id: number | null;
+  tempo_restricao?: string;
+  roles: string[];
+  permissions: string[];
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<User | null>;
+  signup: (data: any) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
 
-export interface SignupData {
-  email: string;
-  password: string;
-  name: string;
-  role?: UserRole;
-  bloodType?: string;
-  phone?: string;
-  cpf?: string;
-  hemocenterId?: string;
-  hemocentroName?: string;
-}
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-f9f63502`;
+const roleMap: Record<number, string> = {
+  1: 'doador',
+  2: 'funcionario',
+  3: 'diretor',
+  4: 'admin',
+};
+
+const normalizeRoleName = (role: any) => {
+  const raw = typeof role === 'string'
+    ? role
+    : role?.name || role?.nome || role?.slug || role?.role || '';
+
+  const normalized = String(raw)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (['staff', 'employee', 'colaborador', 'enfermeiro'].includes(normalized)) {
+    return 'funcionario';
+  }
+
+  return normalized;
+};
+
+const resolveRoles = (payload: any) => {
+  const userData = payload?.user ?? payload;
+  const roleId = Number(userData?.role_id ?? payload?.role_id);
+  const apiRoles = Array.isArray(payload?.roles) ? payload.roles : userData?.roles;
+  const normalizedRoles = Array.isArray(apiRoles)
+    ? apiRoles.map(normalizeRoleName).filter(Boolean)
+    : [];
+
+  if (normalizedRoles.length > 0) return normalizedRoles;
+  if (roleMap[roleId]) return [roleMap[roleId]];
+  return ['doador'];
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing session on mount
+  // 🔄 AUTO LOGIN
   useEffect(() => {
     const checkSession = async () => {
-      const accessToken = localStorage.getItem('access_token');
-      
-      if (accessToken) {
+      const token = localStorage.getItem('token');
+
+      if (token) {
         try {
-          const response = await fetch(`${API_URL}/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-            },
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+          const response = await api.get('/auth/me');
+
+          const roles = resolveRoles(response.data);
+
+          const permissions = Array.isArray(response.data.permissions) ? response.data.permissions : [];
+          setUser({
+            ...response.data.user,
+            roles,
+            permissions,
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-          } else {
-            // Token invalid, clear it
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-          }
-        } catch (error) {
-          console.error('Error checking session:', error);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+        } catch {
+          localStorage.removeItem('token');
         }
       }
-      
+
       setIsLoading(false);
     };
-
     checkSession();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  // 🔐 LOGIN
+  const login = async (email: string, password: string) => {
     try {
-      const response = await fetch(`${API_URL}/auth/signin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const res = await api.post('/auth/login', { email, password });
 
-      const data = await response.json();
+      localStorage.setItem('token', res.data.token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
 
-      if (response.ok) {
-        setUser(data.user);
-        localStorage.setItem('access_token', data.session.access_token);
-        localStorage.setItem('refresh_token', data.session.refresh_token);
-        sessionStorage.setItem('justLoggedIn', 'true');
-        return true;
-      } else {
-        console.error('Login error:', data.error);
-        return false;
-      }
+      const roles = resolveRoles(res.data);
+
+      const permissions = Array.isArray(res.data.permissions) ? res.data.permissions : [];
+      const userData = {
+        ...res.data.user,
+        roles,
+        permissions,
+      };
+
+      setUser(userData);
+      return userData;
+
     } catch (error) {
-      console.error('Login request error:', error);
-      return false;
+      console.error(error);
+      return null;
     }
   };
 
-  const signup = async (signupData: SignupData): Promise<{ success: boolean; error?: string }> => {
+  // 📝 REGISTER
+  const signup = async (data: any): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_URL}/auth/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(signupData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Erro ao criar conta' };
-      }
-    } catch (error) {
-      console.error('Signup request error:', error);
-      return { success: false, error: 'Erro ao conectar com o servidor' };
+      await api.post('/auth/register', data);
+      return true;
+    } catch (error: any) {
+      console.error('ERROS DE VALIDAÇÃO:', JSON.stringify(error.response?.data, null, 2));
+      throw error;
     }
   };
 
+  // 🚪 LOGOUT
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common['Authorization'];
+    window.location.href = '/login';
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      login, 
+    <AuthContext.Provider value={{
+      user,
+      login,
       signup,
-      logout, 
+      logout,
       isAuthenticated: !!user,
       isLoading,
     }}>
@@ -155,8 +155,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

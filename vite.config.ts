@@ -73,5 +73,12 @@ function figmaAssetResolver() {
     server: {
       port: 3000,
       open: true,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:54321',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, '/make-server-f9f63502'),
+        },
+      },
     },
   });

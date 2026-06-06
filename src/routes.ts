@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter } from "react-router-dom";
 import { Root } from "./components/Root";
 import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
@@ -6,10 +6,12 @@ import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { EligibilityTestPage } from "./components/EligibilityTestPage";
 import { RegistrationDonationPage } from "./components/RegistrationDonationPage";
+import { AppointmentPage } from "./components/AppointmentPage";
 import { DonorDashboard } from "./components/dashboards/DonorDashboard";
 import { StaffDashboard } from "./components/dashboards/StaffDashboard";
 import { DirectorDashboard } from "./components/dashboards/DirectorDashboard";
 import { AdminDashboard } from "./components/dashboards/AdminDashboard";
+import { CustomRoleDashboard } from "./components/dashboards/CustomRoleDashboard";
 import { NotFound } from "./components/NotFound";
 
 export const router = createBrowserRouter([
@@ -23,10 +25,12 @@ export const router = createBrowserRouter([
       { path: "reset-password", Component: ResetPasswordPage },
       { path: "teste-elegibilidade", Component: EligibilityTestPage },
       { path: "cadastro-doacao", Component: RegistrationDonationPage },
-      { path: "dashboard/donor", Component: DonorDashboard },
-      { path: "dashboard/staff", Component: StaffDashboard },
-      { path: "dashboard/director", Component: DirectorDashboard },
+      { path: "agendar", Component: AppointmentPage },
+      { path: "dashboard/doador", Component: DonorDashboard },
+      { path: "dashboard/funcionario", Component: StaffDashboard },
+      { path: "dashboard/diretor", Component: DirectorDashboard },
       { path: "dashboard/admin", Component: AdminDashboard },
+      { path: "dashboard/custom", Component: CustomRoleDashboard },
       { path: "*", Component: NotFound },
     ],
   },
