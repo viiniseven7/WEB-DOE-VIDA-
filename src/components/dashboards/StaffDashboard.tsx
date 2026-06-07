@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -379,12 +379,12 @@ const emptyStaffStats = {
   agendamentos_semana: {} as Record<string, number>,
 };
 
-// ─── Componente ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function StaffDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
 
-  // ── Estado: dados da API
+  // â”€â”€ Estado: dados da API
   const [hemocentros, setHemocentros] = useState<any[]>([]);
   const [agendamentos, setAgendamentos] = useState<any[]>([]);
   const [doadores, setDoadores] = useState<any[]>([]);
@@ -392,13 +392,13 @@ export function StaffDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  // ── Estado: API de Estoque
+  // â”€â”€ Estado: API de Estoque
   const [stock, setStock] = useState<any[]>([]);
   const [doacoes, setDoacoes] = useState<any[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  // ── Busca
+  // â”€â”€ Busca
   const [searchTerm, setSearchTerm] = useState('');
   const [donorSearchTerm, setDonorSearchTerm] = useState('');
   const [donorBloodTypeFilter, setDonorBloodTypeFilter] = useState('');
@@ -420,7 +420,7 @@ export function StaffDashboard() {
     totalPages: 0
   });
 
-  // ── Dialogs
+  // â”€â”€ Dialogs
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedAgendamento, setSelectedAgendamento] = useState<any>(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
@@ -432,7 +432,7 @@ export function StaffDashboard() {
     observacoes: '',
     ml_coletados: '450',
   });
-  // Estados para triagem clínica dinâmica
+  // Estados para triagem clÃ­nica dinÃ¢mica
   const [perguntas, setPerguntas] = useState<any[]>([]);
   const [respostasTriagem, setRespostasTriagem] = useState<Record<number, number>>({});
   const [sinaisVitais, setSinaisVitais] = useState({
@@ -492,7 +492,7 @@ export function StaffDashboard() {
   const [stockUpdatedDonationIds, setStockUpdatedDonationIds] = useState<Array<number | string>>([]);
   const [stockDonationsExpanded, setStockDonationsExpanded] = useState(false);
 
-  // Alerta médico
+  // Alerta mÃ©dico
   const [alertaDialogOpen, setAlertaDialogOpen]     = useState(false);
   const [alertaDoador, setAlertaDoador]             = useState<any>(null);
   const [alertaForm, setAlertaForm]                 = useState({
@@ -500,7 +500,7 @@ export function StaffDashboard() {
     notificacao_doador: '',
   });
 
-  // Histórico tipo sanguíneo
+  // HistÃ³rico tipo sanguÃ­neo
   const [tipoSangDialogOpen, setTipoSangDialogOpen] = useState(false);
   const [tipoSangDoador, setTipoSangDoador]         = useState<any>(null);
   const [tipoSangHistorico, setTipoSangHistorico]   = useState<any[]>([]);
@@ -509,7 +509,7 @@ export function StaffDashboard() {
     categoria_motivo: '',
   });
 
-  // ─── Guard ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -518,7 +518,7 @@ export function StaffDashboard() {
     }
   }, [user, navigate]);
 
-  // ─── Fetch ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
@@ -537,7 +537,7 @@ export function StaffDashboard() {
       api.get('/hemocentros'),
       api.get('/agendamentos'),
       api.get('/users'),
-      api.get('/doacoes'),
+      api.get('/doacoes', { params: { data: new Date().toISOString().split('T')[0] } }),
       api.get('/estoque'),
       api.get('/estatisticas/funcionario'),
       api.get('/triagens/perguntas?bloco=1'),
@@ -625,12 +625,12 @@ export function StaffDashboard() {
       console.warn('Erro ao carregar estoque:', stockResult.reason?.response?.data || stockResult.reason);
     }
 
-    // Estatísticas
+    // EstatÃ­sticas
     if (statsResult.status === 'fulfilled') {
       const statsRes = statsResult.value;
       setStats({ ...emptyStaffStats, ...statsRes.data });
     } else {
-      console.warn('Erro ao carregar estatísticas:', statsResult.reason?.reason?.response?.data || statsResult.reason);
+      console.warn('Erro ao carregar estatÃ­sticas:', statsResult.reason?.reason?.response?.data || statsResult.reason);
       setStats(emptyStaffStats);
     }
 
@@ -641,7 +641,7 @@ export function StaffDashboard() {
 
   if (!user || (Number(user.role_id) !== 2 && !getUserRoles(user).includes('funcionario'))) return null;
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hemocentroNomeResolvido =
     user.hemocentro?.nome ||
     user.hemocentroName ||
@@ -681,7 +681,7 @@ export function StaffDashboard() {
       CON: { label: 'Confirmado', color: 'bg-green-100 text-green-600' },
       CAN: { label: 'Cancelado',  color: 'bg-red-100 text-red-600'     },
       FIN: { label: 'Finalizado', color: 'bg-gray-100 text-gray-600'   },
-      DOA: { label: 'Doação realizada', color: 'bg-green-600 text-white' },
+      DOA: { label: 'DoaÃ§Ã£o realizada', color: 'bg-green-600 text-white' },
       E:   { label: 'Reagendado', color: 'bg-yellow-100 text-yellow-600'},
     };
     return map[status] || { label: status, color: 'bg-gray-100 text-gray-600' };
@@ -809,7 +809,7 @@ export function StaffDashboard() {
   );
   const hasPendingStockUpdates = pendingDonationStockUpdates.length > 0;
 
-  // ─── Handlers: Agendamentos ───────────────────────────────────────────────
+  // â”€â”€â”€ Handlers: Agendamentos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleConfirmar = async (agend: any) => {
     if (isDemoAppointment(agend)) {
@@ -931,7 +931,7 @@ export function StaffDashboard() {
         const triagemId = triagem.id || triagem.triagem_id;
 
         if (!triagemId) {
-          throw new Error('A API não retornou o ID da triagem criada.');
+          throw new Error('A API nÃ£o retornou o ID da triagem criada.');
         }
 
         await api.post('/auth/doacoes', {
@@ -948,7 +948,7 @@ export function StaffDashboard() {
 
       await api.post(`/auth/agendamentos/${selectedAgendamento.id}/confirmar`);
 
-      toast.success(triagemData.apto ? 'Doação registrada com sucesso!' : 'Triagem registrada — doador inapto');
+      toast.success(triagemData.apto ? 'DoaÃ§Ã£o registrada com sucesso!' : 'Triagem registrada â€” doador inapto');
       setTriagemDialogOpen(false);
       setSelectedAgendamento(null);
       setAgendamentos((prev) =>
@@ -963,18 +963,18 @@ export function StaffDashboard() {
     }
   };
 
-  // ─── Handlers: Doadores ───────────────────────────────────────────────────
+  // â”€â”€â”€ Handlers: Doadores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleRegistrarTriagem = async () => {
     if (!selectedAgendamento) return;
     const agendamentoId = selectedAgendamento.id;
 
-    // Validar que todas as perguntas obrigatórias foram respondidas
+    // Validar que todas as perguntas obrigatÃ³rias foram respondidas
     const naoRespondidas = perguntas.filter(
       p => p.obrigatoria && !respostasTriagem[p.id]
     );
     if (naoRespondidas.length > 0) {
-      toast.error(`Responda todas as perguntas obrigatórias (${naoRespondidas.length} pendentes)`);
+      toast.error(`Responda todas as perguntas obrigatÃ³rias (${naoRespondidas.length} pendentes)`);
       return;
     }
 
@@ -987,17 +987,17 @@ export function StaffDashboard() {
         }
       : aptidaoFormal;
 
-    // Validar aptidão
+    // Validar aptidÃ£o
     if (!aptidaoParaEnvio.resultado) {
-      toast.error('Selecione o resultado da aptidão');
+      toast.error('Selecione o resultado da aptidÃ£o');
       return;
     }
     if (aptidaoParaEnvio.resultado !== 'apto' && !aptidaoParaEnvio.categoria_inaptidao) {
-      toast.error('Selecione a categoria de inaptidão');
+      toast.error('Selecione a categoria de inaptidÃ£o');
       return;
     }
     if (aptidaoParaEnvio.resultado === 'inapto_temporario' && !aptidaoParaEnvio.valido_ate) {
-      toast.error('Informe até quando dura a inaptidão temporária');
+      toast.error('Informe atÃ© quando dura a inaptidÃ£o temporÃ¡ria');
       return;
     }
 
@@ -1050,7 +1050,7 @@ export function StaffDashboard() {
       const hemocentroId = getHemocentroId(selectedAgendamento) || getHemocentroId(user);
 
       if (!agendamentoUserId) {
-        toast.error('Não foi possível identificar o doador deste agendamento.');
+        toast.error('NÃ£o foi possÃ­vel identificar o doador deste agendamento.');
         return;
       }
 
@@ -1066,7 +1066,7 @@ export function StaffDashboard() {
         opcao_id:    Number(opcao_id),
       }));
 
-      // Montar aptidão
+      // Montar aptidÃ£o
       const aptidaoPayload: Record<string, any> = {
         resultado:            aptidaoParaEnvio.resultado,
         observacoes_internas: aptidaoParaEnvio.observacoes_internas || null,
@@ -1112,10 +1112,10 @@ export function StaffDashboard() {
         }
       }
 
-      if (!triagemId) throw new Error('Não foi possível identificar o ID da triagem.');
+      if (!triagemId) throw new Error('NÃ£o foi possÃ­vel identificar o ID da triagem.');
 
       if (apto) {
-        // Registrar doação
+        // Registrar doaÃ§Ã£o
         const doacaoPayload = {
           agendamento_id:    agendamentoId,
           triagem_id:        triagemId,
@@ -1142,12 +1142,12 @@ export function StaffDashboard() {
         });
         doacaoCriadaParaEstoque = doacaoParaLista;
         setStockDonationsExpanded(true);
-        toast.success('Doação registrada com sucesso!');
+        toast.success('DoaÃ§Ã£o registrada com sucesso!');
       } else {
-        toast.info('Triagem registrada — doador inapto para doação nesta data.');
+        toast.info('Triagem registrada â€” doador inapto para doaÃ§Ã£o nesta data.');
       }
 
-      // Confirmar agendamento após triagem
+      // Confirmar agendamento apÃ³s triagem
       await api.post(`/auth/agendamentos/${agendamentoId}/confirmar`);
 
       // Resetar estados do dialog
@@ -1338,7 +1338,7 @@ export function StaffDashboard() {
       }
     } catch (err) {
       console.error('Erro ao buscar doadores:', err);
-      toast.error('Erro ao buscar doadores. Verifique sua conexão.');
+      toast.error('Erro ao buscar doadores. Verifique sua conexÃ£o.');
     } finally {
       setIsSearchingDonors(false);
     }
@@ -1395,7 +1395,7 @@ export function StaffDashboard() {
     }
   };
 
-  // ─── Handlers: Estoque ────────────────────────────────────────────────────
+  // â”€â”€â”€ Handlers: Estoque â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
@@ -1407,7 +1407,7 @@ export function StaffDashboard() {
 
   const handleOpenDonationStockUpdate = (doacao: any) => {
     if (!doacao) {
-      toast.info('Não há doação pendente para atualizar no estoque.');
+      toast.info('NÃ£o hÃ¡ doaÃ§Ã£o pendente para atualizar no estoque.');
       return;
     }
 
@@ -1427,7 +1427,7 @@ export function StaffDashboard() {
 
   const handleUpdateStock = async () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) {
-      toast.error('Digite uma quantidade válida');
+      toast.error('Digite uma quantidade vÃ¡lida');
       return;
     }
     const amount = parseInt(stockAmount);
@@ -1471,7 +1471,7 @@ export function StaffDashboard() {
         );
       }
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} â€” ${selectedBloodType}`);
       setUpdateStockDialogOpen(false);
       setStockSourceDonation(null);
       return;
@@ -1485,7 +1485,7 @@ export function StaffDashboard() {
         doacao_id: stockSourceDonation?.id || undefined,
       });
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} â€” ${selectedBloodType}`);
       if (stockSourceDonation?.id) {
         const donationId = stockSourceDonation.id;
         setStockUpdatedDonationIds((prev) =>
@@ -1525,7 +1525,7 @@ export function StaffDashboard() {
         tipo_alerta:        alertaForm.tipo_alerta,
         notificacao_doador: alertaForm.notificacao_doador,
       });
-      toast.success('Alerta médico criado com sucesso.');
+      toast.success('Alerta mÃ©dico criado com sucesso.');
       setAlertaDialogOpen(false);
     } catch (err: any) {
       toast.error('Erro ao criar alerta: ' + (err.response?.data?.message || 'Tente novamente'));
@@ -1551,17 +1551,17 @@ export function StaffDashboard() {
     }
     try {
       await api.post(`/auth/doadores/${tipoSangDoador.id}/tipo-sangue-historico`, tipoSangForm);
-      toast.success('Tipo sanguíneo atualizado com sucesso.');
+      toast.success('Tipo sanguÃ­neo atualizado com sucesso.');
       setTipoSangDialogOpen(false);
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erro ao atualizar tipo sanguíneo');
+      toast.error(err.response?.data?.message || 'Erro ao atualizar tipo sanguÃ­neo');
     }
   };
 
   const handleLogoutClick = () => { logout(); navigate('/'); };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
 
@@ -1574,7 +1574,7 @@ export function StaffDashboard() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">DoaVida</h1>
-              <p className="text-xs text-gray-600">Painel do Funcionário</p>
+              <p className="text-xs text-gray-600">Painel do FuncionÃ¡rio</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -1599,13 +1599,13 @@ export function StaffDashboard() {
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80 p-0">
                 <div className="border-b px-4 py-3">
-                  <p className="text-sm font-semibold text-gray-900">Atualizações do hemocentro</p>
+                  <p className="text-sm font-semibold text-gray-900">AtualizaÃ§Ãµes do hemocentro</p>
                   <p className="text-xs text-gray-500">{hemocentroNome}</p>
                 </div>
                 <div className="divide-y">
                   {notifications.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-gray-500">
-                      Nenhuma atualização recente disponível.
+                      Nenhuma atualizaÃ§Ã£o recente disponÃ­vel.
                     </div>
                   ) : notifications.map((notification) => (
                     <div key={notification.id} className="px-4 py-3">
@@ -1640,8 +1640,8 @@ export function StaffDashboard() {
       <main className="container mx-auto px-4 py-8">
         {/* Welcome */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! 👋</h2>
-          <p className="text-gray-600">{hemocentroNome} — Gerencie as doações e o estoque</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">OlÃ¡, {user.name?.split(' ')[0]}! ðŸ‘‹</h2>
+          <p className="text-gray-600">{hemocentroNome} â€” Gerencie as doaÃ§Ãµes e o estoque</p>
         </div>
 
         {/* Stats */}
@@ -1654,7 +1654,7 @@ export function StaffDashboard() {
           </Card>
 
           <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="pb-3"><CardDescription>Concluídos (Hoje)</CardDescription>
+            <CardHeader className="pb-3"><CardDescription>ConcluÃ­dos (Hoje)</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : concluidos}</CardTitle>
             </CardHeader>
             <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><CheckCircle2 className="h-4 w-4 text-green-600" /><span>{concluidos * 450}ml coletados</span></div></CardContent>
@@ -1668,7 +1668,7 @@ export function StaffDashboard() {
           </Card>
 
           <Card className="border-l-4 border-l-purple-600">
-            <CardHeader className="pb-3"><CardDescription>Doações do Mês</CardDescription>
+            <CardHeader className="pb-3"><CardDescription>DoaÃ§Ãµes do MÃªs</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes}</CardTitle>
             </CardHeader>
             <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Users className="h-4 w-4 text-purple-600" /><span>Registradas no hemocentro</span></div></CardContent>
@@ -1683,13 +1683,13 @@ export function StaffDashboard() {
             <TabsTrigger value="donors">Doadores</TabsTrigger>
           </TabsList>
 
-          {/* ── Agenda ── */}
+          {/* â”€â”€ Agenda â”€â”€ */}
           <TabsContent value="schedule" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="grid w-full grid-cols-1 items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
                   <div className="justify-self-start">
-                    <CardTitle>Agenda de Doações</CardTitle>
+                    <CardTitle>Agenda de DoaÃ§Ãµes</CardTitle>
                     <CardDescription>{filteredAgendamentos.length} agendamentos listados</CardDescription>
                   </div>
 
@@ -1742,7 +1742,7 @@ export function StaffDashboard() {
                       const doador = getResolvedAppointmentDonor(agend);
                       const doacaoRealizada = isDoacaoRealizada(agend);
                       const statusInfo = doacaoRealizada
-                        ? { label: 'Doação realizada', color: 'bg-green-600 text-white' }
+                        ? { label: 'DoaÃ§Ã£o realizada', color: 'bg-green-600 text-white' }
                         : getStatusLabel(statusAgend);
                       const ativo = !doacaoRealizada && ['AGE', 'CON'].includes(statusAgend);
                       const podeReabrir = canReabrirAgendamento(agend);
@@ -1770,7 +1770,7 @@ export function StaffDashboard() {
                                 )}
                                 {doacaoRealizada && (
                                   <p className="text-sm text-green-600 font-semibold mt-1 flex items-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> Doação realizada
+                                    <CheckCircle2 className="h-3 w-3" /> DoaÃ§Ã£o realizada
                                   </p>
                                 )}
                                 {statusAgend === 'CAN' && (
@@ -1817,20 +1817,20 @@ export function StaffDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Estoque ── */}
+          {/* â”€â”€ Estoque â”€â”€ */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <div>
                   <CardTitle>Estoque de Sangue</CardTitle>
-                  <CardDescription>Monitoramento por tipo sanguíneo e lançamento manual por doação</CardDescription>
+                  <CardDescription>Monitoramento por tipo sanguÃ­neo e lanÃ§amento manual por doaÃ§Ã£o</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className={`rounded-lg border p-4 ${hasPendingStockUpdates ? 'border-red-100 bg-red-50' : 'border-green-100 bg-green-50'}`}>
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-red-900">Doações de hoje aguardando estoque</p>
+                      <p className="text-sm font-semibold text-red-900">DoaÃ§Ãµes de hoje aguardando estoque</p>
                       
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1839,8 +1839,8 @@ export function StaffDashboard() {
                       </Badge>
                       <Badge className="w-fit border border-gray-200 bg-white text-gray-700">
                         {todayDonationStockUpdates.length === 1
-                          ? '1 doação'
-                          : `${todayDonationStockUpdates.length} doações`}
+                          ? '1 doaÃ§Ã£o'
+                          : `${todayDonationStockUpdates.length} doaÃ§Ãµes`}
                       </Badge>
                       {todayDonationStockUpdates.length > 0 && (
                         <Button
@@ -1851,7 +1851,7 @@ export function StaffDashboard() {
                           onClick={() => setStockDonationsExpanded((prev) => !prev)}
                         >
                           <ChevronDown className={`h-4 w-4 transition-transform ${stockDonationsExpanded ? 'rotate-180' : ''}`} />
-                          {stockDonationsExpanded ? 'Ocultar' : 'Ver Doações'}
+                          {stockDonationsExpanded ? 'Ocultar' : 'Ver DoaÃ§Ãµes'}
                         </Button>
                       )}
                     </div>
@@ -1862,7 +1862,7 @@ export function StaffDashboard() {
                       {todayDonationStockUpdates.map((doacao: any) => {
                         const donor = getDonationDonor(doacao, doadores);
                         const donorName = donor?.name || donor?.nome || doacao?.doador?.name || doacao?.user?.name || `Doador #${getDonationDonorId(doacao) || doacao.id}`;
-                        const bloodType = doacao?.tipo_sangue || getDonorBloodType(donor) || 'Não informado';
+                        const bloodType = doacao?.tipo_sangue || getDonorBloodType(donor) || 'NÃ£o informado';
                         const amount = Number(doacao?.quantidade || 0);
                         const donationDate = new Date(doacao?.data_hora_doacao || doacao?.atualizado_em || Date.now());
                         const stockUpdated = isDonationStockUpdated(doacao);
@@ -1879,7 +1879,7 @@ export function StaffDashboard() {
                               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                                 <span>Tipo: <strong>{bloodType}</strong></span>
                                 <span>Quantidade: <strong>{amount} ml</strong></span>
-                                <span>Horário: <strong>{donationDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                                <span>HorÃ¡rio: <strong>{donationDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
                               </div>
                             </div>
                             {stockUpdated ? (
@@ -1898,7 +1898,7 @@ export function StaffDashboard() {
                       })}
                     </div>
                   ) : todayDonationStockUpdates.length === 0 ? (
-                    <p className="mt-4 text-sm text-red-700">Nenhuma doação de hoje aguardando lançamento no estoque.</p>
+                    <p className="mt-4 text-sm text-red-700">Nenhuma doaÃ§Ã£o de hoje aguardando lanÃ§amento no estoque.</p>
                   ) : null}
                 </div>
 
@@ -1910,10 +1910,10 @@ export function StaffDashboard() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
-                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
+                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguÃ­neo</p></div>
                           </div>
                           <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                            {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
+                            {critico ? 'CrÃ­tico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
                           </Badge>
                         </div>
                         <div className="space-y-2">
@@ -1926,7 +1926,7 @@ export function StaffDashboard() {
                               style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Mín: {item.min}</span><span>Máx: {item.max}</span>
+                            <span>MÃ­n: {item.min}</span><span>MÃ¡x: {item.max}</span>
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t">
@@ -1942,12 +1942,12 @@ export function StaffDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Doadores ── */}
+          {/* â”€â”€ Doadores â”€â”€ */}
           <TabsContent value="donors" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Buscar Doador</CardTitle>
-                <CardDescription>Busque doadores com filtros avançados e gerencie informações</CardDescription>
+                <CardDescription>Busque doadores com filtros avanÃ§ados e gerencie informaÃ§Ãµes</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Filtros Principais */}
@@ -1966,7 +1966,7 @@ export function StaffDashboard() {
                     </div>
                   </div>
                   <div>
-                    <Label>Tipo Sanguíneo</Label>
+                    <Label>Tipo SanguÃ­neo</Label>
                     <Select
                       value={donorBloodTypeFilter || 'todos'}
                       onValueChange={v => setDonorBloodTypeFilter(v === 'todos' ? '' : v)}
@@ -1980,7 +1980,7 @@ export function StaffDashboard() {
                   </div>
                 </div>
 
-                {/* Filtros Avançados (Grid) */}
+                {/* Filtros AvanÃ§ados (Grid) */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2 border-t mt-4">
                   <div className="space-y-2">
                     <Label className="text-xs uppercase text-gray-500">Sexo</Label>
@@ -2010,10 +2010,10 @@ export function StaffDashboard() {
 
                 </div>
 
-                {/* Filtro de Data de Última Doação */}
+                {/* Filtro de Data de Ãšltima DoaÃ§Ã£o */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-xs uppercase text-gray-500">Última doação (período)</Label>
+                    <Label className="text-xs uppercase text-gray-500">Ãšltima doaÃ§Ã£o (perÃ­odo)</Label>
                     <div className="flex gap-2 items-center">
                       <Input 
                         type="date" 
@@ -2021,7 +2021,7 @@ export function StaffDashboard() {
                         onChange={e => setDonorLastDonationSince(e.target.value)}
                         className="h-9 text-xs"
                       />
-                      <span className="text-gray-400">até</span>
+                      <span className="text-gray-400">atÃ©</span>
                       <Input 
                         type="date" 
                         value={donorLastDonationUntil} 
@@ -2061,7 +2061,7 @@ export function StaffDashboard() {
                       </h3>
                       {donorPagination.totalPages > 1 && (
                         <div className="flex items-center gap-2 text-sm text-gray-500">
-                          Página {donorPagination.page} de {donorPagination.totalPages}
+                          PÃ¡gina {donorPagination.page} de {donorPagination.totalPages}
                         </div>
                       )}
                     </div>
@@ -2113,7 +2113,7 @@ export function StaffDashboard() {
                                       {donor.lastDonation && (
                                         <p className="text-xs text-blue-600 flex items-center gap-1">
                                           <Droplet className="h-3 w-3" />
-                                          Última doação: {new Date(donor.lastDonation).toLocaleDateString('pt-BR')}
+                                          Ãšltima doaÃ§Ã£o: {new Date(donor.lastDonation).toLocaleDateString('pt-BR')}
                                         </p>
                                       )}
                                     </div>
@@ -2148,7 +2148,7 @@ export function StaffDashboard() {
                                         className="w-full justify-start text-amber-600 hover:text-amber-700 hover:bg-amber-50"
                                         onClick={() => handleAbrirAlerta(donor)}
                                       >
-                                        <AlertCircle className="h-4 w-4 mr-2" />Criar Alerta Médico
+                                        <AlertCircle className="h-4 w-4 mr-2" />Criar Alerta MÃ©dico
                                       </Button>
                                       <Button
                                         size="sm"
@@ -2156,7 +2156,7 @@ export function StaffDashboard() {
                                         className="w-full justify-start text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                         onClick={() => handleAbrirTipoSang(donor)}
                                       >
-                                        <Activity className="h-4 w-4 mr-2" />Histórico Tipo Sang
+                                        <Activity className="h-4 w-4 mr-2" />HistÃ³rico Tipo Sang
                                       </Button>
                                     </PopoverContent>
                                   </Popover>
@@ -2166,7 +2166,7 @@ export function StaffDashboard() {
                           ))}
                         </div>
 
-                        {/* Paginação */}
+                        {/* PaginaÃ§Ã£o */}
                         {donorPagination.totalPages > 1 && (
                           <div className="flex items-center justify-center gap-2 pt-4">
                             <Button
@@ -2197,7 +2197,7 @@ export function StaffDashboard() {
                               onClick={() => handleSearchDonor(donorPagination.page + 1)}
                               disabled={donorPagination.page === donorPagination.totalPages || isSearchingDonors}
                             >
-                              Próxima
+                              PrÃ³xima
                             </Button>
                           </div>
                         )}
@@ -2211,7 +2211,7 @@ export function StaffDashboard() {
         </Tabs>
       </main>
 
-      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
+      {/* â•â•â• DIALOGS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
 
       {/* Cancelar Agendamento */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
@@ -2229,10 +2229,10 @@ export function StaffDashboard() {
               <Select value={cancelMotivo} onValueChange={setCancelMotivo}>
                 <SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nao_compareceu">Não compareceu</SelectItem>
-                  <SelectItem value="inaptidao">Inaptidão clínica</SelectItem>
-                  <SelectItem value="nao_elegivel">Não elegível</SelectItem>
-                  <SelectItem value="solicitacao_doador">Solicitação do doador</SelectItem>
+                  <SelectItem value="nao_compareceu">NÃ£o compareceu</SelectItem>
+                  <SelectItem value="inaptidao">InaptidÃ£o clÃ­nica</SelectItem>
+                  <SelectItem value="nao_elegivel">NÃ£o elegÃ­vel</SelectItem>
+                  <SelectItem value="solicitacao_doador">SolicitaÃ§Ã£o do doador</SelectItem>
                   <SelectItem value="outro">Outro</SelectItem>
                 </SelectContent>
               </Select>
@@ -2247,11 +2247,11 @@ export function StaffDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Registrar Doação / Triagem */}
+      {/* Registrar DoaÃ§Ã£o / Triagem */}
       <Dialog open={triagemDialogOpen} onOpenChange={setTriagemDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Triagem Clínica</DialogTitle>
+            <DialogTitle>Triagem ClÃ­nica</DialogTitle>
             <DialogDescription>
               Doador: <strong>{selectedAgendamento?.doador?.name}</strong>
               {selectedAgendamento?.doador?.tipo_sang && (
@@ -2270,11 +2270,11 @@ export function StaffDashboard() {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { key: 'peso',               label: 'Peso (kg)',         placeholder: 'Ex: 70' },
-                  { key: 'pressao_diastolica',  label: 'Pressão diastólica',placeholder: 'Ex: 80' },
-                  { key: 'temperatura',         label: 'Temperatura (°C)',  placeholder: 'Ex: 36.5' },
-                  { key: 'frequencia_cardiaca', label: 'Freq. cardíaca (bpm)', placeholder: 'Ex: 72' },
+                  { key: 'pressao_diastolica',  label: 'PressÃ£o diastÃ³lica',placeholder: 'Ex: 80' },
+                  { key: 'temperatura',         label: 'Temperatura (Â°C)',  placeholder: 'Ex: 36.5' },
+                  { key: 'frequencia_cardiaca', label: 'Freq. cardÃ­aca (bpm)', placeholder: 'Ex: 72' },
                   { key: 'hemoglobina',         label: 'Hemoglobina (g/dL)',placeholder: 'Ex: 14.2' },
-                  { key: 'hematocrito',         label: 'Hematócrito (%)',   placeholder: 'Ex: 42' },
+                  { key: 'hematocrito',         label: 'HematÃ³crito (%)',   placeholder: 'Ex: 42' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key}>
                     <Label className="text-xs">{label}</Label>
@@ -2292,8 +2292,8 @@ export function StaffDashboard() {
 
             {[
               { bloco: 1, titulo: 'Estado Geral no Dia' },
-              { bloco: 3, titulo: 'Histórico de Saúde Recente' },
-              { bloco: 4, titulo: 'Histórico Comportamental' },
+              { bloco: 3, titulo: 'HistÃ³rico de SaÃºde Recente' },
+              { bloco: 4, titulo: 'HistÃ³rico Comportamental' },
             ].map(({ bloco, titulo }) => {
               const perguntasBloco = perguntas.filter(p => p.bloco === bloco);
               if (perguntasBloco.length === 0) return null;
@@ -2355,7 +2355,7 @@ export function StaffDashboard() {
 
             <div className="space-y-3 border-t pt-4">
               <h4 className="font-semibold text-sm uppercase tracking-wide text-gray-500">
-                Conclusão da Triagem *
+                ConclusÃ£o da Triagem *
               </h4>
               {triagemAutomatica.motivos.length > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -2368,7 +2368,7 @@ export function StaffDashboard() {
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { value: 'apto',              label: 'Apto',           color: 'border-green-400 bg-green-50 text-green-700' },
-                  { value: 'inapto_temporario', label: 'Inapto Temporário', color: 'border-amber-400 bg-amber-50 text-amber-700' },
+                  { value: 'inapto_temporario', label: 'Inapto TemporÃ¡rio', color: 'border-amber-400 bg-amber-50 text-amber-700' },
                   { value: 'inapto_definitivo', label: 'Inapto Definitivo', color: 'border-red-400 bg-red-50 text-red-700' },
                 ].map(opt => (
                   <button
@@ -2387,27 +2387,27 @@ export function StaffDashboard() {
               {aptidaoFormal.resultado !== 'apto' && (
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs">Categoria da inaptidão *</Label>
+                    <Label className="text-xs">Categoria da inaptidÃ£o *</Label>
                     <select
                       className="w-full border rounded-md p-2 text-sm mt-1"
                       value={aptidaoFormal.categoria_inaptidao}
                       onChange={e => setAptidaoFormal(prev => ({ ...prev, categoria_inaptidao: e.target.value }))}
                     >
                       <option value="">Selecione</option>
-                      <option value="sinais_vitais_fora_do_padrao">Sinais vitais fora do padrão</option>
-                      <option value="intervalo_minimo_nao_cumprido">Intervalo mínimo não cumprido</option>
-                      <option value="medicamento_incompativel">Medicamento incompatível</option>
+                      <option value="sinais_vitais_fora_do_padrao">Sinais vitais fora do padrÃ£o</option>
+                      <option value="intervalo_minimo_nao_cumprido">Intervalo mÃ­nimo nÃ£o cumprido</option>
+                      <option value="medicamento_incompativel">Medicamento incompatÃ­vel</option>
                       <option value="cirurgia_recente">Cirurgia recente</option>
-                      <option value="viagem_area_de_risco">Viagem para área de risco</option>
+                      <option value="viagem_area_de_risco">Viagem para Ã¡rea de risco</option>
                       <option value="comportamento_de_risco">Comportamento de risco</option>
-                      <option value="condicao_clinica_na_triagem">Condição clínica na triagem</option>
-                      <option value="resultado_sorologico_alterado">Resultado sorológico alterado</option>
+                      <option value="condicao_clinica_na_triagem">CondiÃ§Ã£o clÃ­nica na triagem</option>
+                      <option value="resultado_sorologico_alterado">Resultado sorolÃ³gico alterado</option>
                       <option value="outro">Outro</option>
                     </select>
                   </div>
                   {aptidaoFormal.resultado === 'inapto_temporario' && (
                     <div>
-                      <Label className="text-xs">Inapto até *</Label>
+                      <Label className="text-xs">Inapto atÃ© *</Label>
                       <Input
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
@@ -2420,11 +2420,11 @@ export function StaffDashboard() {
               )}
 
               <div>
-                <Label className="text-xs">Observações internas (visível só para funcionários)</Label>
+                <Label className="text-xs">ObservaÃ§Ãµes internas (visÃ­vel sÃ³ para funcionÃ¡rios)</Label>
                 <textarea
                   className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                   rows={2}
-                  placeholder="Observações clínicas relevantes..."
+                  placeholder="ObservaÃ§Ãµes clÃ­nicas relevantes..."
                   value={aptidaoFormal.observacoes_internas}
                   onChange={e => setAptidaoFormal(prev => ({ ...prev, observacoes_internas: e.target.value }))}
                 />
@@ -2444,7 +2444,7 @@ export function StaffDashboard() {
       <Dialog open={false} onOpenChange={setTriagemDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Triagem Médica e Coleta</DialogTitle>
+            <DialogTitle>Triagem MÃ©dica e Coleta</DialogTitle>
             <DialogDescription>Doador: {selectedAgendamento?.user?.name}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2452,22 +2452,22 @@ export function StaffDashboard() {
               <div className="bg-blue-50 p-3 rounded-lg text-sm">
                 <p className="font-semibold">{selectedAgendamento.user?.name}</p>
                 <p className="text-gray-600">
-                  Tipo: <strong>{selectedAgendamento.user?.tipo_sang || 'Não informado'}</strong>
-                  {' '}• {formatDataHora(selectedAgendamento).hora}
+                  Tipo: <strong>{selectedAgendamento.user?.tipo_sang || 'NÃ£o informado'}</strong>
+                  {' '}â€¢ {formatDataHora(selectedAgendamento).hora}
                 </p>
               </div>
             )}
 
             <div>
-              <Label>Aptidão para Doação *</Label>
+              <Label>AptidÃ£o para DoaÃ§Ã£o *</Label>
               <Select
                 value={triagemData.apto ? 'true' : 'false'}
                 onValueChange={v => setTriagemData({ ...triagemData, apto: v === 'true', motivo_inaptidao: '' })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="true">✅ Apto — doação realizada</SelectItem>
-                  <SelectItem value="false">❌ Inapto — doação não realizada</SelectItem>
+                  <SelectItem value="true">âœ… Apto â€” doaÃ§Ã£o realizada</SelectItem>
+                  <SelectItem value="false">âŒ Inapto â€” doaÃ§Ã£o nÃ£o realizada</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2477,24 +2477,24 @@ export function StaffDashboard() {
                 <Label>Volume Coletado (ml)</Label>
                 <Input type="number" min="100" max="600" value={triagemData.ml_coletados}
                   onChange={e => setTriagemData({ ...triagemData, ml_coletados: e.target.value })} />
-                <p className="text-xs text-gray-400 mt-1">Padrão: 450ml</p>
+                <p className="text-xs text-gray-400 mt-1">PadrÃ£o: 450ml</p>
               </div>
             )}
 
             {!triagemData.apto && (
               <div>
-                <Label>Motivo da Inaptidão *</Label>
+                <Label>Motivo da InaptidÃ£o *</Label>
                 <Select value={triagemData.motivo_inaptidao}
                   onValueChange={v => setTriagemData({ ...triagemData, motivo_inaptidao: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pressao_arterial">Pressão arterial alterada</SelectItem>
+                    <SelectItem value="pressao_arterial">PressÃ£o arterial alterada</SelectItem>
                     <SelectItem value="hemoglobina_baixa">Hemoglobina baixa</SelectItem>
                     <SelectItem value="febre">Febre</SelectItem>
                     <SelectItem value="medicamento">Uso de medicamento</SelectItem>
                     <SelectItem value="tatuagem_recente">Tatuagem/piercing recente</SelectItem>
                     <SelectItem value="cirurgia_recente">Cirurgia recente</SelectItem>
-                    <SelectItem value="doacao_recente">Doação recente (intervalo mínimo)</SelectItem>
+                    <SelectItem value="doacao_recente">DoaÃ§Ã£o recente (intervalo mÃ­nimo)</SelectItem>
                     <SelectItem value="outro">Outro</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2502,15 +2502,15 @@ export function StaffDashboard() {
             )}
 
             <div>
-              <Label>Observações</Label>
-              <Textarea placeholder="Observações da triagem..." value={triagemData.observacoes}
+              <Label>ObservaÃ§Ãµes</Label>
+              <Textarea placeholder="ObservaÃ§Ãµes da triagem..." value={triagemData.observacoes}
                 onChange={e => setTriagemData({ ...triagemData, observacoes: e.target.value })} />
             </div>
 
             {!triagemData.apto && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2 text-amber-800 text-sm">
                 <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <p>O agendamento será finalizado e o doador notificado sobre a inaptidão.</p>
+                <p>O agendamento serÃ¡ finalizado e o doador notificado sobre a inaptidÃ£o.</p>
               </div>
             )}
           </div>
@@ -2519,7 +2519,7 @@ export function StaffDashboard() {
             <Button onClick={handleRegistrarTriagem}
               className={triagemData.apto ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}>
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              {triagemData.apto ? 'Confirmar Doação' : 'Registrar Inaptidão'}
+              {triagemData.apto ? 'Confirmar DoaÃ§Ã£o' : 'Registrar InaptidÃ£o'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2536,7 +2536,7 @@ export function StaffDashboard() {
                 <p className="text-gray-600">{selectedDonor.email}</p>
               </div>
               <div>
-                <Label>Tipo Sanguíneo</Label>
+                <Label>Tipo SanguÃ­neo</Label>
                 <Select value={editDonorData.tipo_sang} onValueChange={v => setEditDonorData({ ...editDonorData, tipo_sang: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
@@ -2561,11 +2561,11 @@ export function StaffDashboard() {
                 </Select>
               </div>
               <div>
-                <Label>Restrição até (data)</Label>
+                <Label>RestriÃ§Ã£o atÃ© (data)</Label>
                 <Input type="date" value={editDonorData.tempo_restricao}
                   onChange={e => setEditDonorData({ ...editDonorData, tempo_restricao: e.target.value })}
                   min={new Date().toISOString().split('T')[0]} />
-                <p className="text-xs text-gray-400 mt-1">Deixe em branco para não alterar</p>
+                <p className="text-xs text-gray-400 mt-1">Deixe em branco para nÃ£o alterar</p>
               </div>
             </div>
           )}
@@ -2578,13 +2578,13 @@ export function StaffDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog — Alerta Médico */}
+      {/* Dialog â€” Alerta MÃ©dico */}
       <Dialog open={alertaDialogOpen} onOpenChange={setAlertaDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Criar Alerta Médico</DialogTitle>
+            <DialogTitle>Criar Alerta MÃ©dico</DialogTitle>
             <DialogDescription>
-              Doador: <strong>{alertaDoador?.name}</strong> — a mensagem será exibida ao doador sem diagnóstico exposto.
+              Doador: <strong>{alertaDoador?.name}</strong> â€” a mensagem serÃ¡ exibida ao doador sem diagnÃ³stico exposto.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2595,8 +2595,8 @@ export function StaffDashboard() {
                 value={alertaForm.tipo_alerta}
                 onChange={e => setAlertaForm(prev => ({ ...prev, tipo_alerta: e.target.value as any }))}
               >
-                <option value="resultado_sorologico">Resultado sorológico</option>
-                <option value="convocacao_retorno">Convocação para retorno</option>
+                <option value="resultado_sorologico">Resultado sorolÃ³gico</option>
+                <option value="convocacao_retorno">ConvocaÃ§Ã£o para retorno</option>
                 <option value="outro">Outro</option>
               </select>
             </div>
@@ -2605,11 +2605,11 @@ export function StaffDashboard() {
               <textarea
                 className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                 rows={4}
-                placeholder="Ex: Identificamos uma alteração nos exames realizados após sua doação. Por favor, compareça ao hemocentro para uma reavaliação..."
+                placeholder="Ex: Identificamos uma alteraÃ§Ã£o nos exames realizados apÃ³s sua doaÃ§Ã£o. Por favor, compareÃ§a ao hemocentro para uma reavaliaÃ§Ã£o..."
                 value={alertaForm.notificacao_doador}
                 onChange={e => setAlertaForm(prev => ({ ...prev, notificacao_doador: e.target.value }))}
               />
-              <p className="text-xs text-gray-400 mt-1">Não inclua diagnósticos ou informações clínicas específicas.</p>
+              <p className="text-xs text-gray-400 mt-1">NÃ£o inclua diagnÃ³sticos ou informaÃ§Ãµes clÃ­nicas especÃ­ficas.</p>
             </div>
           </div>
           <DialogFooter>
@@ -2621,33 +2621,33 @@ export function StaffDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog — Histórico Tipo Sanguíneo */}
+      {/* Dialog â€” HistÃ³rico Tipo SanguÃ­neo */}
       <Dialog open={tipoSangDialogOpen} onOpenChange={setTipoSangDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Tipo Sanguíneo</DialogTitle>
+            <DialogTitle>Tipo SanguÃ­neo</DialogTitle>
             <DialogDescription>
-              Doador: <strong>{tipoSangDoador?.name}</strong> — Tipo atual: <strong className="text-red-600">{tipoSangDoador?.tipo_sang || 'Não informado'}</strong>
+              Doador: <strong>{tipoSangDoador?.name}</strong> â€” Tipo atual: <strong className="text-red-600">{tipoSangDoador?.tipo_sang || 'NÃ£o informado'}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {tipoSangHistorico.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-gray-500">Histórico de alterações</Label>
+                <Label className="text-xs uppercase tracking-wide text-gray-500">HistÃ³rico de alteraÃ§Ãµes</Label>
                 <div className="divide-y border rounded-md max-h-40 overflow-y-auto">
                   {tipoSangHistorico.map((h, i) => (
                     <div key={i} className="p-2 text-xs flex justify-between items-center">
-                      <span>{h.tipo_sangue_anterior || '—'} → <strong>{h.tipo_sangue_novo}</strong></span>
-                      <span className="text-gray-400">{h.alterado_por} · {new Date(h.alterado_em).toLocaleDateString('pt-BR')}</span>
+                      <span>{h.tipo_sangue_anterior || 'â€”'} â†’ <strong>{h.tipo_sangue_novo}</strong></span>
+                      <span className="text-gray-400">{h.alterado_por} Â· {new Date(h.alterado_em).toLocaleDateString('pt-BR')}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
             <div className="space-y-3 border-t pt-3">
-              <Label className="text-xs uppercase tracking-wide text-gray-500">Registrar alteração</Label>
+              <Label className="text-xs uppercase tracking-wide text-gray-500">Registrar alteraÃ§Ã£o</Label>
               <div>
-                <Label className="text-xs">Novo tipo sanguíneo *</Label>
+                <Label className="text-xs">Novo tipo sanguÃ­neo *</Label>
                 <select
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.tipo_sangue_novo}
@@ -2660,7 +2660,7 @@ export function StaffDashboard() {
                 </select>
               </div>
               <div>
-                <Label className="text-xs">Motivo da alteração *</Label>
+                <Label className="text-xs">Motivo da alteraÃ§Ã£o *</Label>
                 <select
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.categoria_motivo}
@@ -2668,9 +2668,9 @@ export function StaffDashboard() {
                 >
                   <option value="">Selecione</option>
                   <option value="erro_cadastro">Erro de cadastro</option>
-                  <option value="confirmacao_laboratorial">Confirmação laboratorial</option>
-                  <option value="retificacao_com_laudo">Retificação com laudo</option>
-                  <option value="retificacao_profissional">Retificação pelo profissional</option>
+                  <option value="confirmacao_laboratorial">ConfirmaÃ§Ã£o laboratorial</option>
+                  <option value="retificacao_com_laudo">RetificaÃ§Ã£o com laudo</option>
+                  <option value="retificacao_profissional">RetificaÃ§Ã£o pelo profissional</option>
                 </select>
               </div>
             </div>
@@ -2682,7 +2682,7 @@ export function StaffDashboard() {
               onClick={handleSalvarTipoSang}
               disabled={!tipoSangForm.tipo_sangue_novo || !tipoSangForm.categoria_motivo}
             >
-              Salvar Alteração
+              Salvar AlteraÃ§Ã£o
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2699,19 +2699,19 @@ export function StaffDashboard() {
         }}
       >
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Atualizar Estoque â€” {selectedBloodType}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             {stockSourceDonation && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                <p className="font-semibold">Preenchido pela doação selecionada para lançamento</p>
+                <p className="font-semibold">Preenchido pela doaÃ§Ã£o selecionada para lanÃ§amento</p>
                 <p>
-                  {stockSourceDonation?.doador?.name || stockSourceDonation?.user?.name || 'Doador'} —{' '}
+                  {stockSourceDonation?.doador?.name || stockSourceDonation?.user?.name || 'Doador'} â€”{' '}
                   {new Date(stockSourceDonation?.data_hora_doacao).toLocaleString('pt-BR')}
                 </p>
               </div>
             )}
             <div>
-              <Label>Ação</Label>
+              <Label>AÃ§Ã£o</Label>
               <Select value={stockAction} onValueChange={v => setStockAction(v as 'add' | 'remove')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -2741,4 +2741,5 @@ export function StaffDashboard() {
     </div>
   );
 }
+
 

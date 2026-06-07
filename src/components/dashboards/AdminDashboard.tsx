@@ -942,7 +942,8 @@ export function AdminDashboard() {
     toast.info('Gerando relatório PDF...');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:8000/api${endpoint}?${params.toString()}`, {
+      const apiBase = import.meta.env.VITE_API_URL || 'https://api-doe-vida-production.up.railway.app/api';
+      const res = await fetch(`${apiBase}${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -2687,4 +2688,6 @@ export function AdminDashboard() {
     </div>
   );
 }
+
+
 

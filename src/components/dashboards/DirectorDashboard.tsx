@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -24,7 +24,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 
-// ─── Cores para Gráficos ───────────────────────────────────────────────────
+// â”€â”€â”€ Cores para GrÃ¡ficos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const BLOOD_COLORS: Record<string, string> = {
   'O+': '#DC2626', 'A+': '#EA580C', 'B+': '#CA8A04', 'AB+': '#16A34A',
@@ -47,7 +47,7 @@ const emptyDirectorStats = {
 };
 
 const roleLabels: Record<number, string> = {
-  1: 'Doador', 2: 'Funcionário', 3: 'Diretor', 4: 'Admin',
+  1: 'Doador', 2: 'FuncionÃ¡rio', 3: 'Diretor', 4: 'Admin',
 };
 
 const roleNames: Record<string, string> = {
@@ -57,13 +57,13 @@ const roleNames: Record<string, string> = {
   '4': 'admin',
 };
 
-// ─── Componente ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function DirectorDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
 
-  // ── Estado: dados da API
+  // â”€â”€ Estado: dados da API
   const [hemocentros, setHemocentros] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [agendamentosHoje, setAgendamentosHoje] = useState<any[]>([]);
@@ -73,31 +73,31 @@ export function DirectorDashboard() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  // ── Estado: API de Estoque
+  // â”€â”€ Estado: API de Estoque
   const [stock, setStock] = useState<any[]>([]);
 
-  // ── Dialogs
+  // â”€â”€ Dialogs
   const [addStaffDialogOpen, setAddStaffDialogOpen] = useState(false);
   const [updateStockDialogOpen, setUpdateStockDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [deleteStaffDialogOpen, setDeleteStaffDialogOpen] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState<any>(null);
 
-  // ── Formulário novo funcionário
+  // â”€â”€ FormulÃ¡rio novo funcionÃ¡rio
   const [newStaff, setNewStaff] = useState({
     name: '', email: '', cpf: '', password: '', role_id: '2',
   });
 
-  // ── Estoque
+  // â”€â”€ Estoque
   const [selectedBloodType, setSelectedBloodType] = useState('');
   const [stockAction, setStockAction] = useState<'add' | 'remove'>('add');
   const [stockAmount, setStockAmount] = useState('');
 
-  // ── Relatório
+  // â”€â”€ RelatÃ³rio
   const [reportType, setReportType] = useState('');
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
-  // ─── Guard ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -106,12 +106,12 @@ export function DirectorDashboard() {
     }
   }, [user, navigate]);
 
-  // ─── Fetch ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
     try {
-      // Executa as chamadas individualmente para que uma falha não cancele todas
+      // Executa as chamadas individualmente para que uma falha nÃ£o cancele todas
       const fetchHemocentros = api.get('/hemocentros').catch(err => {
         console.error('Erro em /hemocentros:', err.response?.data || err.message);
         return { data: [] };
@@ -147,7 +147,7 @@ export function DirectorDashboard() {
         ? usersRes.data
         : usersRes.data.data ?? [];
 
-      // Filtra por mesmo hemocentro e papéis de staff/diretor
+      // Filtra por mesmo hemocentro e papÃ©is de staff/diretor
       const staff = todosUsers.filter(
         (u: any) =>
           Number(u.hemocentro_id) === Number(user.hemocentro_id) &&
@@ -183,12 +183,12 @@ export function DirectorDashboard() {
         max: 150
       })));
 
-      // Trata o invólucro 'data' comum no Laravel
+      // Trata o invÃ³lucro 'data' comum no Laravel
       const realStats = statsRes.data?.data || statsRes.data || {};
       setStats({ ...emptyDirectorStats, ...realStats });
 
     } catch (err: any) {
-      console.error('Erro crítico no fetchData:', err);
+      console.error('Erro crÃ­tico no fetchData:', err);
       toast.error('Erro ao carregar dados do painel');
     } finally {
       setIsLoading(false);
@@ -199,18 +199,18 @@ export function DirectorDashboard() {
 
   if (!user || (user.role_id !== 3 && !user.roles?.includes('diretor'))) return null;
 
-  // ─── Handlers ─────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleLogoutClick = () => { logout(); navigate('/'); toast.success('Logout realizado'); };
 
   const handleAddStaff = async () => {
     if (!newStaff.name || !newStaff.email || !newStaff.cpf || !newStaff.password) {
-      toast.error('Preencha todos os campos obrigatórios');
+      toast.error('Preencha todos os campos obrigatÃ³rios');
       return;
     }
 
     if (!user.hemocentro_id) {
-      toast.error('Erro: diretor não está vinculado a um hemocentro');
+      toast.error('Erro: diretor nÃ£o estÃ¡ vinculado a um hemocentro');
       return;
     }
 
@@ -226,7 +226,7 @@ export function DirectorDashboard() {
       };
 
       await api.post('/auth/users', payload);
-      toast.success(`Funcionário ${newStaff.name} criado com sucesso!`);
+      toast.success(`FuncionÃ¡rio ${newStaff.name} criado com sucesso!`);
       setAddStaffDialogOpen(false);
       setNewStaff({ name: '', email: '', cpf: '', password: '', role_id: '2' });
       await fetchData();
@@ -235,7 +235,7 @@ export function DirectorDashboard() {
       if (erros) {
         toast.error(Object.values(erros).flat().join('\n'));
       } else {
-        toast.error(err.response?.data?.message || 'Erro ao criar funcionário');
+        toast.error(err.response?.data?.message || 'Erro ao criar funcionÃ¡rio');
       }
     }
   };
@@ -244,12 +244,12 @@ export function DirectorDashboard() {
     if (!staffToDelete) return;
     try {
       await api.delete(`/users/${staffToDelete.id}`);
-      toast.success('Funcionário removido!');
+      toast.success('FuncionÃ¡rio removido!');
       setDeleteStaffDialogOpen(false);
       setStaffToDelete(null);
       fetchData();
     } catch {
-      toast.error('Erro ao remover funcionário');
+      toast.error('Erro ao remover funcionÃ¡rio');
     }
   };
 
@@ -262,7 +262,7 @@ export function DirectorDashboard() {
 
   const handleUpdateStock = async () => {
     if (!stockAmount || parseInt(stockAmount) <= 0) {
-      toast.error('Digite uma quantidade válida');
+      toast.error('Digite uma quantidade vÃ¡lida');
       return;
     }
     const amount = parseInt(stockAmount);
@@ -275,7 +275,7 @@ export function DirectorDashboard() {
         quantidade: valueToSend,
       });
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} â€” ${selectedBloodType}`);
       setUpdateStockDialogOpen(false);
       fetchData();
     } catch (err: any) {
@@ -285,7 +285,7 @@ export function DirectorDashboard() {
 
 
   const handleExportReport = async () => {
-    if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
+    if (!reportType) { toast.error('Selecione um tipo de relatÃ³rio'); return; }
 
     const endpoints: Record<string, string> = {
       doacoes:      '/relatorios/doacoes/pdf',
@@ -304,13 +304,14 @@ export function DirectorDashboard() {
     };
 
     const endpoint = endpoints[reportType];
-    if (!endpoint) { toast.error('Tipo não disponível'); return; }
+    if (!endpoint) { toast.error('Tipo nÃ£o disponÃ­vel'); return; }
 
     setIsDownloadingReport(true);
-    toast.info('Gerando relatório PDF...');
+    toast.info('Gerando relatÃ³rio PDF...');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:8000/api${endpoint}`, {
+      const apiBase = import.meta.env.VITE_API_URL || 'https://api-doe-vida-production.up.railway.app/api';
+      const res = await fetch(`${apiBase}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -321,17 +322,17 @@ export function DirectorDashboard() {
       link.download = `relatorio-${nomes[reportType]}-${new Date().toISOString().split('T')[0]}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success('Relatório gerado com sucesso!');
+      toast.success('RelatÃ³rio gerado com sucesso!');
       setExportDialogOpen(false);
       setReportType('');
     } catch {
-      toast.error('Erro ao gerar relatório. Verifique se o servidor está rodando.');
+      toast.error('Erro ao gerar relatÃ³rio. Verifique se o servidor estÃ¡ rodando.');
     } finally {
       setIsDownloadingReport(false);
     }
   };
 
-  // ─── Computados ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Computados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hemocentro = user.hemocentro || {};
   const hemocentroNomeResolvido =
     hemocentro.nome ||
@@ -341,7 +342,7 @@ export function DirectorDashboard() {
   const hemocentroNome = hemocentroNomeResolvido
     ? `Hemocentro ${hemocentroNomeResolvido}`
     : `Hemocentro vinculado (#${user.hemocentro_id})`;
-  const hemocentroLocal = hemocentro.cidade ? `${hemocentro.cidade}, ${hemocentro.uf || ''}` : 'Localização não informada';
+  const hemocentroLocal = hemocentro.cidade ? `${hemocentro.cidade}, ${hemocentro.uf || ''}` : 'LocalizaÃ§Ã£o nÃ£o informada';
 
   const presencasHoje = stats.confirmados_hoje || 0;
   const totalAgendados = stats.agendamentos_hoje || 0;
@@ -369,14 +370,14 @@ export function DirectorDashboard() {
     ? stats.doacoes_por_mes.map((item: any) => ({ month: item.mes, donations: item.total }))
     : [];
 
-  // O gráfico de pizza reflete o ESTOQUE REAL (stock)
+  // O grÃ¡fico de pizza reflete o ESTOQUE REAL (stock)
   const bloodTypeStats = stock.map(item => ({
     name: item.type,
     value: item.current,
     color: BLOOD_COLORS[item.type] || '#DC2626',
   })).filter(item => item.value > 0);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50">
 
@@ -414,13 +415,13 @@ export function DirectorDashboard() {
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80 p-0">
                 <div className="border-b px-4 py-3">
-                  <p className="text-sm font-semibold text-gray-900">Atualizações do hemocentro</p>
+                  <p className="text-sm font-semibold text-gray-900">AtualizaÃ§Ãµes do hemocentro</p>
                   <p className="text-xs text-gray-500">{hemocentroNome}</p>
                 </div>
                 <div className="divide-y">
                   {notifications.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-gray-500">
-                      Nenhuma atualização recente disponível.
+                      Nenhuma atualizaÃ§Ã£o recente disponÃ­vel.
                     </div>
                   ) : notifications.map((notification) => (
                     <div key={notification.id} className="px-4 py-3">
@@ -458,12 +459,12 @@ export function DirectorDashboard() {
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              Olá, {user.name?.split(' ')[0]}! 👋
+              OlÃ¡, {user.name?.split(' ')[0]}! ðŸ‘‹
             </h2>
-            <p className="text-gray-600">{hemocentroNome} — {hemocentroLocal}</p>
+            <p className="text-gray-600">{hemocentroNome} â€” {hemocentroLocal}</p>
           </div>
           <Button onClick={() => setExportDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
-            <Download className="h-4 w-4" />Exportar Relatório
+            <Download className="h-4 w-4" />Exportar RelatÃ³rio
           </Button>
         </div>
 
@@ -471,13 +472,13 @@ export function DirectorDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="pb-3">
-              <CardDescription>Doações Este Mês</CardDescription>
+              <CardDescription>DoaÃ§Ãµes Este MÃªs</CardDescription>
               <CardTitle className="text-3xl">{isLoading ? '...' : stats.doacoes_mes || 0}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-green-600">
                 <TrendingUp className="h-4 w-4" />
-                <span>{stats.crescimento_mes ? `${stats.crescimento_mes}% vs mês anterior` : 'Acompanhamento em tempo real'}</span>
+                <span>{stats.crescimento_mes ? `${stats.crescimento_mes}% vs mÃªs anterior` : 'Acompanhamento em tempo real'}</span>
               </div>
             </CardContent>
           </Card>
@@ -503,14 +504,14 @@ export function DirectorDashboard() {
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar className="h-4 w-4 text-green-600" />
-                <span>{presencasHoje} presenças registradas</span>
+                <span>{presencasHoje} presenÃ§as registradas</span>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-orange-600">
             <CardHeader className="pb-3">
-              <CardDescription>Estoque Crítico</CardDescription>
+              <CardDescription>Estoque CrÃ­tico</CardDescription>
               <CardTitle className="text-3xl text-red-600">
                 {stats.estoque_critico?.length || 0}
               </CardTitle>
@@ -518,7 +519,7 @@ export function DirectorDashboard() {
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-red-600">
                 <Droplet className="h-4 w-4" />
-                <span>tipos abaixo do mínimo</span>
+                <span>tipos abaixo do mÃ­nimo</span>
               </div>
             </CardContent>
           </Card>
@@ -527,20 +528,20 @@ export function DirectorDashboard() {
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 lg:w-auto">
-            <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="staff">Funcionários</TabsTrigger>
+            <TabsTrigger value="overview">VisÃ£o Geral</TabsTrigger>
+            <TabsTrigger value="staff">FuncionÃ¡rios</TabsTrigger>
             <TabsTrigger value="stock">Estoque</TabsTrigger>
-            <TabsTrigger value="reports">Relatórios</TabsTrigger>
+            <TabsTrigger value="reports">RelatÃ³rios</TabsTrigger>
           </TabsList>
 
-          {/* ── Visão Geral ── */}
+          {/* â”€â”€ VisÃ£o Geral â”€â”€ */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               {monthlyStats.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Evolução de Doações</CardTitle>
-                    <CardDescription>Volumes processados (Últimos meses)</CardDescription>
+                    <CardTitle>EvoluÃ§Ã£o de DoaÃ§Ãµes</CardTitle>
+                    <CardDescription>Volumes processados (Ãšltimos meses)</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
@@ -558,8 +559,8 @@ export function DirectorDashboard() {
               {bloodTypeStats.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Distribuição por Tipo Sanguíneo</CardTitle>
-                    <CardDescription>Composição do estoque atual</CardDescription>
+                    <CardTitle>DistribuiÃ§Ã£o por Tipo SanguÃ­neo</CardTitle>
+                    <CardDescription>ComposiÃ§Ã£o do estoque atual</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="h-[300px] w-full">
@@ -605,14 +606,14 @@ export function DirectorDashboard() {
               
               {stats.media_diaria !== null && (
                 <Card>
-                  <CardHeader className="pb-3"><CardDescription>Média Diária</CardDescription><CardTitle className="text-3xl">{stats.media_diaria}</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm text-gray-600">coletas por dia útil</p></CardContent>
+                  <CardHeader className="pb-3"><CardDescription>MÃ©dia DiÃ¡ria</CardDescription><CardTitle className="text-3xl">{stats.media_diaria}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-gray-600">coletas por dia Ãºtil</p></CardContent>
                 </Card>
               )}
 
               {stats.satisfacao !== null && stats.satisfacao > 0 && (
                 <Card>
-                  <CardHeader className="pb-3"><CardDescription>Satisfação</CardDescription><CardTitle className="text-3xl">{stats.satisfacao}</CardTitle></CardHeader>
+                  <CardHeader className="pb-3"><CardDescription>SatisfaÃ§Ã£o</CardDescription><CardTitle className="text-3xl">{stats.satisfacao}</CardTitle></CardHeader>
                   <CardContent><p className="text-sm text-gray-600">de 5.0 estrelas</p></CardContent>
                 </Card>
               )}
@@ -622,24 +623,24 @@ export function DirectorDashboard() {
               <Card className="bg-purple-50 border-purple-100">
                 <CardContent className="py-12 text-center">
                   <BarChart3 className="h-12 w-12 text-purple-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-purple-900">Aguardando dados estatísticos</h3>
-                  <p className="text-purple-600">Os indicadores de performance serão exibidos assim que as primeiras doações forem processadas no sistema.</p>
+                  <h3 className="text-lg font-semibold text-purple-900">Aguardando dados estatÃ­sticos</h3>
+                  <p className="text-purple-600">Os indicadores de performance serÃ£o exibidos assim que as primeiras doaÃ§Ãµes forem processadas no sistema.</p>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
-          {/* ── Funcionários ── */}
+          {/* â”€â”€ FuncionÃ¡rios â”€â”€ */}
           <TabsContent value="staff" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
                     <CardTitle>Equipe do Hemocentro</CardTitle>
-                    <CardDescription>Funcionários e Diretores vinculados a {hemocentroNome}</CardDescription>
+                    <CardDescription>FuncionÃ¡rios e Diretores vinculados a {hemocentroNome}</CardDescription>
                   </div>
                   <Button onClick={() => setAddStaffDialogOpen(true)} className="gap-2 bg-purple-600 hover:bg-purple-700">
-                    <UserPlus className="h-4 w-4" />Adicionar Funcionário
+                    <UserPlus className="h-4 w-4" />Adicionar FuncionÃ¡rio
                   </Button>
                 </div>
               </CardHeader>
@@ -647,7 +648,7 @@ export function DirectorDashboard() {
                 {isLoading ? (
                   <div className="text-center py-8 animate-pulse text-gray-500">Carregando equipe...</div>
                 ) : staffList.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">Nenhum funcionário cadastrado neste hemocentro.</div>
+                  <div className="text-center py-8 text-gray-500">Nenhum funcionÃ¡rio cadastrado neste hemocentro.</div>
                 ) : (
                   <div className="space-y-3">
                     {staffList.map((s: any) => (
@@ -661,7 +662,7 @@ export function DirectorDashboard() {
                           <div>
                             <p className="font-semibold">{s.name}</p>
                             <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-[10px] h-5">{roleLabels[s.role_id] || 'Funcionário'}</Badge>
+                              <Badge variant="secondary" className="text-[10px] h-5">{roleLabels[s.role_id] || 'FuncionÃ¡rio'}</Badge>
                               <p className="text-xs text-gray-400">{s.email}</p>
                             </div>
                           </div>
@@ -688,12 +689,12 @@ export function DirectorDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Estoque ── */}
+          {/* â”€â”€ Estoque â”€â”€ */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Estoque de Sangue</CardTitle>
-                <CardDescription>Status atual por tipo sanguíneo no {hemocentroNome}</CardDescription>
+                <CardDescription>Status atual por tipo sanguÃ­neo no {hemocentroNome}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
@@ -704,10 +705,10 @@ export function DirectorDashboard() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <div className="bg-red-100 p-2 rounded-lg"><Droplet className="h-5 w-5 text-red-600" /></div>
-                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguíneo</p></div>
+                            <div><p className="text-2xl font-bold">{item.type}</p><p className="text-sm text-gray-600">Tipo sanguÃ­neo</p></div>
                           </div>
                           <Badge className={critico ? 'bg-red-100 text-red-600' : item.current < item.min * 1.5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}>
-                            {critico ? 'Crítico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
+                            {critico ? 'CrÃ­tico' : item.current < item.min * 1.5 ? 'Baixo' : 'Normal'}
                           </Badge>
                         </div>
                         <div className="space-y-2">
@@ -720,7 +721,7 @@ export function DirectorDashboard() {
                               style={{ width: `${Math.min((item.current / item.max) * 100, 100)}%` }} />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Mín: {item.min}</span><span>Máx: {item.max}</span>
+                            <span>MÃ­n: {item.min}</span><span>MÃ¡x: {item.max}</span>
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t">
@@ -736,21 +737,21 @@ export function DirectorDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ── Relatórios ── */}
+          {/* â”€â”€ RelatÃ³rios â”€â”€ */}
           <TabsContent value="reports" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Relatórios e Análises</CardTitle>
-                <CardDescription>Gere relatórios detalhados do hemocentro</CardDescription>
+                <CardTitle>RelatÃ³rios e AnÃ¡lises</CardTitle>
+                <CardDescription>Gere relatÃ³rios detalhados do hemocentro</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-4">
                   {[
-                    { icon: BarChart3, title: 'Doações',       desc: 'Coletas, volume, tipos',     value: 'doacoes' },
-                    { icon: Droplet,   title: 'Estoque',        desc: 'Níveis e alertas',           value: 'estoque' },
+                    { icon: BarChart3, title: 'DoaÃ§Ãµes',       desc: 'Coletas, volume, tipos',     value: 'doacoes' },
+                    { icon: Droplet,   title: 'Estoque',        desc: 'NÃ­veis e alertas',           value: 'estoque' },
                     { icon: Users,     title: 'Doadores',       desc: 'Cadastros e perfil',         value: 'doadores' },
-                    { icon: Calendar,  title: 'Agendamentos',   desc: 'Status e taxa de conclusão', value: 'agendamentos' },
-                    { icon: UserCheck, title: 'Triagens',       desc: 'Aptidão e motivos',          value: 'triagens' },
+                    { icon: Calendar,  title: 'Agendamentos',   desc: 'Status e taxa de conclusÃ£o', value: 'agendamentos' },
+                    { icon: UserCheck, title: 'Triagens',       desc: 'AptidÃ£o e motivos',          value: 'triagens' },
                   ].map(({ icon: Icon, title, desc, value }) => (
                     <Button
                       key={value}
@@ -774,14 +775,14 @@ export function DirectorDashboard() {
         </Tabs>
       </main>
 
-      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
+      {/* â•â•â• DIALOGS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
 
-      {/* Adicionar Funcionário */}
+      {/* Adicionar FuncionÃ¡rio */}
       <Dialog open={addStaffDialogOpen} onOpenChange={setAddStaffDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Adicionar Novo Funcionário</DialogTitle>
-            <DialogDescription>O funcionário será vinculado a {hemocentroNome}</DialogDescription>
+            <DialogTitle>Adicionar Novo FuncionÃ¡rio</DialogTitle>
+            <DialogDescription>O funcionÃ¡rio serÃ¡ vinculado a {hemocentroNome}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2"><Label>Nome Completo *</Label>
@@ -797,8 +798,8 @@ export function DirectorDashboard() {
                 <Input placeholder="000.000.000-00" maxLength={11} value={newStaff.cpf}
                   onChange={e => setNewStaff({ ...newStaff, cpf: e.target.value.replace(/\D/g, '') })} />
               </div>
-              <div className="space-y-2"><Label>Senha Provisória *</Label>
-                <Input type="password" placeholder="Mín. 6 caracteres" minLength={6} value={newStaff.password}
+              <div className="space-y-2"><Label>Senha ProvisÃ³ria *</Label>
+                <Input type="password" placeholder="MÃ­n. 6 caracteres" minLength={6} value={newStaff.password}
                   onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} />
               </div>
             </div>
@@ -807,7 +808,7 @@ export function DirectorDashboard() {
               <Select value={newStaff.role_id} onValueChange={v => setNewStaff({ ...newStaff, role_id: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="2">Funcionário</SelectItem>
+                  <SelectItem value="2">FuncionÃ¡rio</SelectItem>
                   <SelectItem value="3">Diretor</SelectItem>
                 </SelectContent>
               </Select>
@@ -822,12 +823,12 @@ export function DirectorDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmar Remoção */}
+      {/* Confirmar RemoÃ§Ã£o */}
       <Dialog open={deleteStaffDialogOpen} onOpenChange={setDeleteStaffDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="text-red-600">Remover Funcionário</DialogTitle>
-            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
+            <DialogTitle className="text-red-600">Remover FuncionÃ¡rio</DialogTitle>
+            <DialogDescription>Esta aÃ§Ã£o nÃ£o pode ser desfeita.</DialogDescription>
           </DialogHeader>
           {staffToDelete && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -847,12 +848,12 @@ export function DirectorDashboard() {
       <Dialog open={updateStockDialogOpen} onOpenChange={setUpdateStockDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle>
+            <DialogTitle>Atualizar Estoque â€” {selectedBloodType}</DialogTitle>
             <DialogDescription>Adicione ou remova bolsas do estoque</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Ação</Label>
+              <Label>AÃ§Ã£o</Label>
               <Select value={stockAction} onValueChange={v => setStockAction(v as 'add' | 'remove')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -879,20 +880,20 @@ export function DirectorDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Exportar Relatório */}
+      {/* Exportar RelatÃ³rio */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Gerar Relatório PDF</DialogTitle>
-            <DialogDescription>Selecione o relatório desejado. O arquivo será baixado automaticamente.</DialogDescription>
+            <DialogTitle>Gerar RelatÃ³rio PDF</DialogTitle>
+            <DialogDescription>Selecione o relatÃ³rio desejado. O arquivo serÃ¡ baixado automaticamente.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-4">
             {[
-              { value: 'doacoes',      label: 'Doações',       desc: 'Coletas, volume, tipos',         color: 'border-red-200 hover:border-red-400' },
-              { value: 'estoque',      label: 'Estoque',        desc: 'Níveis e alertas',               color: 'border-blue-200 hover:border-blue-400' },
+              { value: 'doacoes',      label: 'DoaÃ§Ãµes',       desc: 'Coletas, volume, tipos',         color: 'border-red-200 hover:border-red-400' },
+              { value: 'estoque',      label: 'Estoque',        desc: 'NÃ­veis e alertas',               color: 'border-blue-200 hover:border-blue-400' },
               { value: 'doadores',     label: 'Doadores',       desc: 'Cadastros e perfil',             color: 'border-green-200 hover:border-green-400' },
-              { value: 'agendamentos', label: 'Agendamentos',   desc: 'Status e taxa de conclusão',     color: 'border-purple-200 hover:border-purple-400' },
-              { value: 'triagens',     label: 'Triagens',       desc: 'Aptidão e motivos',              color: 'border-violet-200 hover:border-violet-400' },
+              { value: 'agendamentos', label: 'Agendamentos',   desc: 'Status e taxa de conclusÃ£o',     color: 'border-purple-200 hover:border-purple-400' },
+              { value: 'triagens',     label: 'Triagens',       desc: 'AptidÃ£o e motivos',              color: 'border-violet-200 hover:border-violet-400' },
             ].map(({ value, label, desc, color }) => (
               <button
                 key={value}
@@ -921,3 +922,5 @@ export function DirectorDashboard() {
     </div>
   );
 }
+
+
