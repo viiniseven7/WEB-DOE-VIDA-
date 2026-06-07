@@ -250,6 +250,46 @@ const getTriagemApto = (payload: any, fallbackResultado?: string) => {
   return false;
 };
 
+const extractPerguntasResponse = (payload: any) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const buildTriagemPayload = ({
+  agendamentoId,
+  userId,
+  hemocentroId,
+  dataTriagem,
+  sinaisPayload,
+  respostasPayload,
+  aptidaoPayload,
+}: {
+  agendamentoId: number | string;
+  userId: number | string;
+  hemocentroId?: number | string;
+  dataTriagem: string;
+  sinaisPayload: Record<string, number>;
+  respostasPayload: Array<{ pergunta_id: number; opcao_id: number }>;
+  aptidaoPayload: Record<string, any>;
+}) => {
+  const resultado = String(aptidaoPayload.resultado || '').toLowerCase();
+  const apto = resultado === 'apto';
+
+  return {
+    agendamento_id: agendamentoId,
+    user_id: userId,
+    hemocentro_id: hemocentroId,
+    data_triagem: dataTriagem,
+    apto,
+    motivo_inaptidao: apto ? null : aptidaoPayload.categoria_inaptidao || null,
+    observacoes: aptidaoPayload.observacoes_internas || null,
+    sinais_vitais: Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
+    respostas: respostasPayload.length > 0 ? respostasPayload : undefined,
+    aptidao: aptidaoPayload,
+  };
+};
+
 const inferTemporaryCategory = (questionText: string) => {
   if (questionText.includes('medicamento')) return 'medicamento_incompativel';
   if (questionText.includes('cirurgia')) return 'cirurgia_recente';
@@ -540,9 +580,9 @@ export function StaffDashboard() {
       api.get('/doacoes'),
       api.get('/estoque'),
       api.get('/estatisticas/funcionario'),
-      api.get('/triagens/perguntas?bloco=1'),
-      api.get('/triagens/perguntas?bloco=3'),
-      api.get('/triagens/perguntas?bloco=4'),
+      api.get('/triagens/perguntas', { params: { bloco: 1 } }),
+      api.get('/triagens/perguntas', { params: { bloco: 3 } }),
+      api.get('/triagens/perguntas', { params: { bloco: 4 } }),
     ]);
 
     if (hemocentrosResult.status === 'fulfilled') {
@@ -555,7 +595,9 @@ export function StaffDashboard() {
     }
 
     // Triagem Questions
-    const extractPerguntas = (res: any) => (res.status === 'fulfilled' && Array.isArray(res.value.data?.data)) ? res.value.data.data : [];
+    const extractPerguntas = (res: any) => (res.status === 'fulfilled')
+      ? extractPerguntasResponse(res.value.data)
+      : [];
     const todasPerguntas = [
       ...extractPerguntas(bloco1Result),
       ...extractPerguntas(bloco3Result),
@@ -1083,15 +1125,15 @@ export function StaffDashboard() {
       let doacaoCriadaParaEstoque: any = null;
 
       try {
-        const triagemRes = await api.post('/auth/triagens', {
-          agendamento_id: agendamentoId,
-          user_id:        agendamentoUserId,
-          hemocentro_id:  hemocentroId,
-          data_triagem:   getCurrentLocalDate(),
-          sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
-          respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
-          aptidao:        aptidaoPayload,
-        });
+        const triagemRes = await api.post('/auth/triagens', buildTriagemPayload({
+          agendamentoId,
+          userId: agendamentoUserId,
+          hemocentroId,
+          dataTriagem: getCurrentLocalDate(),
+          sinaisPayload,
+          respostasPayload,
+          aptidaoPayload,
+        }));
         
         const triagemCriada = getCreatedTriagem(triagemRes.data);
         apto = getTriagemApto(triagemRes.data, aptidaoParaEnvio.resultado);

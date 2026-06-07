@@ -208,6 +208,68 @@ const getApiErrorMessage = (err: any, fallback = 'Tente novamente') => {
   return fallback;
 };
 
+const extractPerguntasResponse = (payload: any) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const getCreatedTriagem = (payload: any) =>
+  extractApiObject(payload, ['triagem', 'data']);
+
+const getTriagemApto = (payload: any, fallbackResultado?: string) => {
+  const triagem = getCreatedTriagem(payload);
+  const explicitApto = payload?.apto ?? payload?.data?.apto ?? triagem?.apto;
+  const statusTriagem = String(payload?.status_triagem ?? payload?.data?.status_triagem ?? triagem?.status_triagem ?? '').toUpperCase();
+  const resultado = String(
+    payload?.aptidao?.resultado ??
+    payload?.data?.aptidao?.resultado ??
+    triagem?.aptidao?.resultado ??
+    fallbackResultado ??
+    ''
+  ).toLowerCase();
+
+  if (explicitApto === true || explicitApto === 1 || explicitApto === '1' || explicitApto === 'true') return true;
+  if (explicitApto === false || explicitApto === 0 || explicitApto === '0' || explicitApto === 'false') return false;
+  if (statusTriagem === 'P' || statusTriagem === 'APTO') return true;
+  if (resultado === 'apto') return true;
+  return false;
+};
+
+const buildTriagemPayload = ({
+  agendamentoId,
+  userId,
+  hemocentroId,
+  dataTriagem,
+  sinaisPayload,
+  respostasPayload,
+  aptidaoPayload,
+}: {
+  agendamentoId: number | string;
+  userId: number | string;
+  hemocentroId?: number | string;
+  dataTriagem: string;
+  sinaisPayload: Record<string, number>;
+  respostasPayload: Array<{ pergunta_id: number; opcao_id: number }>;
+  aptidaoPayload: Record<string, any>;
+}) => {
+  const resultado = String(aptidaoPayload.resultado || '').toLowerCase();
+  const apto = resultado === 'apto';
+
+  return {
+    agendamento_id: agendamentoId,
+    user_id: userId,
+    hemocentro_id: hemocentroId,
+    data_triagem: dataTriagem,
+    apto,
+    motivo_inaptidao: apto ? null : aptidaoPayload.categoria_inaptidao || null,
+    observacoes: aptidaoPayload.observacoes_internas || null,
+    sinais_vitais: Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
+    respostas: respostasPayload.length > 0 ? respostasPayload : undefined,
+    aptidao: aptidaoPayload,
+  };
+};
+
 const emptyStaffStats = {
   agendamentos_hoje: 0,
   confirmados_hoje: 0,
@@ -369,9 +431,9 @@ export function CustomRoleDashboard() {
       hasPermission('ver_doacoes') ? api.get('/doacoes') : Promise.resolve({ data: [] }),
       hasPermission('ver_estoque') ? api.get('/estoque') : Promise.resolve({ data: [] }),
       hasPermission('ver_estatisticas_hemocentro') ? api.get('/estatisticas/funcionario') : Promise.resolve({ data: {} }),
-      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas?bloco=1') : Promise.resolve({ data: { data: [] } }),
-      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas?bloco=3') : Promise.resolve({ data: { data: [] } }),
-      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas?bloco=4') : Promise.resolve({ data: { data: [] } }),
+      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas', { params: { bloco: 1 } }) : Promise.resolve({ data: { data: [] } }),
+      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas', { params: { bloco: 3 } }) : Promise.resolve({ data: { data: [] } }),
+      hasPermission('registrar_triagem') ? api.get('/triagens/perguntas', { params: { bloco: 4 } }) : Promise.resolve({ data: { data: [] } }),
     ]);
 
     if (hemocentrosResult.status === 'fulfilled') {
@@ -384,7 +446,9 @@ export function CustomRoleDashboard() {
     }
 
     // Triagem Questions
-    const extractPerguntas = (res: any) => (res.status === 'fulfilled' && Array.isArray(res.value.data?.data)) ? res.value.data.data : [];
+    const extractPerguntas = (res: any) => (res.status === 'fulfilled')
+      ? extractPerguntasResponse(res.value.data)
+      : [];
     const todasPerguntas = [
       ...extractPerguntas(bloco1Result),
       ...extractPerguntas(bloco3Result),
@@ -909,18 +973,19 @@ export function CustomRoleDashboard() {
       let apto = false;
 
       try {
-        const triagemRes = await api.post('/auth/triagens', {
-          agendamento_id: agendamentoId,
-          user_id:        agendamentoUserId,
-          hemocentro_id:  user.hemocentro_id,
-          data_triagem:   new Date().toISOString().split('T')[0],
-          sinais_vitais:  Object.keys(sinaisPayload).length > 0 ? sinaisPayload : undefined,
-          respostas:      respostasPayload.length > 0 ? respostasPayload : undefined,
-          aptidao:        aptidaoPayload,
-        });
-        
-        apto = triagemRes.data?.apto === true;
-        triagemId = triagemRes.data?.data?.id;
+        const triagemRes = await api.post('/auth/triagens', buildTriagemPayload({
+          agendamentoId,
+          userId: agendamentoUserId,
+          hemocentroId: user.hemocentro_id,
+          dataTriagem: new Date().toISOString().split('T')[0],
+          sinaisPayload,
+          respostasPayload,
+          aptidaoPayload,
+        }));
+
+        const triagemCriada = getCreatedTriagem(triagemRes.data);
+        apto = getTriagemApto(triagemRes.data, aptidaoFormal.resultado);
+        triagemId = triagemCriada.id || triagemCriada.triagem_id || null;
       } catch (err: any) {
         // Recupera apenas quando o backend devolver explicitamente uma triagem existente.
         if (err.response?.data?.message?.includes('Ja existe uma triagem')) {

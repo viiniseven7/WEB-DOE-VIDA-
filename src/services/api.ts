@@ -1,7 +1,20 @@
 import axios from "axios";
 
+const normalizeApiBaseUrl = (value?: string) => {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    return trimmed.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/api`;
+  }
+
+  return "http://localhost:8000/api";
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api",
+  baseURL: normalizeApiBaseUrl(import.meta.env.VITE_API_URL),
 });
 
 // 🔥 INTERCEPTOR (ESSENCIAL)
