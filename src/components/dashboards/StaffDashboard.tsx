@@ -963,7 +963,6 @@ export function StaffDashboard() {
     }
   };
 
-  // â”€â”€â”€ Handlers: Doadores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleRegistrarTriagem = async () => {
     if (!selectedAgendamento) return;
@@ -1395,7 +1394,6 @@ export function StaffDashboard() {
     }
   };
 
-  // â”€â”€â”€ Handlers: Estoque â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleOpenUpdateStock = (bloodType: string) => {
     setSelectedBloodType(bloodType);
@@ -1561,7 +1559,6 @@ export function StaffDashboard() {
 
   const handleLogoutClick = () => { logout(); navigate('/'); };
 
-  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
 
@@ -1640,8 +1637,8 @@ export function StaffDashboard() {
       <main className="container mx-auto px-4 py-8">
         {/* Welcome */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}! ðŸ‘‹</h2>
-          <p className="text-gray-600">{hemocentroNome} â€” Gerencie as doações e o estoque</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Olá, {user.name?.split(' ')[0]}!‘‹</h2>
+          <p className="text-gray-600">{hemocentroNome} Gerencie as doações e o estoque</p>
         </div>
 
         {/* Stats */}
