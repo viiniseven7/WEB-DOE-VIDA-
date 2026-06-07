@@ -217,6 +217,12 @@ const emptyStaffStats = {
 };
 
 // ─── Componente ───────────────────────────────────────────────────────────────
+const normalizarStatus = (lista: any[]) =>
+  (Array.isArray(lista) ? lista : []).map((item: any) => ({
+    ...item,
+    status: (item.status === true || item.status === 1 || item.status === '1' || item.status === 't') ? 1 : 0,
+  }));
+
 export function CustomRoleDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
@@ -378,7 +384,7 @@ export function CustomRoleDashboard() {
       const hemocentrosData = Array.isArray(hemocentrosResult.value.data)
         ? hemocentrosResult.value.data
         : hemocentrosResult.value.data.data ?? [];
-      setHemocentros(hemocentrosData);
+      setHemocentros(normalizarStatus(hemocentrosData));
     } else {
       setHemocentros([]);
     }
@@ -419,7 +425,7 @@ export function CustomRoleDashboard() {
       const usersRes = usersResult.value;
       const users = Array.isArray(usersRes.data)
         ? usersRes.data : usersRes.data.data ?? usersRes.data.users ?? [];
-      setDoadores(users.filter(isDonorRecord));
+      setDoadores(normalizarStatus(users.filter(isDonorRecord)));
     } else if (hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes')) {
       console.warn('Erro ao carregar doadores:', usersResult.reason?.response?.data || usersResult.reason);
       setDoadores([]);

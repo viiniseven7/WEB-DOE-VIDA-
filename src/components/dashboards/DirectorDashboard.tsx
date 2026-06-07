@@ -57,6 +57,12 @@ const roleNames: Record<string, string> = {
   '4': 'admin',
 };
 
+const normalizarStatus = (lista: any[]) =>
+  (Array.isArray(lista) ? lista : []).map((item: any) => ({
+    ...item,
+    status: (item.status === true || item.status === 1 || item.status === '1' || item.status === 't') ? 1 : 0,
+  }));
+
 
 export function DirectorDashboard() {
   const { user, logout } = useAuth() as any;
@@ -140,11 +146,11 @@ export function DirectorDashboard() {
         fetchHemocentros, fetchUsers, fetchAgend, fetchDoacoes, fetchStock, fetchStats
       ]);
 
-      setHemocentros(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []);
+      setHemocentros(normalizarStatus(Array.isArray(hemocentrosRes.data) ? hemocentrosRes.data : hemocentrosRes.data.data ?? []));
 
-      const todosUsers = Array.isArray(usersRes.data)
+      const todosUsers = normalizarStatus(Array.isArray(usersRes.data)
         ? usersRes.data
-        : usersRes.data.data ?? [];
+        : usersRes.data.data ?? []);
 
       // Filtra por mesmo hemocentro e papéis de staff/diretor
       const staff = todosUsers.filter(

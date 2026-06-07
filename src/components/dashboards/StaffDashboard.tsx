@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -379,12 +379,18 @@ const emptyStaffStats = {
   agendamentos_semana: {} as Record<string, number>,
 };
 
-// â”€â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Componente ───────────────────────────────────────────────────────────────
+const normalizarStatus = (lista: any[]) =>
+  (Array.isArray(lista) ? lista : []).map((item: any) => ({
+    ...item,
+    status: (item.status === true || item.status === 1 || item.status === '1' || item.status === 't') ? 1 : 0,
+  }));
+
 export function StaffDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
 
-  // â”€â”€ Estado: dados da API
+  // ── Estado: dados da API
   const [hemocentros, setHemocentros] = useState<any[]>([]);
   const [agendamentos, setAgendamentos] = useState<any[]>([]);
   const [doadores, setDoadores] = useState<any[]>([]);
@@ -392,13 +398,13 @@ export function StaffDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  // â”€â”€ Estado: API de Estoque
+  // ── Estado: API de Estoque
   const [stock, setStock] = useState<any[]>([]);
   const [doacoes, setDoacoes] = useState<any[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  // â”€â”€ Busca
+  // ── Busca
   const [searchTerm, setSearchTerm] = useState('');
   const [donorSearchTerm, setDonorSearchTerm] = useState('');
   const [donorBloodTypeFilter, setDonorBloodTypeFilter] = useState('');
@@ -420,7 +426,7 @@ export function StaffDashboard() {
     totalPages: 0
   });
 
-  // â”€â”€ Dialogs
+  // ── Dialogs
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedAgendamento, setSelectedAgendamento] = useState<any>(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
@@ -509,7 +515,7 @@ export function StaffDashboard() {
     categoria_motivo: '',
   });
 
-  // â”€â”€â”€ Guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Guard ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -518,7 +524,7 @@ export function StaffDashboard() {
     }
   }, [user, navigate]);
 
-  // â”€â”€â”€ Fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fetch ────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
@@ -549,7 +555,7 @@ export function StaffDashboard() {
       const hemocentrosData = Array.isArray(hemocentrosResult.value.data)
         ? hemocentrosResult.value.data
         : hemocentrosResult.value.data.data ?? [];
-      setHemocentros(hemocentrosData);
+      setHemocentros(normalizarStatus(hemocentrosData));
     } else {
       setHemocentros([]);
     }
@@ -590,7 +596,7 @@ export function StaffDashboard() {
       const usersRes = usersResult.value;
       const users = Array.isArray(usersRes.data)
         ? usersRes.data : usersRes.data.data ?? usersRes.data.users ?? [];
-      setDoadores(users.filter(isDonorRecord));
+      setDoadores(normalizarStatus(users.filter(isDonorRecord)));
     } else {
       console.warn('Erro ao carregar doadores:', usersResult.reason?.response?.data || usersResult.reason);
       setDoadores([]);
@@ -641,7 +647,7 @@ export function StaffDashboard() {
 
   if (!user || (Number(user.role_id) !== 2 && !getUserRoles(user).includes('funcionario'))) return null;
 
-  // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const hemocentroNomeResolvido =
     user.hemocentro?.nome ||
     user.hemocentroName ||
@@ -809,7 +815,7 @@ export function StaffDashboard() {
   );
   const hasPendingStockUpdates = pendingDonationStockUpdates.length > 0;
 
-  // â”€â”€â”€ Handlers: Agendamentos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Handlers: Agendamentos ───────────────────────────────────────────────
 
   const handleConfirmar = async (agend: any) => {
     if (isDemoAppointment(agend)) {
@@ -948,7 +954,7 @@ export function StaffDashboard() {
 
       await api.post(`/auth/agendamentos/${selectedAgendamento.id}/confirmar`);
 
-      toast.success(triagemData.apto ? 'Doação registrada com sucesso!' : 'Triagem registrada â€” doador inapto');
+      toast.success(triagemData.apto ? 'Doação registrada com sucesso!' : 'Triagem registrada — doador inapto');
       setTriagemDialogOpen(false);
       setSelectedAgendamento(null);
       setAgendamentos((prev) =>
@@ -1143,7 +1149,7 @@ export function StaffDashboard() {
         setStockDonationsExpanded(true);
         toast.success('Doação registrada com sucesso!');
       } else {
-        toast.info('Triagem registrada â€” doador inapto para doação nesta data.');
+        toast.info('Triagem registrada — doador inapto para doação nesta data.');
       }
 
       // Confirmar agendamento após triagem
@@ -1469,7 +1475,7 @@ export function StaffDashboard() {
         );
       }
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} â€” ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
       setUpdateStockDialogOpen(false);
       setStockSourceDonation(null);
       return;
@@ -1483,7 +1489,7 @@ export function StaffDashboard() {
         doacao_id: stockSourceDonation?.id || undefined,
       });
 
-      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} â€” ${selectedBloodType}`);
+      toast.success(`${amount} bolsas ${stockAction === 'add' ? 'adicionadas' : 'removidas'} — ${selectedBloodType}`);
       if (stockSourceDonation?.id) {
         const donationId = stockSourceDonation.id;
         setStockUpdatedDonationIds((prev) =>
@@ -1680,7 +1686,7 @@ export function StaffDashboard() {
             <TabsTrigger value="donors">Doadores</TabsTrigger>
           </TabsList>
 
-          {/* â”€â”€ Agenda â”€â”€ */}
+          {/* ── Agenda ── */}
           <TabsContent value="schedule" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1814,7 +1820,7 @@ export function StaffDashboard() {
             </Card>
           </TabsContent>
 
-          {/* â”€â”€ Estoque â”€â”€ */}
+          {/* ── Estoque ── */}
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1939,7 +1945,7 @@ export function StaffDashboard() {
             </Card>
           </TabsContent>
 
-          {/* â”€â”€ Doadores â”€â”€ */}
+          {/* ── Doadores ── */}
           <TabsContent value="donors" className="space-y-6">
             <Card>
               <CardHeader>
@@ -2208,7 +2214,7 @@ export function StaffDashboard() {
         </Tabs>
       </main>
 
-      {/* â•â•â• DIALOGS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ═══ DIALOGS ═══════════════════════════════════════════════════════════ */}
 
       {/* Cancelar Agendamento */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
@@ -2450,7 +2456,7 @@ export function StaffDashboard() {
                 <p className="font-semibold">{selectedAgendamento.user?.name}</p>
                 <p className="text-gray-600">
                   Tipo: <strong>{selectedAgendamento.user?.tipo_sang || 'Não informado'}</strong>
-                  {' '}â€¢ {formatDataHora(selectedAgendamento).hora}
+                  {' '}• {formatDataHora(selectedAgendamento).hora}
                 </p>
               </div>
             )}
@@ -2463,8 +2469,8 @@ export function StaffDashboard() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="true">âœ… Apto â€” doação realizada</SelectItem>
-                  <SelectItem value="false">âŒ Inapto â€” doação não realizada</SelectItem>
+                  <SelectItem value="true">âœ… Apto — doação realizada</SelectItem>
+                  <SelectItem value="false">âŒ Inapto — doação não realizada</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2575,13 +2581,13 @@ export function StaffDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog â€” Alerta Médico */}
+      {/* Dialog — Alerta Médico */}
       <Dialog open={alertaDialogOpen} onOpenChange={setAlertaDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Criar Alerta Médico</DialogTitle>
             <DialogDescription>
-              Doador: <strong>{alertaDoador?.name}</strong> â€” a mensagem será exibida ao doador sem diagnóstico exposto.
+              Doador: <strong>{alertaDoador?.name}</strong> — a mensagem será exibida ao doador sem diagnóstico exposto.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2618,13 +2624,13 @@ export function StaffDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog â€” Histórico Tipo Sanguíneo */}
+      {/* Dialog — Histórico Tipo Sanguíneo */}
       <Dialog open={tipoSangDialogOpen} onOpenChange={setTipoSangDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Tipo Sanguíneo</DialogTitle>
             <DialogDescription>
-              Doador: <strong>{tipoSangDoador?.name}</strong> â€” Tipo atual: <strong className="text-red-600">{tipoSangDoador?.tipo_sang || 'Não informado'}</strong>
+              Doador: <strong>{tipoSangDoador?.name}</strong> — Tipo atual: <strong className="text-red-600">{tipoSangDoador?.tipo_sang || 'Não informado'}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2634,7 +2640,7 @@ export function StaffDashboard() {
                 <div className="divide-y border rounded-md max-h-40 overflow-y-auto">
                   {tipoSangHistorico.map((h, i) => (
                     <div key={i} className="p-2 text-xs flex justify-between items-center">
-                      <span>{h.tipo_sangue_anterior || 'â€”'} â†’ <strong>{h.tipo_sangue_novo}</strong></span>
+                      <span>{h.tipo_sangue_anterior || '—'} â†’ <strong>{h.tipo_sangue_novo}</strong></span>
                       <span className="text-gray-400">{h.alterado_por} · {new Date(h.alterado_em).toLocaleDateString('pt-BR')}</span>
                     </div>
                   ))}
@@ -2696,13 +2702,13 @@ export function StaffDashboard() {
         }}
       >
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle>Atualizar Estoque â€” {selectedBloodType}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Atualizar Estoque — {selectedBloodType}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             {stockSourceDonation && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                 <p className="font-semibold">Preenchido pela doação selecionada para lançamento</p>
                 <p>
-                  {stockSourceDonation?.doador?.name || stockSourceDonation?.user?.name || 'Doador'} â€”{' '}
+                  {stockSourceDonation?.doador?.name || stockSourceDonation?.user?.name || 'Doador'} —{' '}
                   {new Date(stockSourceDonation?.data_hora_doacao).toLocaleString('pt-BR')}
                 </p>
               </div>
