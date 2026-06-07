@@ -1,5 +1,7 @@
-node_modules/
+﻿node_modules/
 dist/
 .vite/
 build/
 .env
+.env.development
+.env.production
