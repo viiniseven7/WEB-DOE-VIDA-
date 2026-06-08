@@ -13,6 +13,7 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { buildDashboardNotifications } from '../../services/dashboard-notifications';
+import { getHemocentroId, getUserRoles } from '../../services/api-normalizers';
 import {
   Droplet, Calendar, Users, LogOut, Bell, TrendingUp, Activity,
   UserCheck, BarChart3, Download, UserPlus, Plus, Minus,
@@ -67,6 +68,7 @@ const normalizarStatus = (lista: any[]) =>
 export function DirectorDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
+  const currentHemocentroId = getHemocentroId(user);
 
   //  Estado: dados da API
   const [hemocentros, setHemocentros] = useState<any[]>([]);
@@ -106,7 +108,7 @@ export function DirectorDashboard() {
   useEffect(() => {
     if (!user) {
       navigate('/login');
-    } else if (user.role_id !== 3 && !user.roles?.includes('diretor')) {
+    } else if (Number(user.role_id) !== 3 && !getUserRoles(user).includes('diretor')) {
       navigate('/login');
     }
   }, [user, navigate]);
@@ -153,11 +155,19 @@ export function DirectorDashboard() {
         : usersRes.data.data ?? []);
 
       // Filtra por mesmo hemocentro e papéis de staff/diretor
-      const staff = todosUsers.filter(
-        (u: any) =>
-          Number(u.hemocentro_id) === Number(user.hemocentro_id) &&
-          ([2, 3].includes(Number(u.role_id)) || (u.role_id === null && u.hemocentro_id !== null))
-      );
+      const staff = todosUsers.filter((u: any) => {
+        const staffHemocentroId = getHemocentroId(u);
+        const roles = getUserRoles(u);
+
+        return (
+          Number(staffHemocentroId) === Number(currentHemocentroId) &&
+          (
+            [2, 3].includes(Number(u.role_id)) ||
+            roles.includes('funcionario') ||
+            roles.includes('diretor')
+          )
+        );
+      });
       setStaffList(staff);
 
       const hoje = new Date().toISOString().split('T')[0];
@@ -167,7 +177,7 @@ export function DirectorDashboard() {
 
       const agendHoje = agends.filter((a: any) => {
         const dataAgend = (a.data_hora_doacao || a.data)?.split('T')[0].split(' ')[0];
-        return dataAgend === hoje && Number(a.hemocentro_id) === Number(user.hemocentro_id);
+        return dataAgend === hoje && Number(getHemocentroId(a)) === Number(currentHemocentroId);
       });
 
       setAgendamentosHoje(agendHoje);
@@ -175,11 +185,11 @@ export function DirectorDashboard() {
       const doacoesData = Array.isArray(doacoesRes.data)
         ? doacoesRes.data
         : doacoesRes.data.data ?? [];
-      setDoacoes(doacoesData.filter((doacao: any) => Number(doacao.hemocentro_id) === Number(user.hemocentro_id)));
+      setDoacoes(doacoesData.filter((doacao: any) => Number(getHemocentroId(doacao)) === Number(currentHemocentroId)));
 
       // Mapeia estoque da API
       const stockDataRaw = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
-      const myStock = stockDataRaw.filter((s: any) => Number(s.hemocentro_id) === Number(user.hemocentro_id));
+      const myStock = stockDataRaw.filter((s: any) => Number(getHemocentroId(s)) === Number(currentHemocentroId));
       setStock(myStock.map((s: any) => ({
         id: s.id,
         type: s.tipo_sangue,
@@ -198,11 +208,11 @@ export function DirectorDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [currentHemocentroId, user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (!user || (user.role_id !== 3 && !user.roles?.includes('diretor'))) return null;
+  if (!user || (Number(user.role_id) !== 3 && !getUserRoles(user).includes('diretor'))) return null;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -214,7 +224,7 @@ export function DirectorDashboard() {
       return;
     }
 
-    if (!user.hemocentro_id) {
+    if (!currentHemocentroId) {
       toast.error('Erro: diretor não está vinculado a um hemocentro');
       return;
     }
@@ -227,7 +237,7 @@ export function DirectorDashboard() {
         password: newStaff.password,
         role_id: Number(newStaff.role_id),
         role: roleNames[newStaff.role_id],
-        hemocentro_id: Number(user.hemocentro_id),
+        hemocentro_id: Number(currentHemocentroId),
       };
 
       await api.post('/auth/users', payload);
@@ -275,7 +285,7 @@ export function DirectorDashboard() {
 
     try {
       await api.post('/auth/estoque', {
-        hemocentro_id: user.hemocentro_id,
+        hemocentro_id: currentHemocentroId,
         tipo_sangue: selectedBloodType,
         quantidade: valueToSend,
       });
@@ -342,23 +352,23 @@ export function DirectorDashboard() {
   const hemocentroNomeResolvido =
     hemocentro.nome ||
     user.hemocentroName ||
-    hemocentros.find((h: any) => Number(h.id) === Number(user.hemocentro_id))?.nome ||
+    hemocentros.find((h: any) => Number(h.id) === Number(currentHemocentroId))?.nome ||
     '';
   const hemocentroNome = hemocentroNomeResolvido
     ? `Hemocentro ${hemocentroNomeResolvido}`
-    : `Hemocentro vinculado (#${user.hemocentro_id})`;
+    : `Hemocentro vinculado (#${currentHemocentroId})`;
   const hemocentroLocal = hemocentro.cidade ? `${hemocentro.cidade}, ${hemocentro.uf || ''}` : 'Localização não informada';
 
   const presencasHoje = stats.confirmados_hoje || 0;
   const totalAgendados = stats.agendamentos_hoje || 0;
 
   const notifications = useMemo(() => buildDashboardNotifications({
-    hemocentroId: Number(user?.hemocentro_id),
+    hemocentroId: Number(currentHemocentroId),
     doacoes,
     agendamentos: agendamentosHoje,
     users: staffList,
     hemocentros,
-  }), [user?.hemocentro_id, doacoes, agendamentosHoje, staffList, hemocentros]);
+  }), [currentHemocentroId, doacoes, agendamentosHoje, staffList, hemocentros]);
   const notificationsKey = notifications.map((notification) => `${notification.id}:${notification.timeLabel}`).join('|');
 
   useEffect(() => {
