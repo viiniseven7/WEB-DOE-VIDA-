@@ -1320,51 +1320,37 @@ export function StaffDashboard() {
 
     setIsSearchingDonors(true);
 
-    const allowedDonorIds = getAllowedDonorIds();
-    const filteredDonors = doadores.filter((donor: any) => donorMatchesCurrentFilters(donor, allowedDonorIds));
-    const total = filteredDonors.length;
-    const totalPages = total > 0 ? Math.ceil(total / donorPagination.limit) : 0;
-    const currentPage = totalPages > 0 ? Math.min(Math.max(page, 1), totalPages) : 1;
-    const start = (currentPage - 1) * donorPagination.limit;
-
-    setDonorResult(filteredDonors.slice(start, start + donorPagination.limit));
-    setDonorPagination({
-      ...donorPagination,
-      page: currentPage,
-      total,
-      totalPages
-    });
-
-    if (filteredDonors.length === 0) {
-      toast.info('Nenhum doador encontrado com os filtros aplicados');
-    }
-
-    setIsSearchingDonors(false);
-    return;
-
-    setIsSearchingDonors(true);
-
     try {
       const params: any = {
-        role: 'donor',
+        role: 'doador',
         page: page,
         limit: 10,
       };
 
-      if (donorSearchTerm.trim()) params.q = donorSearchTerm.trim();
-      if (donorBloodTypeFilter && donorBloodTypeFilter !== 'todos') params.bloodType = donorBloodTypeFilter;
-      if (donorGenderFilter && donorGenderFilter !== 'todos') params.gender = donorGenderFilter;
+      if (donorSearchTerm.trim()) {
+        params.search = donorSearchTerm.trim();
+        params.name = donorSearchTerm.trim();
+      }
+      if (donorBloodTypeFilter && donorBloodTypeFilter !== 'todos') params.tipo_sang = donorBloodTypeFilter;
+      if (donorGenderFilter && donorGenderFilter !== 'todos') {
+        const genderMap: Record<string, string> = {
+          male: 'M',
+          female: 'F',
+          other: 'Outro',
+        };
+        params.sexo = genderMap[donorGenderFilter] || donorGenderFilter;
+      }
       if (donorStatusFilter && donorStatusFilter !== 'todos') params.status = donorStatusFilter;
-      if (donorCityFilter.trim()) params.city = donorCityFilter.trim();
-      if (donorMinAge) params.minAge = donorMinAge;
-      if (donorMaxAge) params.maxAge = donorMaxAge;
-      if (donorLastDonationSince) params.lastDonationSince = donorLastDonationSince;
-      if (donorLastDonationUntil) params.lastDonationUntil = donorLastDonationUntil;
+      if (donorCityFilter.trim()) params.cidade = donorCityFilter.trim();
+      if (donorMinAge) params.idade_min = donorMinAge;
+      if (donorMaxAge) params.idade_max = donorMaxAge;
+      if (donorLastDonationSince) params.data_doacao_inicio = donorLastDonationSince;
+      if (donorLastDonationUntil) params.data_doacao_fim = donorLastDonationUntil;
 
       const res = await api.get('/users', { params });
-      
-      const donors = extractApiList(res.data, ['data', 'items']);
-      const meta = res.data.meta || {};
+
+      const donors = extractApiList(res.data, ['data', 'items', 'users']);
+      const meta = res.data?.meta || res.data?.data?.meta || {};
 
       setDonorResult(donors);
       setDonorPagination({
