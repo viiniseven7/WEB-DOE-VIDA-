@@ -1203,22 +1203,11 @@ export function StaffDashboard() {
   };
 
   const getAllowedDonorIds = () => {
-    const donorIdsFromDoacoes = doacoes
-      .map(getDonationDonorId)
-      .filter((id) => id !== undefined && id !== null)
-      .map((id) => String(id));
-
-    if (donorIdsFromDoacoes.length > 0) {
-      return new Set(donorIdsFromDoacoes);
-    }
-
-    return new Set(
-      agendamentos
-        .filter((agendamento: any) => isDoacaoRealizada(agendamento))
-        .map((agendamento: any) => getAppointmentUserId(agendamento))
-        .filter((id) => id !== undefined && id !== null)
-        .map((id) => String(id))
-    );
+    // O backend (/users) ja restringe os doadores ao hemocentro do funcionario
+    // (por hemocentro_id do doador, ou por triagem/doacao no hemocentro). Entao
+    // todos os doadores ja carregados sao validos para busca — nao aplicamos uma
+    // segunda restricao no front (que antes escondia quem ainda nao tinha doado).
+    return new Set(doadores.map((donor: any) => String(donor?.id)));
   };
 
   const donorMatchesCurrentFilters = (donor: any, allowedDonorIds: Set<string>) => {
