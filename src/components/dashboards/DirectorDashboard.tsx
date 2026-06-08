@@ -123,7 +123,7 @@ export function DirectorDashboard() {
         console.error('Erro em /hemocentros:', err.response?.data || err.message);
         return { data: [] };
       });
-      const fetchUsers = api.get('/users').catch(err => {
+      const fetchUsers = api.get('/users', { params: { scope: 'staff' } }).catch(err => {
         console.error('Erro em /users:', err.response?.data || err.message);
         return { data: [] };
       });
