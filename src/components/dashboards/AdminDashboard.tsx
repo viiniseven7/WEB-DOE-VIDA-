@@ -211,6 +211,12 @@ const DEFAULT_PERMISSIONS: Record<string, Record<string, string>> = {
 
 // --- Componente --------------------------------------------------------------
 
+const normalizarStatus = (lista: any[]) =>
+  (Array.isArray(lista) ? lista : []).map((item: any) => ({
+    ...item,
+    status: (item.status === true || item.status === 1 || item.status === '1' || item.status === 't') ? 1 : 0,
+  }));
+
 export function AdminDashboard() {
   const { user, logout } = useAuth() as any;
   const navigate = useNavigate();
@@ -326,8 +332,8 @@ export function AdminDashboard() {
         api.get('/campanhas'),
       ]);
 
-      setHemocentros(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []);
-      setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []);
+      setHemocentros(normalizarStatus(Array.isArray(hcRes.data) ? hcRes.data : hcRes.data.data ?? []));
+      setUsers(normalizarStatus(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data ?? []));
       setDoacoes(Array.isArray(doacoesRes.data) ? doacoesRes.data : doacoesRes.data.data ?? []);
 
       // Agrega estoque globalmente
@@ -2688,6 +2694,3 @@ export function AdminDashboard() {
     </div>
   );
 }
-
-
-
