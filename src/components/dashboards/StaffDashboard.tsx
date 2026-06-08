@@ -52,81 +52,6 @@ import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const tiposSanguineos = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
-const demoAgendaNames = [
-  'Aline Ferreira', 'Bruno Varella', 'Camila Noronha', 'Diego Furtado', 'Elisa Tavares',
-  'Fernando Queiroz', 'Giovana Siqueira', 'Hugo Barcellos', 'Isadora Menezes', 'Joao Vitor Paiva',
-  'Karina Dourado', 'Leonardo Peixoto', 'Mariana Azevedo', 'Nicolas Freire', 'Olivia Campos',
-  'Paulo Henrique Dantas', 'Quiteria Lopes', 'Rafael Sampaio', 'Sabrina Mello', 'Thiago Arruda',
-  'Ursula Nogueira', 'Vinicius Teixeira', 'Wesley Batista', 'Yasmin Coelho', 'Zuleica Ramos',
-  'Adriana Pontes', 'Bernardo Gusmao', 'Cecilia Matos', 'Davi Rezende', 'Estela Figueiredo',
-  'Fabricio Moura', 'Graziella Cunha', 'Heitor Pacheco', 'Ingrid Salazar', 'Julia Marcondes',
-  'Kaique Neves', 'Lorena Bastos', 'Matheus Silveira', 'Nathalia Prado', 'Otavio Seabra',
-  'Priscila Ventura', 'Renato Galvao', 'Samara Farias', 'Talita Borges', 'Ulisses Duarte',
-  'Valeria Pinheiro', 'William Santana', 'Ximena Leal', 'Yuri Alencar', 'Zelia Monteiro',
-];
-
-const buildDemoAgendaDays = (referenceDate: Date) => {
-  const year = referenceDate.getFullYear();
-  const month = referenceDate.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const offsets = [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
-  const uniqueDays: number[] = [];
-
-  offsets.forEach((offset) => {
-    const candidate = referenceDate.getDate() + offset;
-    if (candidate >= 1 && candidate <= daysInMonth && !uniqueDays.includes(candidate)) {
-      uniqueDays.push(candidate);
-    }
-  });
-
-  let cursor = 1;
-  while (uniqueDays.length < 10 && cursor <= daysInMonth) {
-    if (!uniqueDays.includes(cursor)) {
-      uniqueDays.push(cursor);
-    }
-    cursor += 1;
-  }
-
-  return uniqueDays.slice(0, 10).sort((a, b) => a - b);
-};
-
-const buildDemoAgendaAppointments = (referenceDate: Date, hemocentroId?: number | string) => {
-  if (!hemocentroId) return [];
-
-  const days = buildDemoAgendaDays(referenceDate);
-  const year = referenceDate.getFullYear();
-  const month = referenceDate.getMonth();
-  const slots = ['08:00:00', '09:15:00', '10:30:00', '13:30:00', '15:00:00'];
-
-  return demoAgendaNames.slice(0, 50).map((name, index) => {
-    const day = days[Math.floor(index / 5)];
-    const slot = slots[index % 5];
-    const donorId = `demo-donor-${index + 1}`;
-    const bloodType = tiposSanguineos[index % tiposSanguineos.length];
-    const date = new Date(year, month, day);
-    const dateKey = format(date, 'yyyy-MM-dd');
-    const cpfBase = String(10000000000 + index).slice(0, 11);
-
-    return {
-      id: `demo-agendamento-${index + 1}`,
-      user_id: donorId,
-      doador_id: donorId,
-      hemocentro_id: hemocentroId,
-      data_hora_doacao: `${dateKey} ${slot}`,
-      status: 'AGE',
-      status_agendamento: 'AGE',
-      doador: {
-        id: donorId,
-        name,
-        cpf: cpfBase,
-        tipo_sang: bloodType,
-        tipo_sanguineo: bloodType,
-      },
-      observacao_demo: true,
-    };
-  });
-};
-
 const normalizeSearchText = (value: any) =>
   String(value || '')
     .normalize('NFD')
@@ -579,13 +504,7 @@ export function StaffDashboard() {
         const hemocentroId = getHemocentroId(a);
         return !hemocentroId || !getHemocentroId(user) || Number(hemocentroId) === Number(getHemocentroId(user));
       });
-      const isLocalDemo =
-        typeof window !== 'undefined' &&
-        ['localhost', '127.0.0.1'].includes(window.location.hostname);
-      const demoAgendamentos = isLocalDemo
-        ? buildDemoAgendaAppointments(new Date(), getHemocentroId(user))
-        : [];
-      setAgendamentos([...demoAgendamentos, ...agendsFiltrados]);
+      setAgendamentos(agendsFiltrados);
     } else {
       console.error('Erro ao carregar agendamentos:', agendResult.reason?.response?.data || agendResult.reason);
       toast.error('Erro ao carregar agendamentos');
@@ -778,8 +697,10 @@ export function StaffDashboard() {
     return Array.from(datesByKey.values());
   }, [agendamentos, doacoes]);
 
-  const concluidos = stats.confirmados_hoje;
-  const pendentes = Math.max(stats.agendamentos_hoje - stats.confirmados_hoje, 0);
+  const agendamentosHojeCount = agendamentosHoje.length;
+  const confirmadosHojeCount = agendamentosHoje.filter((agendamento: any) => getStatus(agendamento) === 'CON').length;
+  const concluidos = confirmadosHojeCount;
+  const pendentes = Math.max(agendamentosHojeCount - confirmadosHojeCount, 0);
   const isDonationStockUpdated = useCallback((doacao: any) => {
     if (doacao?.estoque_lancado_em) return true;
     return stockUpdatedDonationIds.some((id) => String(id) === String(doacao?.id));
@@ -1640,7 +1561,7 @@ export function StaffDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="border-l-4 border-l-blue-600">
             <CardHeader className="pb-3"><CardDescription>Agendamentos Hoje</CardDescription>
-              <CardTitle className="text-3xl">{isLoading ? '...' : stats.agendamentos_hoje}</CardTitle>
+              <CardTitle className="text-3xl">{isLoading ? '...' : agendamentosHojeCount}</CardTitle>
             </CardHeader>
             <CardContent><div className="flex items-center gap-2 text-sm text-gray-600"><Calendar className="h-4 w-4 text-blue-600" /><span>Do seu hemocentro</span></div></CardContent>
           </Card>
