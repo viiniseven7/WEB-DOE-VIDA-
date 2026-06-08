@@ -1984,6 +1984,8 @@ export function StaffDashboard() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <Input 
+                        id="donor-search-term"
+                        name="donor_search_term"
                         placeholder="Pesquisar por nome ou sobrenome" 
                         value={donorSearchTerm}
                         onChange={e => setDonorSearchTerm(e.target.value)}
@@ -2043,6 +2045,8 @@ export function StaffDashboard() {
                     <Label className="text-xs uppercase text-gray-500">Última doação (período)</Label>
                     <div className="flex gap-2 items-center">
                       <Input 
+                        id="donor-last-donation-since"
+                        name="donor_last_donation_since"
                         type="date" 
                         value={donorLastDonationSince} 
                         onChange={e => setDonorLastDonationSince(e.target.value)}
@@ -2050,6 +2054,8 @@ export function StaffDashboard() {
                       />
                       <span className="text-gray-400">até</span>
                       <Input 
+                        id="donor-last-donation-until"
+                        name="donor_last_donation_until"
                         type="date" 
                         value={donorLastDonationUntil} 
                         onChange={e => setDonorLastDonationUntil(e.target.value)}
@@ -2306,6 +2312,8 @@ export function StaffDashboard() {
                   <div key={key}>
                     <Label className="text-xs">{label}</Label>
                     <Input
+                      id={`triagem-sinal-${key}`}
+                      name={`triagem_sinal_${key}`}
                       type="number"
                       step="0.1"
                       placeholder={placeholder}
@@ -2346,6 +2354,7 @@ export function StaffDashboard() {
                             }`}
                           >
                             <input
+                              id={`triagem-pergunta-${pergunta.id}-opcao-${opcao.id}`}
                               type="radio"
                               name={`pergunta-${pergunta.id}`}
                               value={opcao.id}
@@ -2370,6 +2379,8 @@ export function StaffDashboard() {
               <div>
                 <Label className="text-xs">Volume coletado (mL)</Label>
                 <Input
+                  id="triagem-volume-coletado"
+                  name="triagem_volume_coletado"
                   type="number"
                   min="100"
                   max="600"
@@ -2416,6 +2427,8 @@ export function StaffDashboard() {
                   <div>
                     <Label className="text-xs">Categoria da inaptidão *</Label>
                     <select
+                      id="triagem-categoria-inaptidao"
+                      name="triagem_categoria_inaptidao"
                       className="w-full border rounded-md p-2 text-sm mt-1"
                       value={aptidaoFormal.categoria_inaptidao}
                       onChange={e => setAptidaoFormal(prev => ({ ...prev, categoria_inaptidao: e.target.value }))}
@@ -2436,6 +2449,8 @@ export function StaffDashboard() {
                     <div>
                       <Label className="text-xs">Inapto até *</Label>
                       <Input
+                        id="triagem-valido-ate"
+                        name="triagem_valido_ate"
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
                         value={aptidaoFormal.valido_ate}
@@ -2449,6 +2464,8 @@ export function StaffDashboard() {
               <div>
                 <Label className="text-xs">Observações internas (visível só para funcionários)</Label>
                 <textarea
+                  id="triagem-observacoes-internas"
+                  name="triagem_observacoes_internas"
                   className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                   rows={2}
                   placeholder="Observações clínicas relevantes..."
@@ -2502,7 +2519,7 @@ export function StaffDashboard() {
             {triagemData.apto && (
               <div>
                 <Label>Volume Coletado (ml)</Label>
-                <Input type="number" min="100" max="600" value={triagemData.ml_coletados}
+                <Input id="triagem-legacy-volume-coletado" name="triagem_legacy_volume_coletado" type="number" min="100" max="600" value={triagemData.ml_coletados}
                   onChange={e => setTriagemData({ ...triagemData, ml_coletados: e.target.value })} />
                 <p className="text-xs text-gray-400 mt-1">Padrão: 450ml</p>
               </div>
@@ -2530,7 +2547,7 @@ export function StaffDashboard() {
 
             <div>
               <Label>Observações</Label>
-              <Textarea placeholder="Observações da triagem..." value={triagemData.observacoes}
+              <Textarea id="triagem-legacy-observacoes" name="triagem_legacy_observacoes" placeholder="Observações da triagem..." value={triagemData.observacoes}
                 onChange={e => setTriagemData({ ...triagemData, observacoes: e.target.value })} />
             </div>
 
@@ -2573,7 +2590,7 @@ export function StaffDashboard() {
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input value={editDonorData.telefone}
+                <Input id="edit-donor-telefone" name="edit_donor_telefone" value={editDonorData.telefone}
                   onChange={e => setEditDonorData({ ...editDonorData, telefone: e.target.value })}
                   placeholder="(00) 00000-0000" />
               </div>
@@ -2589,7 +2606,7 @@ export function StaffDashboard() {
               </div>
               <div>
                 <Label>Restrição até (data)</Label>
-                <Input type="date" value={editDonorData.tempo_restricao}
+                <Input id="edit-donor-tempo-restricao" name="edit_donor_tempo_restricao" type="date" value={editDonorData.tempo_restricao}
                   onChange={e => setEditDonorData({ ...editDonorData, tempo_restricao: e.target.value })}
                   min={new Date().toISOString().split('T')[0]} />
                 <p className="text-xs text-gray-400 mt-1">Deixe em branco para não alterar</p>
@@ -2618,6 +2635,8 @@ export function StaffDashboard() {
             <div>
               <Label>Tipo de alerta</Label>
               <select
+                id="alerta-tipo"
+                name="alerta_tipo"
                 className="w-full border rounded-md p-2 text-sm mt-1"
                 value={alertaForm.tipo_alerta}
                 onChange={e => setAlertaForm(prev => ({ ...prev, tipo_alerta: e.target.value as any }))}
@@ -2630,6 +2649,8 @@ export function StaffDashboard() {
             <div>
               <Label>Mensagem para o doador *</Label>
               <textarea
+                id="alerta-notificacao-doador"
+                name="alerta_notificacao_doador"
                 className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                 rows={4}
                 placeholder="Ex: Identificamos uma alteração nos exames realizados após sua doação. Por favor, compareça ao hemocentro para uma reavaliação..."
@@ -2676,6 +2697,8 @@ export function StaffDashboard() {
               <div>
                 <Label className="text-xs">Novo tipo sanguíneo *</Label>
                 <select
+                  id="tipo-sangue-novo"
+                  name="tipo_sangue_novo"
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.tipo_sangue_novo}
                   onChange={e => setTipoSangForm(prev => ({ ...prev, tipo_sangue_novo: e.target.value }))}
@@ -2689,6 +2712,8 @@ export function StaffDashboard() {
               <div>
                 <Label className="text-xs">Motivo da alteração *</Label>
                 <select
+                  id="tipo-sangue-categoria-motivo"
+                  name="tipo_sangue_categoria_motivo"
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.categoria_motivo}
                   onChange={e => setTipoSangForm(prev => ({ ...prev, categoria_motivo: e.target.value }))}
@@ -2749,7 +2774,7 @@ export function StaffDashboard() {
             </div>
             <div>
               <Label>Quantidade (bolsas)</Label>
-              <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
+              <Input id="stock-amount" name="stock_amount" type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
             </div>
             <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
               Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
