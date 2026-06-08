@@ -1848,6 +1848,8 @@ export function CustomRoleDashboard() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <Input 
+                        id="custom-donor-search-term"
+                        name="custom_donor_search_term"
                         placeholder="Pesquisar por nome ou sobrenome" 
                         value={donorSearchTerm}
                         onChange={e => setDonorSearchTerm(e.target.value)}
@@ -1907,6 +1909,8 @@ export function CustomRoleDashboard() {
                     <Label className="text-xs uppercase text-gray-500">Última doação (período)</Label>
                     <div className="flex gap-2 items-center">
                       <Input 
+                        id="custom-donor-last-donation-since"
+                        name="custom_donor_last_donation_since"
                         type="date" 
                         value={donorLastDonationSince} 
                         onChange={e => setDonorLastDonationSince(e.target.value)}
@@ -1914,6 +1918,8 @@ export function CustomRoleDashboard() {
                       />
                       <span className="text-gray-400">até</span>
                       <Input 
+                        id="custom-donor-last-donation-until"
+                        name="custom_donor_last_donation_until"
                         type="date" 
                         value={donorLastDonationUntil} 
                         onChange={e => setDonorLastDonationUntil(e.target.value)}
@@ -2179,6 +2185,8 @@ export function CustomRoleDashboard() {
                   <div key={key}>
                     <Label className="text-xs">{label}</Label>
                     <Input
+                      id={`custom-triagem-sinal-${key}`}
+                      name={`custom_triagem_sinal_${key}`}
                       type="number"
                       step="0.1"
                       placeholder={placeholder}
@@ -2219,6 +2227,7 @@ export function CustomRoleDashboard() {
                             }`}
                           >
                             <input
+                              id={`custom-triagem-pergunta-${pergunta.id}-opcao-${opcao.id}`}
                               type="radio"
                               name={`pergunta-${pergunta.id}`}
                               value={opcao.id}
@@ -2243,6 +2252,8 @@ export function CustomRoleDashboard() {
               <div>
                 <Label className="text-xs">Volume coletado (mL)</Label>
                 <Input
+                  id="custom-triagem-volume-coletado"
+                  name="custom_triagem_volume_coletado"
                   type="number"
                   min="100"
                   max="600"
@@ -2281,6 +2292,8 @@ export function CustomRoleDashboard() {
                   <div>
                     <Label className="text-xs">Categoria da inaptidão *</Label>
                     <select
+                      id="custom-triagem-categoria-inaptidao"
+                      name="custom_triagem_categoria_inaptidao"
                       className="w-full border rounded-md p-2 text-sm mt-1"
                       value={aptidaoFormal.categoria_inaptidao}
                       onChange={e => setAptidaoFormal(prev => ({ ...prev, categoria_inaptidao: e.target.value }))}
@@ -2301,6 +2314,8 @@ export function CustomRoleDashboard() {
                     <div>
                       <Label className="text-xs">Inapto até *</Label>
                       <Input
+                        id="custom-triagem-valido-ate"
+                        name="custom_triagem_valido_ate"
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
                         value={aptidaoFormal.valido_ate}
@@ -2314,6 +2329,8 @@ export function CustomRoleDashboard() {
               <div>
                 <Label className="text-xs">Observações internas (visível só para funcionários)</Label>
                 <textarea
+                  id="custom-triagem-observacoes-internas"
+                  name="custom_triagem_observacoes_internas"
                   className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                   rows={2}
                   placeholder="Observações clínicas relevantes..."
@@ -2367,7 +2384,7 @@ export function CustomRoleDashboard() {
             {triagemData.apto && (
               <div>
                 <Label>Volume Coletado (ml)</Label>
-                <Input type="number" min="100" max="600" value={triagemData.ml_coletados}
+                <Input id="custom-triagem-legacy-volume-coletado" name="custom_triagem_legacy_volume_coletado" type="number" min="100" max="600" value={triagemData.ml_coletados}
                   onChange={e => setTriagemData({ ...triagemData, ml_coletados: e.target.value })} />
                 <p className="text-xs text-gray-400 mt-1">Padrão: 450ml</p>
               </div>
@@ -2395,7 +2412,7 @@ export function CustomRoleDashboard() {
 
             <div>
               <Label>Observações</Label>
-              <Textarea placeholder="Observações da triagem..." value={triagemData.observacoes}
+              <Textarea id="custom-triagem-legacy-observacoes" name="custom_triagem_legacy_observacoes" placeholder="Observações da triagem..." value={triagemData.observacoes}
                 onChange={e => setTriagemData({ ...triagemData, observacoes: e.target.value })} />
             </div>
 
@@ -2438,7 +2455,7 @@ export function CustomRoleDashboard() {
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input value={editDonorData.telefone}
+                <Input id="custom-edit-donor-telefone" name="custom_edit_donor_telefone" value={editDonorData.telefone}
                   onChange={e => setEditDonorData({ ...editDonorData, telefone: e.target.value })}
                   placeholder="(00) 00000-0000" />
               </div>
@@ -2454,7 +2471,7 @@ export function CustomRoleDashboard() {
               </div>
               <div>
                 <Label>Restrição até (data)</Label>
-                <Input type="date" value={editDonorData.tempo_restricao}
+                <Input id="custom-edit-donor-tempo-restricao" name="custom_edit_donor_tempo_restricao" type="date" value={editDonorData.tempo_restricao}
                   onChange={e => setEditDonorData({ ...editDonorData, tempo_restricao: e.target.value })}
                   min={new Date().toISOString().split('T')[0]} />
                 <p className="text-xs text-gray-400 mt-1">Deixe em branco para não alterar</p>
@@ -2483,6 +2500,8 @@ export function CustomRoleDashboard() {
             <div>
               <Label>Tipo de alerta</Label>
               <select
+                id="custom-alerta-tipo"
+                name="custom_alerta_tipo"
                 className="w-full border rounded-md p-2 text-sm mt-1"
                 value={alertaForm.tipo_alerta}
                 onChange={e => setAlertaForm(prev => ({ ...prev, tipo_alerta: e.target.value as any }))}
@@ -2495,6 +2514,8 @@ export function CustomRoleDashboard() {
             <div>
               <Label>Mensagem para o doador *</Label>
               <textarea
+                id="custom-alerta-notificacao-doador"
+                name="custom_alerta_notificacao_doador"
                 className="w-full border rounded-md p-2 text-sm mt-1 resize-none"
                 rows={4}
                 placeholder="Ex: Identificamos uma alteração nos exames realizados após sua doação. Por favor, compareça ao hemocentro para uma reavaliação..."
@@ -2541,6 +2562,8 @@ export function CustomRoleDashboard() {
               <div>
                 <Label className="text-xs">Novo tipo sanguíneo *</Label>
                 <select
+                  id="custom-tipo-sangue-novo"
+                  name="custom_tipo_sangue_novo"
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.tipo_sangue_novo}
                   onChange={e => setTipoSangForm(prev => ({ ...prev, tipo_sangue_novo: e.target.value }))}
@@ -2554,6 +2577,8 @@ export function CustomRoleDashboard() {
               <div>
                 <Label className="text-xs">Motivo da alteração *</Label>
                 <select
+                  id="custom-tipo-sangue-categoria-motivo"
+                  name="custom_tipo_sangue_categoria_motivo"
                   className="w-full border rounded-md p-2 text-sm mt-1"
                   value={tipoSangForm.categoria_motivo}
                   onChange={e => setTipoSangForm(prev => ({ ...prev, categoria_motivo: e.target.value }))}
@@ -2614,7 +2639,7 @@ export function CustomRoleDashboard() {
             </div>
             <div>
               <Label>Quantidade (bolsas)</Label>
-              <Input type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
+              <Input id="custom-stock-amount" name="custom_stock_amount" type="number" min="1" value={stockAmount} onChange={e => setStockAmount(e.target.value)} />
             </div>
             <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
               Estoque atual de <strong>{selectedBloodType}</strong>:{' '}
