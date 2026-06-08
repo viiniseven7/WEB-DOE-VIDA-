@@ -6,14 +6,17 @@ const roleMap: Record<number, string> = {
 };
 
 export function extractApiList(payload: any, keys: string[] = []): any[] {
+  const normalizedKeys = Array.from(new Set([...keys, 'items']));
   const candidates = [
     payload,
     payload?.data,
     payload?.data?.data,
-    ...keys.map((key) => payload?.[key]),
-    ...keys.map((key) => payload?.data?.[key]),
-    ...keys.map((key) => payload?.[key]?.data),
-    ...keys.map((key) => payload?.data?.[key]?.data),
+    payload?.items,
+    payload?.data?.items,
+    ...normalizedKeys.map((key) => payload?.[key]),
+    ...normalizedKeys.map((key) => payload?.data?.[key]),
+    ...normalizedKeys.map((key) => payload?.[key]?.data),
+    ...normalizedKeys.map((key) => payload?.data?.[key]?.data),
   ];
 
   return candidates.find(Array.isArray) || [];

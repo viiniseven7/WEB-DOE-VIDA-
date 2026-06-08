@@ -630,8 +630,7 @@ export function StaffDashboard() {
     // Doadores
     if (usersResult.status === 'fulfilled') {
       const usersRes = usersResult.value;
-      const users = Array.isArray(usersRes.data)
-        ? usersRes.data : usersRes.data.data ?? usersRes.data.users ?? [];
+      const users = extractApiList(usersRes.data, ['data', 'users', 'items']);
       setDoadores(users.filter(isDonorRecord));
     } else {
       console.warn('Erro ao carregar doadores:', usersResult.reason?.response?.data || usersResult.reason);
@@ -1364,7 +1363,7 @@ export function StaffDashboard() {
 
       const res = await api.get('/users', { params });
       
-      const donors = extractApiList(res.data, ['data']);
+      const donors = extractApiList(res.data, ['data', 'items']);
       const meta = res.data.meta || {};
 
       setDonorResult(donors);
