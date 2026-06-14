@@ -1,37 +1,63 @@
 import { createBrowserRouter } from "react-router-dom";
 import { Root } from "./components/Root";
-import { HomePage } from "./components/HomePage";
-import { LoginPage } from "./components/LoginPage";
-import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
-import { ResetPasswordPage } from "./components/ResetPasswordPage";
-import { EligibilityTestPage } from "./components/EligibilityTestPage";
-import { RegistrationDonationPage } from "./components/RegistrationDonationPage";
-import { AppointmentPage } from "./components/AppointmentPage";
-import { DonorDashboard } from "./components/dashboards/DonorDashboard";
-import { StaffDashboard } from "./components/dashboards/StaffDashboard";
-import { DirectorDashboard } from "./components/dashboards/DirectorDashboard";
-import { AdminDashboard } from "./components/dashboards/AdminDashboard";
-import { CustomRoleDashboard } from "./components/dashboards/CustomRoleDashboard";
-import { NotFound } from "./components/NotFound";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     Component: Root,
     children: [
-      { index: true, Component: HomePage },
-      { path: "login", Component: LoginPage },
-      { path: "forgot-password", Component: ForgotPasswordPage },
-      { path: "reset-password", Component: ResetPasswordPage },
-      { path: "teste-elegibilidade", Component: EligibilityTestPage },
-      { path: "cadastro-doacao", Component: RegistrationDonationPage },
-      { path: "agendar", Component: AppointmentPage },
-      { path: "dashboard/doador", Component: DonorDashboard },
-      { path: "dashboard/funcionario", Component: StaffDashboard },
-      { path: "dashboard/diretor", Component: DirectorDashboard },
-      { path: "dashboard/admin", Component: AdminDashboard },
-      { path: "dashboard/custom", Component: CustomRoleDashboard },
-      { path: "*", Component: NotFound },
+      {
+        index: true,
+        lazy: async () => ({ Component: (await import("./components/HomePage")).HomePage }),
+      },
+      {
+        path: "login",
+        lazy: async () => ({ Component: (await import("./components/LoginPage")).LoginPage }),
+      },
+      {
+        path: "forgot-password",
+        lazy: async () => ({ Component: (await import("./components/ForgotPasswordPage")).ForgotPasswordPage }),
+      },
+      {
+        path: "reset-password",
+        lazy: async () => ({ Component: (await import("./components/ResetPasswordPage")).ResetPasswordPage }),
+      },
+      {
+        path: "teste-elegibilidade",
+        lazy: async () => ({ Component: (await import("./components/EligibilityTestPage")).EligibilityTestPage }),
+      },
+      {
+        path: "cadastro-doacao",
+        lazy: async () => ({ Component: (await import("./components/RegistrationDonationPage")).RegistrationDonationPage }),
+      },
+      {
+        path: "agendar",
+        lazy: async () => ({ Component: (await import("./components/AppointmentPage")).AppointmentPage }),
+      },
+      {
+        path: "dashboard/doador",
+        lazy: async () => ({ Component: (await import("./components/dashboards/DonorDashboard")).DonorDashboard }),
+      },
+      {
+        path: "dashboard/funcionario",
+        lazy: async () => ({ Component: (await import("./components/dashboards/StaffDashboard")).StaffDashboard }),
+      },
+      {
+        path: "dashboard/diretor",
+        lazy: async () => ({ Component: (await import("./components/dashboards/DirectorDashboard")).DirectorDashboard }),
+      },
+      {
+        path: "dashboard/admin",
+        lazy: async () => ({ Component: (await import("./components/dashboards/AdminDashboard")).AdminDashboard }),
+      },
+      {
+        path: "dashboard/custom",
+        lazy: async () => ({ Component: (await import("./components/dashboards/CustomRoleDashboard")).CustomRoleDashboard }),
+      },
+      {
+        path: "*",
+        lazy: async () => ({ Component: (await import("./components/NotFound")).NotFound }),
+      },
     ],
   },
 ]);

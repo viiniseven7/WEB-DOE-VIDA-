@@ -31,6 +31,42 @@ const BLOOD_COLORS: Record<string, string> = {
   'O+': '#DC2626', 'A+': '#EA580C', 'B+': '#CA8A04', 'AB+': '#16A34A',
   'O-': '#2563EB', 'A-': '#7C3AED', 'B-': '#DB2777', 'AB-': '#0891B2',
 };
+const TIPOS_SANGUINEOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+const formatDateInput = (date: Date) => {
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const resolvePeriodFilter = (period: string, startDate?: string, endDate?: string) => {
+  const today = new Date();
+
+  if (period === 'all') {
+    return { start: null as Date | null, end: null as Date | null, label: 'Periodo completo' };
+  }
+
+  if (period === 'previous_month') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59);
+    return { start, end, label: `Mes anterior (${formatDateInput(start)} a ${formatDateInput(end)})` };
+  }
+
+  if (period === 'custom' && startDate && endDate) {
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T23:59:59`);
+    return { start, end, label: `${startDate} a ${endDate}` };
+  }
+
+  const days = Number(period) || 30;
+  const start = new Date(today);
+  start.setDate(start.getDate() - days);
+  start.setHours(0, 0, 0, 0);
+  return { start, end: today, label: `Ultimos ${days} dias` };
+};
 
 const emptyDirectorStats = {
   agendamentos_hoje: 0,
@@ -102,6 +138,10 @@ export function DirectorDashboard() {
 
   // ── Relatório
   const [reportType, setReportType] = useState('');
+  const [reportPeriod, setReportPeriod] = useState('30');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportBloodType, setReportBloodType] = useState('todos');
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   // ─── Guard ────────────────────────────────────────────────────────────────
@@ -302,6 +342,15 @@ export function DirectorDashboard() {
   const handleExportReport = async () => {
     if (!reportType) { toast.error('Selecione um tipo de relatório'); return; }
 
+    if (reportPeriod === 'custom' && (!reportStartDate || !reportEndDate)) {
+      toast.error('Informe as datas inicial e final.');
+      return;
+    }
+    if (reportPeriod === 'custom' && reportStartDate > reportEndDate) {
+      toast.error('A data inicial nao pode ser maior que a data final.');
+      return;
+    }
+
     const endpoints: Record<string, string> = {
       doacoes:      '/relatorios/doacoes/pdf',
       estoque:      '/relatorios/estoque/pdf',
@@ -326,7 +375,15 @@ export function DirectorDashboard() {
     try {
       const token = localStorage.getItem('token');
       const apiBase = import.meta.env.VITE_API_URL || 'https://api-doe-vida-production.up.railway.app/api';
-      const res = await fetch(`${apiBase}${endpoint}`, {
+      const reportPeriodInfo = resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate);
+      const params = new URLSearchParams();
+      params.set('periodo', reportPeriod);
+      params.set('periodo_label', reportPeriodInfo.label);
+      if (reportPeriodInfo.start) params.set('data_inicio', formatDateInput(reportPeriodInfo.start));
+      if (reportPeriodInfo.end) params.set('data_fim', formatDateInput(reportPeriodInfo.end));
+      if (reportBloodType !== 'todos') params.set('tipo_sangue', reportBloodType);
+
+      const res = await fetch(`${apiBase}${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -902,7 +959,8 @@ export function DirectorDashboard() {
             <DialogTitle>Gerar Relatório PDF</DialogTitle>
             <DialogDescription>Selecione o relatório desejado. O arquivo será baixado automaticamente.</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-4">
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
             {[
               { value: 'doacoes',      label: 'Doações',       desc: 'Coletas, volume, tipos',         color: 'border-red-200 hover:border-red-400' },
               { value: 'estoque',      label: 'Estoque',        desc: 'Níveis e alertas',               color: 'border-blue-200 hover:border-blue-400' },
@@ -920,6 +978,59 @@ export function DirectorDashboard() {
                 <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
               </button>
             ))}
+            </div>
+
+            <div className="grid gap-3 rounded-lg border bg-gray-50 p-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Periodo</Label>
+                  <Select value={reportPeriod} onValueChange={setReportPeriod}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">Ultimos 30 dias</SelectItem>
+                      <SelectItem value="90">Ultimos 90 dias</SelectItem>
+                      <SelectItem value="previous_month">Mes anterior</SelectItem>
+                      <SelectItem value="all">Periodo completo</SelectItem>
+                      <SelectItem value="custom">Intervalo personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Tipo sanguineo</Label>
+                  <Select value={reportBloodType} onValueChange={setReportBloodType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os tipos</SelectItem>
+                      {TIPOS_SANGUINEOS.map((tipo) => (
+                        <SelectItem key={tipo} value={tipo}>{tipo}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {reportPeriod === 'custom' && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label>Data inicial</Label>
+                    <Input type="date" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Data final</Label>
+                    <Input type="date" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {reportType && (
+                <p className="text-xs text-gray-500">
+                  Filtro: <strong className="capitalize text-gray-700">{reportType}</strong>
+                  {' - '}{resolvePeriodFilter(reportPeriod, reportStartDate, reportEndDate).label}
+                  {reportBloodType !== 'todos' && ` - ${reportBloodType}`}
+                </p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setExportDialogOpen(false); setReportType(''); }}>Cancelar</Button>

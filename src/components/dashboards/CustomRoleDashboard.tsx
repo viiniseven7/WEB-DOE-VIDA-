@@ -237,13 +237,22 @@ export function CustomRoleDashboard() {
     const label = String(raw || 'Personalizado').replace(/_/g, ' ');
     return label.charAt(0).toUpperCase() + label.slice(1);
   }, [user?.roles]);
-  const defaultTab = hasPermission('ver_agendamentos') ? 'schedule' : hasPermission('ver_estoque') ? 'stock' : 'donors';
-  const canShowStatsValues = hasPermission('ver_agendamentos') || hasPermission('ver_estatisticas_hemocentro');
-  const hasDashboardTabs =
-    hasPermission('ver_agendamentos') ||
-    hasPermission('ver_estoque') ||
+  const canAccessSchedule = hasPermission('ver_agendamentos');
+  const canAccessStock = hasPermission('ver_estoque');
+  const canAccessDonors =
     hasPermission('ver_doacoes') ||
-    hasPermission('ver_triagens');
+    hasPermission('ver_triagens') ||
+    hasPermission('ver_usuarios') ||
+    hasPermission('ver_alertas_medicos') ||
+    hasPermission('gerenciar_alertas_medicos');
+  const canManageMedicalAlerts = hasPermission('gerenciar_alertas_medicos');
+  const canManageDonorInfo =
+    hasPermission('ver_doacoes') ||
+    hasPermission('ver_triagens') ||
+    hasPermission('ver_usuarios');
+  const defaultTab = canAccessSchedule ? 'schedule' : canAccessStock ? 'stock' : 'donors';
+  const canShowStatsValues = hasPermission('ver_agendamentos') || hasPermission('ver_estatisticas_hemocentro');
+  const hasDashboardTabs = canAccessSchedule || canAccessStock || canAccessDonors;
 
   // ── Estado: dados da API
   const [hemocentros, setHemocentros] = useState<any[]>([]);
@@ -374,10 +383,10 @@ export function CustomRoleDashboard() {
       bloco4Result
     ] = await Promise.allSettled([
       api.get('/hemocentros'),
-      hasPermission('ver_agendamentos') ? api.get('/agendamentos', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
-      hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes') ? api.get('/users', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
+      canAccessSchedule ? api.get('/agendamentos', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
+      canAccessDonors ? api.get('/users', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
       hasPermission('ver_doacoes') ? api.get('/doacoes') : Promise.resolve({ data: [] }),
-      hasPermission('ver_estoque') ? api.get('/estoque') : Promise.resolve({ data: [] }),
+      canAccessStock ? api.get('/estoque') : Promise.resolve({ data: [] }),
       hasPermission('ver_estatisticas_hemocentro') ? api.get('/estatisticas/funcionario') : Promise.resolve({ data: {} }),
       hasPermission('registrar_triagem') ? api.get('/triagens/perguntas?bloco=1') : Promise.resolve({ data: { data: [] } }),
       hasPermission('registrar_triagem') ? api.get('/triagens/perguntas?bloco=3') : Promise.resolve({ data: { data: [] } }),
@@ -403,7 +412,7 @@ export function CustomRoleDashboard() {
     setPerguntas(todasPerguntas);
 
     // Agendamentos
-    if (hasPermission('ver_agendamentos') && agendResult.status === 'fulfilled') {
+    if (canAccessSchedule && agendResult.status === 'fulfilled') {
       const agendRes = agendResult.value;
       const agends = Array.isArray(agendRes.data)
         ? agendRes.data : agendRes.data.data ?? agendRes.data.agendamentos ?? [];
@@ -419,18 +428,18 @@ export function CustomRoleDashboard() {
         ? buildDemoAgendaAppointments(new Date(), getHemocentroId(user))
         : [];
       setAgendamentos([...demoAgendamentos, ...agendsFiltrados]);
-    } else if (hasPermission('ver_agendamentos')) {
+    } else if (canAccessSchedule) {
       console.error('Erro ao carregar agendamentos:', agendResult.reason?.response?.data || agendResult.reason);
       toast.error('Erro ao carregar agendamentos');
     }
 
     // Doadores
-    if ((hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes')) && usersResult.status === 'fulfilled') {
+    if (canAccessDonors && usersResult.status === 'fulfilled') {
       const usersRes = usersResult.value;
       const users = Array.isArray(usersRes.data)
         ? usersRes.data : usersRes.data.data ?? usersRes.data.users ?? [];
       setDoadores(normalizarStatus(users.filter(isDonorRecord)));
-    } else if (hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes')) {
+    } else if (canAccessDonors) {
       console.warn('Erro ao carregar doadores:', usersResult.reason?.response?.data || usersResult.reason);
       setDoadores([]);
     }
@@ -450,7 +459,7 @@ export function CustomRoleDashboard() {
     }
 
     // Estoque
-    if (hasPermission('ver_estoque') && stockResult.status === 'fulfilled') {
+    if (canAccessStock && stockResult.status === 'fulfilled') {
       const stockRes = stockResult.value;
       const stockData = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data.data ?? [];
       setStock(stockData.map((s: any) => ({
@@ -460,7 +469,7 @@ export function CustomRoleDashboard() {
         min: Number(s.quantidade_minima || 0),
         max: 100
       })));
-    } else if (hasPermission('ver_estoque')) {
+    } else if (canAccessStock) {
       console.warn('Erro ao carregar estoque:', stockResult.reason?.response?.data || stockResult.reason);
     }
 
@@ -1507,13 +1516,13 @@ export function CustomRoleDashboard() {
         {hasDashboardTabs ? (
         <Tabs defaultValue={defaultTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 lg:w-auto">
-            {hasPermission('ver_agendamentos') && <TabsTrigger value="schedule">Agenda</TabsTrigger>}
-            {hasPermission('ver_estoque') && <TabsTrigger value="stock">Estoque</TabsTrigger>}
-            {(hasPermission('ver_doacoes') || hasPermission('ver_triagens')) && <TabsTrigger value="donors">Doadores</TabsTrigger>}
+            {canAccessSchedule && <TabsTrigger value="schedule">Agenda</TabsTrigger>}
+            {canAccessStock && <TabsTrigger value="stock">Estoque</TabsTrigger>}
+            {canAccessDonors && <TabsTrigger value="donors">Doadores</TabsTrigger>}
           </TabsList>
 
           {/* ── Agenda ── */}
-          {hasPermission('ver_agendamentos') && (
+          {canAccessSchedule && (
           <TabsContent value="schedule" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1651,7 +1660,7 @@ export function CustomRoleDashboard() {
           )}
 
           {/* ── Estoque ── */}
-          {hasPermission('ver_estoque') && (
+          {canAccessStock && (
           <TabsContent value="stock" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1780,7 +1789,7 @@ export function CustomRoleDashboard() {
           )}
 
           {/* ── Doadores ── */}
-          {(hasPermission('ver_doacoes') || hasPermission('ver_triagens')) && (
+          {canAccessDonors && (
           <TabsContent value="donors" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1970,9 +1979,12 @@ export function CustomRoleDashboard() {
                                   </div>
                                 </div>
                                 <div className="flex gap-2 ml-auto">
+                                  {canManageDonorInfo && (
                                   <Button size="sm" variant="outline" onClick={() => handleAbrirEditDonor(donor)} className="h-8">
                                     <Edit className="h-3.5 w-3.5 mr-1" />Editar
                                   </Button>
+                                  )}
+                                  {(canManageMedicalAlerts || canManageDonorInfo) && (
                                   <Popover>
                                     <PopoverTrigger asChild>
                                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
@@ -1980,6 +1992,7 @@ export function CustomRoleDashboard() {
                                       </Button>
                                     </PopoverTrigger>
                                     <PopoverContent align="end" className="w-56 p-2 space-y-1">
+                                      {canManageMedicalAlerts && (
                                       <Button
                                         size="sm"
                                         variant="ghost"
@@ -1988,6 +2001,8 @@ export function CustomRoleDashboard() {
                                       >
                                         <AlertCircle className="h-4 w-4 mr-2" />Criar Alerta Médico
                                       </Button>
+                                      )}
+                                      {canManageDonorInfo && (
                                       <Button
                                         size="sm"
                                         variant="ghost"
@@ -1996,8 +2011,10 @@ export function CustomRoleDashboard() {
                                       >
                                         <Activity className="h-4 w-4 mr-2" />Histórico Tipo Sang
                                       </Button>
+                                      )}
                                     </PopoverContent>
                                   </Popover>
+                                  )}
                                 </div>
                               </div>
                             </div>
