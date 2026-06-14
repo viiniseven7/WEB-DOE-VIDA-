@@ -325,7 +325,7 @@ export function AdminDashboard() {
     try {
       const [hcRes, usersRes, doacoesRes, stockRes, statsRes, campanhasRes] = await Promise.all([
         api.get('/hemocentros'),
-        api.get('/users'),
+        api.get('/users', { params: { per_page: 500 } }),
         api.get('/doacoes'),
         api.get('/estoque'),
         api.get('/estatisticas/admin'),
@@ -661,7 +661,7 @@ export function AdminDashboard() {
           throw err;
         }
 
-        const doadoresRes = await api.get('/users');
+        const doadoresRes = await api.get('/users', { params: { per_page: 500 } });
         const todosUsers = Array.isArray(doadoresRes.data)
           ? doadoresRes.data
           : doadoresRes.data?.data ?? [];

@@ -336,6 +336,10 @@ export function CustomRoleDashboard() {
     tipo_alerta: 'resultado_sorologico' as 'resultado_sorologico' | 'convocacao_retorno' | 'outro',
     notificacao_doador: '',
   });
+  const resetAlertaMedico = () => {
+    setAlertaDoador(null);
+    setAlertaForm({ tipo_alerta: 'resultado_sorologico', notificacao_doador: '' });
+  };
 
   // Histórico tipo sanguíneo
   const [tipoSangDialogOpen, setTipoSangDialogOpen] = useState(false);
@@ -370,8 +374,8 @@ export function CustomRoleDashboard() {
       bloco4Result
     ] = await Promise.allSettled([
       api.get('/hemocentros'),
-      hasPermission('ver_agendamentos') ? api.get('/agendamentos') : Promise.resolve({ data: [] }),
-      hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes') ? api.get('/users') : Promise.resolve({ data: [] }),
+      hasPermission('ver_agendamentos') ? api.get('/agendamentos', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
+      hasPermission('ver_agendamentos') || hasPermission('ver_triagens') || hasPermission('ver_doacoes') ? api.get('/users', { params: { per_page: 100 } }) : Promise.resolve({ data: [] }),
       hasPermission('ver_doacoes') ? api.get('/doacoes') : Promise.resolve({ data: [] }),
       hasPermission('ver_estoque') ? api.get('/estoque') : Promise.resolve({ data: [] }),
       hasPermission('ver_estatisticas_hemocentro') ? api.get('/estatisticas/funcionario') : Promise.resolve({ data: {} }),
@@ -1124,6 +1128,7 @@ export function CustomRoleDashboard() {
         role: 'donor',
         page: page,
         limit: 10,
+        per_page: 100,
       };
 
       if (donorSearchTerm.trim()) params.q = donorSearchTerm.trim();
@@ -1349,6 +1354,7 @@ export function CustomRoleDashboard() {
       });
       toast.success('Alerta médico criado com sucesso.');
       setAlertaDialogOpen(false);
+      resetAlertaMedico();
     } catch (err: any) {
       toast.error('Erro ao criar alerta: ' + (err.response?.data?.message || 'Tente novamente'));
     }
@@ -2412,7 +2418,10 @@ export function CustomRoleDashboard() {
       </Dialog>
 
       {/* Dialog — Alerta Médico */}
-      <Dialog open={alertaDialogOpen} onOpenChange={setAlertaDialogOpen}>
+      <Dialog open={alertaDialogOpen} onOpenChange={(open) => {
+        setAlertaDialogOpen(open);
+        if (!open) resetAlertaMedico();
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Criar Alerta Médico</DialogTitle>
@@ -2446,7 +2455,10 @@ export function CustomRoleDashboard() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAlertaDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => {
+              setAlertaDialogOpen(false);
+              resetAlertaMedico();
+            }}>Cancelar</Button>
             <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleCriarAlerta}>
               Criar Alerta
             </Button>

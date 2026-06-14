@@ -430,6 +430,10 @@ export function StaffDashboard() {
     tipo_alerta: 'resultado_sorologico' as 'resultado_sorologico' | 'convocacao_retorno' | 'outro',
     notificacao_doador: '',
   });
+  const resetAlertaMedico = () => {
+    setAlertaDoador(null);
+    setAlertaForm({ tipo_alerta: 'resultado_sorologico', notificacao_doador: '' });
+  };
 
   // Histórico tipo sanguíneo
   const [tipoSangDialogOpen, setTipoSangDialogOpen] = useState(false);
@@ -466,8 +470,8 @@ export function StaffDashboard() {
       bloco4Result
     ] = await Promise.allSettled([
       api.get('/hemocentros'),
-      api.get('/agendamentos'),
-      api.get('/users'),
+      api.get('/agendamentos', { params: { per_page: 100 } }),
+      api.get('/users', { params: { per_page: 100 } }),
       api.get('/doacoes', { params: { data: new Date().toISOString().split('T')[0] } }),
       api.get('/estoque'),
       api.get('/estatisticas/funcionario'),
@@ -1223,6 +1227,7 @@ export function StaffDashboard() {
         role: 'donor',
         page: page,
         limit: 10,
+        per_page: 100,
       };
 
       if (donorSearchTerm.trim()) params.q = donorSearchTerm.trim();
@@ -1441,6 +1446,7 @@ export function StaffDashboard() {
       });
       toast.success('Alerta médico criado com sucesso.');
       setAlertaDialogOpen(false);
+      resetAlertaMedico();
     } catch (err: any) {
       toast.error('Erro ao criar alerta: ' + (err.response?.data?.message || 'Tente novamente'));
     }
@@ -2492,7 +2498,10 @@ export function StaffDashboard() {
       </Dialog>
 
       {/* Dialog — Alerta Médico */}
-      <Dialog open={alertaDialogOpen} onOpenChange={setAlertaDialogOpen}>
+      <Dialog open={alertaDialogOpen} onOpenChange={(open) => {
+        setAlertaDialogOpen(open);
+        if (!open) resetAlertaMedico();
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Criar Alerta Médico</DialogTitle>
@@ -2526,7 +2535,10 @@ export function StaffDashboard() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAlertaDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => {
+              setAlertaDialogOpen(false);
+              resetAlertaMedico();
+            }}>Cancelar</Button>
             <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleCriarAlerta}>
               Criar Alerta
             </Button>

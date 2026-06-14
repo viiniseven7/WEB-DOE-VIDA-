@@ -123,11 +123,11 @@ export function DirectorDashboard() {
         console.error('Erro em /hemocentros:', err.response?.data || err.message);
         return { data: [] };
       });
-      const fetchUsers = api.get('/users', { params: { scope: 'staff' } }).catch(err => {
+      const fetchUsers = api.get('/users', { params: { scope: 'staff', per_page: 100 } }).catch(err => {
         console.error('Erro em /users:', err.response?.data || err.message);
         return { data: [] };
       });
-      const fetchAgend = api.get('/agendamentos').catch(err => {
+      const fetchAgend = api.get('/agendamentos', { params: { per_page: 100 } }).catch(err => {
         console.error('Erro em /agendamentos:', err.response?.data || err.message);
         return { data: [] };
       });
